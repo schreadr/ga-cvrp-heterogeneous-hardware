@@ -31,41 +31,231 @@ import lynxTypes::*;
 `include "axi_macros.svh"
 
 /**
- * perf_local example
- * @brief Reads the incoming stream and adds 1 to every integer
- * 
- * @param[in] axis_in Incoming AXI stream
- * @param[out] axis_out Outgoing AXI stream
- * @param[in] aclk Clock signal
- * @param[in] aresetn Active low reset signal
+ * perf_local first working version
+ * @brief Captures two parent packets from AXI streams and runs processing_node.
+ *
+ * The wrapper is intentionally simple: it buffers one parent packet from each
+ * stream, feeds a hardcoded small processing_node configuration, and forwards
+ * the generated child packets to two AXI outputs.
  */
 module perf_local (
-    AXI4SR.s        axis_in,
-    AXI4SR.m        axis_out,
+    AXI4SR.s        axis_parent_1_in,
+    AXI4SR.s        axis_parent_2_in,
+    AXI4SR.m        axis_child_1_out,
+    AXI4SR.m        axis_child_2_out,
 
     input  logic    aclk,
     input  logic    aresetn
 );
 
-// Simple pipeline stages, buffering the input/output signals (not really needed, but nice to have for easier timing closure)
-AXI4SR axis_in_int (.*);
-axisr_reg inst_reg_sink (.aclk(aclk), .aresetn(aresetn), .s_axis(axis_in), .m_axis(axis_in_int));
+localparam int lpNumCities = 3;
+localparam int lpCapBitWidth = 3;
+localparam int lpIDBitWidth = 12;
+localparam int lpCoordBitWidth = 6;
+localparam int lpDistMaxBitWidth = 13;
+localparam int lpVehicleCapacity = 10;
+localparam int lpRandomSubtourOffset = 2;
+localparam int lpMutationDistance = 2;
+localparam int lpInitMutationProcesses = 1;
+localparam int lpDepotXCoord = 16;
+localparam int lpDepotYCoord = 16;
+localparam int lpCityNumBitWidth = 2;
+localparam int lpParentWordCount = lpNumCities;
 
-AXI4SR axis_out_int (.*);
-axisr_reg inst_reg_src  (.aclk(aclk), .aresetn(aresetn), .s_axis(axis_out_int), .m_axis(axis_out));
+typedef enum logic [1:0] {
+    ST_WAIT_PARENTS = 2'b00,
+    ST_FEED_PARENT_1 = 2'b01,
+    ST_FEED_PARENT_2 = 2'b10,
+    ST_WAIT_CHILDREN = 2'b11
+} wrapper_state_t;
 
-// User logic; adding 1 to the input stream and writing it to the output stream
-// The other signals (valid, ready etc.) are simply propagated
-always_comb begin
-    for(int i = 0; i < 16; i++) begin
-        axis_out_int.tdata[i*32+:32] = axis_in_int.tdata[i*32+:32] + 1; 
+AXI4SR axis_parent_1_int (.*);
+AXI4SR axis_parent_2_int (.*);
+AXI4SR axis_child_1_int (.*);
+AXI4SR axis_child_2_int (.*);
+
+axisr_reg inst_reg_parent_1 (.aclk(aclk), .aresetn(aresetn), .s_axis(axis_parent_1_in), .m_axis(axis_parent_1_int));
+axisr_reg inst_reg_parent_2 (.aclk(aclk), .aresetn(aresetn), .s_axis(axis_parent_2_in), .m_axis(axis_parent_2_int));
+axisr_reg inst_reg_child_1  (.aclk(aclk), .aresetn(aresetn), .s_axis(axis_child_1_int), .m_axis(axis_child_1_out));
+axisr_reg inst_reg_child_2  (.aclk(aclk), .aresetn(aresetn), .s_axis(axis_child_2_int), .m_axis(axis_child_2_out));
+
+wrapper_state_t state_q;
+logic [1:0] parent_word_idx_q;
+logic [71:0] parent_1_word_q [0:lpParentWordCount-1];
+logic [71:0] parent_2_word_q [0:lpParentWordCount-1];
+logic [71:0] pn_pop_data_i_q;
+logic [71:0] pn_pop_data_o_q;
+logic pn_start_parent_1_q;
+logic pn_start_parent_2_q;
+logic pn_finished_parent_1_q;
+logic pn_finished_parent_2_q;
+logic pn_input_reading_done_q;
+logic pn_transmission_ind_1_q;
+logic pn_transmission_ind_2_q;
+logic pn_unchanged_q;
+logic pn_better_fitness_slot_q;
+logic [15:0] pn_better_fitness_value_q;
+logic child_1_valid_q;
+logic child_2_valid_q;
+logic child_1_captured_q;
+logic child_2_captured_q;
+logic [71:0] child_1_word_q;
+logic [71:0] child_2_word_q;
+
+processing_node #(
+    .pNumCities(lpNumCities),
+    .pCapBitWidth(lpCapBitWidth),
+    .pIDBitWidth(lpIDBitWidth),
+    .pCoordBitWidth(lpCoordBitWidth),
+    .pDistMaxBitWidth(lpDistMaxBitWidth),
+    .pVehicleCapacity(lpVehicleCapacity),
+    .pRandomSubtourOffset(lpRandomSubtourOffset),
+    .pMutationDistance(lpMutationDistance),
+    .pInitMutationProcesses(lpInitMutationProcesses),
+    .pDepotXCoord(lpDepotXCoord),
+    .pDepotYCoord(lpDepotYCoord),
+    .pCityNumBitWidth(lpCityNumBitWidth)
+) pn_inst (
+    .clk_i(aclk),
+    .rst_i(~aresetn),
+    .init_mode_i(1'b0),
+    .start_parent_1_i(pn_start_parent_1_q),
+    .start_parent_2_i(pn_start_parent_2_q),
+    .finished_parent_1_i(pn_finished_parent_1_q),
+    .finished_parent_2_i(pn_finished_parent_2_q),
+    .pop_data_i(pn_pop_data_i_q),
+    .pop_data_o(pn_pop_data_o_q),
+    .input_reading_done(pn_input_reading_done_q),
+    .transmission_ind_1_o(pn_transmission_ind_1_q),
+    .transmission_ind_2_o(pn_transmission_ind_2_q),
+    .unchanged_ind_o(pn_unchanged_q),
+    .random_city_number_mutation_1_i('0),
+    .random_city_number_mutation_2_i('0),
+    .better_fitness_slot_o(pn_better_fitness_slot_q),
+    .better_fitness_value_o(pn_better_fitness_value_q),
+    .do_mutation_i(1'b0),
+    .do_wild_child_i(1'b1),
+    .crossover_1_length_i(1),
+    .crossover_2_length_i(1),
+    .mutation_length_1_i(1),
+    .mutation_length_2_i(1)
+);
+
+always_ff @(posedge aclk) begin
+    if (!aresetn) begin
+        state_q <= ST_WAIT_PARENTS;
+        parent_word_idx_q <= '0;
+        pn_pop_data_i_q <= '0;
+        pn_start_parent_1_q <= 1'b0;
+        pn_start_parent_2_q <= 1'b0;
+        pn_finished_parent_1_q <= 1'b0;
+        pn_finished_parent_2_q <= 1'b0;
+        child_1_valid_q <= 1'b0;
+        child_2_valid_q <= 1'b0;
+        child_1_captured_q <= 1'b0;
+        child_2_captured_q <= 1'b0;
+        child_1_word_q <= '0;
+        child_2_word_q <= '0;
+        for (int idx = 0; idx < lpParentWordCount; idx++) begin
+            parent_1_word_q[idx] <= '0;
+            parent_2_word_q[idx] <= '0;
+        end
+    end else begin
+        pn_start_parent_1_q <= 1'b0;
+        pn_start_parent_2_q <= 1'b0;
+        pn_finished_parent_1_q <= 1'b0;
+        pn_finished_parent_2_q <= 1'b0;
+
+        if (child_1_valid_q && axis_child_1_int.tready) begin
+            child_1_valid_q <= 1'b0;
+        end
+        if (child_2_valid_q && axis_child_2_int.tready) begin
+            child_2_valid_q <= 1'b0;
+        end
+
+        case (state_q)
+            ST_WAIT_PARENTS: begin
+                child_1_captured_q <= 1'b0;
+                child_2_captured_q <= 1'b0;
+                if (axis_parent_1_int.tvalid && axis_parent_2_int.tvalid) begin
+                    parent_1_word_q[0] <= axis_parent_1_int.tdata[71:0];
+                    parent_1_word_q[1] <= axis_parent_1_int.tdata[143:72];
+                    parent_1_word_q[2] <= axis_parent_1_int.tdata[215:144];
+                    parent_1_word_q[3] <= axis_parent_1_int.tdata[287:216];
+                    parent_2_word_q[0] <= axis_parent_2_int.tdata[71:0];
+                    parent_2_word_q[1] <= axis_parent_2_int.tdata[143:72];
+                    parent_2_word_q[2] <= axis_parent_2_int.tdata[215:144];
+                    parent_2_word_q[3] <= axis_parent_2_int.tdata[287:216];
+                    parent_word_idx_q <= 0;
+                    state_q <= ST_FEED_PARENT_1;
+                end
+            end
+
+            ST_FEED_PARENT_1: begin
+                pn_pop_data_i_q <= parent_1_word_q[parent_word_idx_q];
+                if (parent_word_idx_q == 0) begin
+                    pn_start_parent_1_q <= 1'b1;
+                end
+                if (parent_word_idx_q == lpParentWordCount - 1) begin
+                    pn_finished_parent_1_q <= 1'b1;
+                    parent_word_idx_q <= 0;
+                    state_q <= ST_FEED_PARENT_2;
+                end else begin
+                    parent_word_idx_q <= parent_word_idx_q + 1;
+                end
+            end
+
+            ST_FEED_PARENT_2: begin
+                pn_pop_data_i_q <= parent_2_word_q[parent_word_idx_q];
+                if (parent_word_idx_q == 0) begin
+                    pn_start_parent_2_q <= 1'b1;
+                end
+                if (parent_word_idx_q == lpParentWordCount - 1) begin
+                    pn_finished_parent_2_q <= 1'b1;
+                    state_q <= ST_WAIT_CHILDREN;
+                    parent_word_idx_q <= 0;
+                end else begin
+                    parent_word_idx_q <= parent_word_idx_q + 1;
+                end
+            end
+
+            ST_WAIT_CHILDREN: begin
+                if (pn_transmission_ind_1_q && !child_1_captured_q) begin
+                    child_1_word_q <= pn_pop_data_o_q;
+                    child_1_valid_q <= 1'b1;
+                    child_1_captured_q <= 1'b1;
+                end
+                if (pn_transmission_ind_2_q && !child_2_captured_q) begin
+                    child_2_word_q <= pn_pop_data_o_q;
+                    child_2_valid_q <= 1'b1;
+                    child_2_captured_q <= 1'b1;
+                end
+                if (child_1_captured_q && child_2_captured_q && !child_1_valid_q && !child_2_valid_q) begin
+                    state_q <= ST_WAIT_PARENTS;
+                end
+            end
+
+            default: begin
+                state_q <= ST_WAIT_PARENTS;
+            end
+        endcase
     end
-    
-    axis_out_int.tvalid  = axis_in_int.tvalid;
-    axis_in_int.tready   = axis_out_int.tready;
-    axis_out_int.tkeep   = axis_in_int.tkeep;
-    axis_out_int.tid     = axis_in_int.tid;
-    axis_out_int.tlast   = axis_in_int.tlast;
+end
+
+always_comb begin
+    axis_parent_1_int.tready = (state_q == ST_WAIT_PARENTS);
+    axis_parent_2_int.tready = (state_q == ST_WAIT_PARENTS);
+
+    axis_child_1_int.tvalid = child_1_valid_q;
+    axis_child_2_int.tvalid = child_2_valid_q;
+    axis_child_1_int.tdata  = {{(512-72){1'b0}}, child_1_word_q};
+    axis_child_2_int.tdata  = {{(512-72){1'b0}}, child_2_word_q};
+    axis_child_1_int.tkeep  = '1;
+    axis_child_2_int.tkeep  = '1;
+    axis_child_1_int.tid    = '0;
+    axis_child_2_int.tid    = '0;
+    axis_child_1_int.tlast  = child_1_valid_q;
+    axis_child_2_int.tlast  = child_2_valid_q;
 end
 
 endmodule

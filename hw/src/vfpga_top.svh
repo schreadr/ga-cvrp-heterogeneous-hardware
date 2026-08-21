@@ -26,20 +26,14 @@
 
 import lynxTypes::*;
 
-// Data movement host memory => vFPGA => host memory
-perf_local inst_host_link (
-    .axis_in    (axis_host_recv[0]),
-    .axis_out   (axis_host_send[0]),
-    .aclk       (aclk),
-    .aresetn    (aresetn)
-);
-
-// Data movement card memory => vFPGA => card memory
-perf_local inst_card_link (
-    .axis_in    (axis_card_recv[0]),
-    .axis_out   (axis_card_send[0]),
-    .aclk       (aclk),
-    .aresetn    (aresetn)
+// Pair host and card streams as the two parents, then emit both children.
+perf_local inst_genetic_core (
+    .axis_parent_1_in (axis_host_recv[0]),
+    .axis_parent_2_in (axis_host_recv[1]),
+    .axis_child_1_out (axis_host_send[0]),
+    .axis_child_2_out (axis_host_send[1]),
+    .aclk             (aclk),
+    .aresetn          (aresetn)
 );
 
 // Tie-off unused signals to avoid synthesis problems
