@@ -36,7 +36,7 @@ project(ga-cvrp-heterogeneous-hardware)
 message("*** Coyote Example 1: Hello World! [Hardware] ***")
 
 # Enables streams from host memory (CPU DDR) and card memory (FPGA HBM or DDR)
-set(EN_STRM 1)
+set(EN_STRM 2)
 set(EN_MEM 1)
 
 # Number of vFPGAs (user applications)

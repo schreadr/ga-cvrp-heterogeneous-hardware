@@ -56,5 +56,13 @@ ila_perf_host inst_ila_perf_host (
     .probe4(axis_host_send[0].tvalid),  // 1 bit
     .probe5(axis_host_send[0].tready),  // 1 bit
     .probe6(axis_host_send[0].tlast),   // 1 bit
-    .probe7(axis_host_send[0].tdata)    // 512 bits
+    .probe7(axis_host_send[0].tdata),    // 512 bits
+    .probe8(axis_host_recv[1].tvalid),  // 1 bit
+    .probe9(axis_host_recv[1].tready),  // 1 bit
+    .probe10(axis_host_recv[1].tlast),   // 1 bit
+    .probe11(axis_host_recv[1].tdata),   // 512 bits
+    .probe12(axis_host_send[1].tvalid),  // 1 bit
+    .probe13(axis_host_send[1].tready),  // 1 bit
+    .probe14(axis_host_send[1].tlast),   // 1 bit
+    .probe15(axis_host_send[1].tdata)    // 512 bits
 );
