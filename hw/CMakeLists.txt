@@ -33,10 +33,12 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CYT_DIR}/cmake)
 find_package(CoyoteHW REQUIRED)
 
 project(ga-cvrp-heterogeneous-hardware)
-message("*** Coyote Example 1: Hello World! [Hardware] ***")
+message("*** GA for CVRP on FPGA ***")
 
-# Enables streams from host memory (CPU DDR) and card memory (FPGA HBM or DDR)
-set(EN_STRM 2)
+# Enables streams from host memory (CPU DDR), two streams and card memory (FPGA HBM or DDR, TODO disable?) and t
+set(EN_STRM 1)
+set(N_STRM_AXI 2)
+
 set(EN_MEM 1)
 
 # Number of vFPGAs (user applications)

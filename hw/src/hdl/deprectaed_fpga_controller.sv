@@ -12,7 +12,6 @@
 
 `timescale 1ns/1ps
 
-
 module controller_v2_n16_k8_stepwise_loading_BRAM_2 #(
 	parameter pNumCities = 100,
 	parameter pVehicleCapacity = 206,
