@@ -11,4 +11,4 @@ if {$cfg(fpga_arch) eq "ultrascale_plus"} {
     puts "ERROR: Unsupported FPGA architecture: $cfg(fpga_arch)"
     exit 1
 }
-set_property -dict [list CONFIG.C_NUM_OF_PROBES {8} CONFIG.C_PROBE7_WIDTH {512} CONFIG.C_PROBE3_WIDTH {512} CONFIG.C_EN_STRG_QUAL {1} CONFIG.ALL_PROBE_SAME_MU_CNT {2}] [get_ips ila_perf_host]
+set_property -dict [list CONFIG.C_NUM_OF_PROBES {16} CONFIG.C_PROBE7_WIDTH {512} CONFIG.C_PROBE3_WIDTH {512} CONFIG.C_PROBE15_WIDTH {512} CONFIG.C_PROBE11_WIDTH {512} CONFIG.C_EN_STRG_QUAL {1} CONFIG.ALL_PROBE_SAME_MU_CNT {2}] [get_ips ila_perf_host]

@@ -2,7 +2,7 @@
 // (C)2021 Will Green, Open source hardware released under the MIT License
 // Learn more at https://projectf.io
 
-`default_nettype none
+
 `timescale 1ns / 1ps
 
 module sqrt_int #(parameter WIDTH=8) (      // width of radicand
