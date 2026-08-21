@@ -49,19 +49,19 @@ module perf_local (
 );
 
 localparam int lpNumCities = 16;
-localparam int lpCapBitWidth = 3;
-localparam int lpIDBitWidth = 12;
-localparam int lpCoordBitWidth = 6;
-localparam int lpDistMaxBitWidth = 13;
-localparam int lpVehicleCapacity = 10;
+localparam int lpCapBitWidth = 6;
+localparam int lpIDBitWidth = 14;
+localparam int lpCoordBitWidth = 7;
+localparam int lpDistMaxBitWidth = 12;
+localparam int lpVehicleCapacity = 35;
 localparam int lpRandomSubtourOffset = 5;
-localparam int lpMutationDistance = 6;
+localparam int lpMutationDistance = 5;
 localparam int lpInitMutationProcesses = 25;
-localparam int lpDepotXCoord = 16;
-localparam int lpDepotYCoord = 16;
+localparam int lpDepotXCoord = 30;
+localparam int lpDepotYCoord = 40;
 localparam int lpCityNumBitWidth = 5;
-localparam int lpMemLineEntryCount = 72 / (lpIDBitWidth + lpCapBitWidth + 1);
-localparam int lpParentWordCount = 5;
+localparam int lpMemLineEntryCount = 72 / (14 + 5 + 1);
+localparam int lpParentWordCount = 6;
 
 typedef enum logic [2:0] {
     ST_WAIT_PARENTS = 3'b000,
@@ -275,7 +275,8 @@ always_comb begin
     axis_child_1_int.tvalid = child_1_valid_q;
     axis_child_2_int.tvalid = child_2_valid_q;
     axis_child_1_int.tdata  = {
-        {(512-360){1'b0}},
+        {(512-72*6){1'b0}},
+        child_1_word_q[5],
         child_1_word_q[4],
         child_1_word_q[3],
         child_1_word_q[2],
@@ -283,7 +284,8 @@ always_comb begin
         child_1_word_q[0]
     };
     axis_child_2_int.tdata  = {
-        {(512-360){1'b0}},
+        {(512-72*6){1'b0}},
+        child_1_word_q[5],
         child_2_word_q[4],
         child_2_word_q[3],
         child_2_word_q[2],
