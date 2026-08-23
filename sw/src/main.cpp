@@ -71,8 +71,11 @@
 
 namespace {
 
-constexpr std::size_t kPopulationMultiplier = 20;
+constexpr std::size_t kPopulationMultiplier = 20; // must be even to work atm
 constexpr std::uint32_t kPopulationSeed = 0xC0FFEEu;
+constexpr uint32_t CSR_NUM_INDIVIDUALS_0     = 4;
+constexpr uint32_t CSR_NUM_INDIVIDUALS_1     = 6;
+constexpr uint32_t CSR_BEATS_PER_INDIVIDUAL  = 8;
 constexpr const char kDefaultProblemFile[] = "../../P-n16-k8.vrp";
 
 struct ProblemNode {
@@ -93,11 +96,46 @@ struct ProblemInstance {
 struct TourGene {
     int node_id = 0;
     bool depot_after = false;
+
+    bool operator==(const TourGene &rhs) const {
+        return node_id == rhs.node_id && depot_after == rhs.depot_after;
+    }
+
+    bool operator!=(const TourGene &rhs) const {
+        return !(*this == rhs);
+    }
 };
 
 struct Individual {
     std::vector<TourGene> tour;
     std::uint32_t fitness = 0;
+
+    bool operator==(const Individual &rhs) const {
+        return fitness == rhs.fitness && tour == rhs.tour;
+    }
+
+    bool operator!=(const Individual &rhs) const {
+        return !(*this == rhs);
+    }
+
+    friend std::ostream &operator<<(std::ostream &os, const Individual &ind) {
+        os << "Fitness: " << ind.fitness << ", Tour: ";
+        for (std::size_t i = 0; i < ind.tour.size(); ++i) {
+            const auto &gene = ind.tour[i];
+            os << gene.node_id;
+
+            if (gene.depot_after) {
+                if (i + 1 < ind.tour.size()) {
+                    os << " | ";
+                } else {
+                    os << " |";
+                }
+            } else if (i + 1 < ind.tour.size()) {
+                os << ", ";
+            }
+        }
+        return os;
+    }
 };
 
 std::string trim(const std::string &text) {
@@ -413,6 +451,94 @@ std::vector<uint8_t> encode_population_fixed(
     return buffer;
 }
 
+Individual decode_individual_fixed(
+    const ProblemInstance &problem,
+    const std::uint8_t *beat_bytes
+) {
+    Individual individual;
+    std::vector<std::uint32_t> fields;
+    fields.reserve(BEATS_PER_INDIVIDUAL * FIELDS_PER_BEAT);
+
+    // 1. Unpack FIELD_BITS (21 bits) out of each 512-bit (64-byte) beat
+    for (std::size_t beat_idx = 0; beat_idx < BEATS_PER_INDIVIDUAL; ++beat_idx) {
+        const std::uint64_t *words = reinterpret_cast<const std::uint64_t *>(
+            beat_bytes + (beat_idx * AXI_BYTES)
+        );
+
+        for (std::size_t slot = 0; slot < FIELDS_PER_BEAT; ++slot) {
+            std::size_t bit_offset = slot * FIELD_BITS;
+            std::uint32_t value = 0;
+
+            for (int bit = 0; bit < FIELD_BITS; ++bit) {
+                std::size_t abs_bit = bit_offset + bit;
+                std::size_t word_idx = abs_bit / 64;
+                std::size_t bit_in_word = abs_bit % 64;
+
+                if ((words[word_idx] >> bit_in_word) & 1ULL) {
+                    value |= (1u << bit);
+                }
+            }
+            fields.push_back(value);
+        }
+    }
+
+    // 2. Decode scalar fitness from field 0
+    individual.fitness = fields[0] & ((1u << FIELD_BITS) - 1u);
+
+    // 3. Unpack tour genes for each city (fields 1 to NUM_CITIES)
+    individual.tour.reserve(NUM_CITIES);
+    const std::uint32_t coord_mask = (1u << COORD_BITS) - 1u;
+    const std::uint32_t capacity_mask = (1u << CAPACITY_BITS) - 1u;
+
+    for (std::size_t i = 1; i <= NUM_CITIES; ++i) {
+        std::uint32_t city = fields[i];
+
+        // Extract bitfields
+        std::uint32_t x = (city >> 0) & coord_mask;
+        std::uint32_t y = (city >> COORD_BITS) & coord_mask;
+        std::uint32_t demand = (city >> (2 * COORD_BITS)) & capacity_mask;
+        bool depot_after = ((city >> (2 * COORD_BITS + CAPACITY_BITS)) & 1u) != 0u;
+
+        // Match coordinates and demand back to ProblemNode ID
+        int node_id = -1;
+        for (int id = 1; id <= problem.dimension; ++id) {
+            const auto &node = problem.nodes.at(static_cast<std::size_t>(id));
+            if (node.x == static_cast<int>(x) && 
+                node.y == static_cast<int>(y) && 
+                node.demand == static_cast<int>(demand)) {
+                node_id = id;
+                break;
+            }
+        }
+
+        if (node_id == -1) {
+            throw std::runtime_error("Failed to decode gene: no matching node found in ProblemInstance.");
+        }
+
+        individual.tour.push_back(TourGene{node_id, depot_after});
+    }
+
+    return individual;
+}
+
+std::vector<Individual> decode_population_fixed(
+    const ProblemInstance &problem,
+    const std::uint8_t *buffer,
+    std::size_t num_individuals
+) {
+    std::vector<Individual> population;
+    population.reserve(num_individuals);
+
+    const std::size_t bytes_per_individual = BEATS_PER_INDIVIDUAL * AXI_BYTES;
+
+    for (std::size_t i = 0; i < num_individuals; ++i) {
+        const std::uint8_t *ind_bytes = buffer + (i * bytes_per_individual);
+        population.push_back(decode_individual_fixed(problem, ind_bytes));
+    }
+
+    return population;
+}
+
 std::size_t round_up(std::size_t value, std::size_t alignment) {
     return ((value + alignment - 1) / alignment) * alignment;
 }
@@ -512,9 +638,9 @@ int main(int argc, char *argv[])  {
     const uint32_t reg_num_ind1 = static_cast<uint32_t>(pop_1.size());
     const uint32_t reg_beats_per_ind = static_cast<uint32_t>(BEATS_PER_INDIVIDUAL);
 
-    coyote_thread.setCSR(0, reg_num_ind0);
-    coyote_thread.setCSR(1, reg_num_ind1);
-    coyote_thread.setCSR(2, reg_beats_per_ind);
+    coyote_thread.setCSR(reg_num_ind0, CSR_NUM_INDIVIDUALS_0);
+    coyote_thread.setCSR(reg_num_ind1, CSR_NUM_INDIVIDUALS_1);
+    coyote_thread.setCSR(reg_beats_per_ind, CSR_BEATS_PER_INDIVIDUAL);
 
     HEADER("PERF DUAL STREAM LOCAL");
     std::cout << "Streaming encoded individuals across 2 streams..." << std::endl;
@@ -525,6 +651,8 @@ int main(int argc, char *argv[])  {
         coyote_thread.clearCompleted();
         std::memset(dst_mem_0, 0, bytes_0);
         std::memset(dst_mem_1, 0, bytes_1);
+        coyote_thread.setCSR(0x81, 0);
+        // TODO check if 0 can be read
     };
 
     auto bench_fn = [&]() {
@@ -551,6 +679,30 @@ int main(int argc, char *argv[])  {
     const double total_transferred_bytes = (bytes_0 + bytes_1) * N_THROUGHPUT_REPS;
     const double throughput = total_transferred_bytes / (1024.0 * 1024.0 * throughput_time * 1e-9);
     std::cout << "Average throughput: " << std::setw(8) << throughput << " MB/s" << std::endl;
+
+    // Decoding output streams after execution
+    std::vector<Individual> result_pop_0 = decode_population_fixed(problem, dst_mem_0, pop_0.size());
+    std::vector<Individual> result_pop_1 = decode_population_fixed(problem, dst_mem_1, pop_1.size());
+
+    for(int i=0; i < static_cast<int>(pop_0.size()); i+=2) {
+        if (result_pop_0[i+1] != pop_0[i]) {
+            std::cerr << "Mismatch in Stream 0 at index " << i << ":\n -" << result_pop_0[i+1] << "\n -" << pop_0[i] << std::endl;
+            return EXIT_FAILURE;
+        }
+        if (result_pop_0[i] != pop_0[i+1]) {
+            std::cerr << "Mismatch in Stream 0 at index " << i << ":\n -" << result_pop_0[i] << "\n -" << pop_0[i+1] << std::endl;
+            return EXIT_FAILURE;
+        }
+
+        if (result_pop_1[i+1] != pop_1[i]) {
+            std::cerr << "Mismatch in Stream 1 at index " << i << ":\n -" << result_pop_1[i+1] << "\n -" << pop_1[i] << std::endl;
+            return EXIT_FAILURE;
+        }
+        if (result_pop_1[i] != pop_1[i+1]) {
+            std::cerr << "Mismatch in Stream 1 at index " << i << ":\n -" << result_pop_1[i] << "\n -" << pop_1[i+1] << std::endl;
+            return EXIT_FAILURE;
+        }
+    }
 
     if (!mapped) {
         const std::size_t alloc_0 = round_up(bytes_0, coyote::PAGE_SIZE);
