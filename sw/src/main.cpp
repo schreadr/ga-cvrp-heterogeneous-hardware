@@ -43,12 +43,24 @@
 #include <vector>
 #include <sys/mman.h>
 
-// External library for easier parsing of CLI arguments by the executable
 #include <boost/program_options.hpp>
-
-// Coyote-specific includes
 #include <coyote/cBench.hpp>
 #include <coyote/cThread.hpp>
+
+// User-configurable constants 
+#define NUM_CITIES       16
+#define COORD_BITS       7
+#define CAPACITY_BITS    6
+#define FITNESS_BITS     20
+
+// Derived constants
+#define AXI_WIDTH        512
+#define AXI_BYTES        (AXI_WIDTH / 8)
+#define DEPOT_BITS       1
+#define FIELD_BITS       (2 * COORD_BITS + CAPACITY_BITS + DEPOT_BITS)   // 21 bits
+#define TOTAL_FIELDS     (1 + NUM_CITIES)                                // fitness + city entries
+#define FIELDS_PER_BEAT  (AXI_WIDTH / FIELD_BITS)                              // = 24
+#define BEATS_PER_INDIVIDUAL ((TOTAL_FIELDS + FIELDS_PER_BEAT - 1) / FIELDS_PER_BEAT)
 
 // Constants
 #define N_LATENCY_REPS 1
@@ -59,10 +71,6 @@
 
 namespace {
 
-constexpr std::size_t kAxiBeatBytes = 64;
-constexpr std::size_t kPackedWordBytes = 9;
-constexpr std::size_t kPackedFieldsPerWord = 3;
-constexpr std::size_t kPackedFieldBits = 21;
 constexpr std::size_t kPopulationMultiplier = 20;
 constexpr std::uint32_t kPopulationSeed = 0xC0FFEEu;
 constexpr const char kDefaultProblemFile[] = "../../P-n16-k8.vrp";
@@ -337,43 +345,72 @@ void write_bits_le(std::uint8_t *word_bytes, std::size_t start_bit, unsigned wid
     }
 }
 
-std::array<std::uint8_t, kAxiBeatBytes> encode_individual(const ProblemInstance &problem, const Individual &individual) {
-    constexpr std::size_t kWordsPerIndividual = 6;
+std::vector<std::array<uint64_t, 8>> encode_individual_fixed(
+    const ProblemInstance &problem,
+    const Individual &individual
+) {
+    // Build vector of field values (each fits in FIELD_BITS)
+    std::vector<uint32_t> fields;
+    fields.reserve(TOTAL_FIELDS);
+    fields.push_back(individual.fitness & ((1 << FIELD_BITS) - 1)); // fitness
 
-    std::array<std::uint8_t, kAxiBeatBytes> beat{};
-    std::vector<std::uint32_t> fields(static_cast<std::size_t>(problem.dimension) + 1u, 0u);
-
-    fields[0] = individual.fitness;
-    for (std::size_t idx = 0; idx < individual.tour.size() && idx < static_cast<std::size_t>(problem.dimension); ++idx) {
-        const auto &gene = individual.tour[idx];
-        const ProblemNode &node = problem.nodes.at(static_cast<std::size_t>(gene.node_id));
-        fields[idx + 1] = encode_city_entry(node, gene.depot_after);
+    for (const auto &gene : individual.tour) {
+        const ProblemNode &node = problem.nodes.at(gene.node_id);
+        uint32_t city = 0;
+        city |= (uint32_t)(node.x & ((1 << COORD_BITS) - 1)) << 0;
+        city |= (uint32_t)(node.y & ((1 << COORD_BITS) - 1)) << COORD_BITS;
+        city |= (uint32_t)(node.demand & ((1 << CAPACITY_BITS) - 1)) << (2 * COORD_BITS);
+        city |= (gene.depot_after ? 1u : 0u) << (2 * COORD_BITS + CAPACITY_BITS);
+        fields.push_back(city);
     }
 
-    for (std::size_t word_idx = 0; word_idx < kWordsPerIndividual; ++word_idx) {
-        std::uint8_t *word_bytes = beat.data() + word_idx * kPackedWordBytes;
-        const std::size_t field_base = word_idx * kPackedFieldsPerWord;
+    // Pad with zeros to fill the last beat completely
+    while (fields.size() < BEATS_PER_INDIVIDUAL * FIELDS_PER_BEAT) {
+        fields.push_back(0);
+    }
 
-        for (std::size_t slot = 0; slot < kPackedFieldsPerWord; ++slot) {
-            const std::size_t field_idx = field_base + slot;
-            if (field_idx >= fields.size()) {
-                continue;
+    // Pack fields into beats, each beat holding FIELDS_PER_BEAT fields
+    std::vector<std::array<uint64_t, 8>> beats(BEATS_PER_INDIVIDUAL);
+    for (size_t beat_idx = 0; beat_idx < BEATS_PER_INDIVIDUAL; ++beat_idx) {
+        std::array<uint64_t, 8> &beat = beats[beat_idx];
+        beat.fill(0);
+
+        // For each field in this beat, place it at its bit offset
+        for (size_t slot = 0; slot < FIELDS_PER_BEAT; ++slot) {
+            size_t field_idx = beat_idx * FIELDS_PER_BEAT + slot;
+            uint32_t value = fields[field_idx];
+
+            // Bit offset within the beat: slot * FIELD_BITS
+            size_t bit_offset = slot * FIELD_BITS;
+
+            // Write the FIELD_BITS bits of `value` into the beat
+            for (int bit = 0; bit < FIELD_BITS; ++bit) {
+                if ((value >> bit) & 1) {
+                    size_t abs_bit = bit_offset + bit;
+                    size_t word_idx = abs_bit / 64;
+                    size_t bit_in_word = abs_bit % 64;
+                    beat[word_idx] |= (1ULL << bit_in_word);
+                }
             }
-            const std::size_t bit_offset = 51 - slot * kPackedFieldBits;
-            write_bits_le(word_bytes, bit_offset, kPackedFieldBits, fields[field_idx]);
         }
     }
-
-    return beat;
+    return beats;
 }
 
-std::vector<std::uint8_t> encode_population(const ProblemInstance &problem, const std::vector<Individual> &population) {
-    std::vector<std::uint8_t> encoded(population.size() * kAxiBeatBytes, 0u);
-    for (std::size_t idx = 0; idx < population.size(); ++idx) {
-        const auto beat = encode_individual(problem, population[idx]);
-        std::memcpy(encoded.data() + idx * kAxiBeatBytes, beat.data(), beat.size());
+std::vector<uint8_t> encode_population_fixed(
+    const ProblemInstance &problem,
+    const std::vector<Individual> &population
+) {
+    std::vector<uint8_t> buffer;
+    buffer.reserve(population.size() * BEATS_PER_INDIVIDUAL * AXI_BYTES);
+    for (const auto &ind : population) {
+        auto beats = encode_individual_fixed(problem, ind);
+        for (const auto &beat : beats) {
+            const uint8_t *bytes = reinterpret_cast<const uint8_t *>(beat.data());
+            buffer.insert(buffer.end(), bytes, bytes + AXI_BYTES);
+        }
     }
-    return encoded;
+    return buffer;
 }
 
 std::size_t round_up(std::size_t value, std::size_t alignment) {
@@ -433,8 +470,8 @@ int main(int argc, char *argv[])  {
     const std::vector<Individual> pop_1(population.begin() + half_pop_size, population.end());
 
     // Encode each split vector individually
-    const std::vector<std::uint8_t> encoded_pop_0 = encode_population(problem, pop_0);
-    const std::vector<std::uint8_t> encoded_pop_1 = encode_population(problem, pop_1);
+    const std::vector<std::uint8_t> encoded_pop_0 = encode_population_fixed(problem, pop_0);
+    const std::vector<std::uint8_t> encoded_pop_1 = encode_population_fixed(problem, pop_1);
 
     const std::size_t bytes_0 = encoded_pop_0.size();
     const std::size_t bytes_1 = encoded_pop_1.size();
@@ -470,6 +507,14 @@ int main(int argc, char *argv[])  {
 
     coyote::localSg dst_sg_0 = { .addr = dst_mem_0, .len = bytes_0, .stream = stream, .dest = 0 };
     coyote::localSg dst_sg_1 = { .addr = dst_mem_1, .len = bytes_1, .stream = stream, .dest = 1 };
+
+    const uint32_t reg_num_ind0 = static_cast<uint32_t>(pop_0.size());
+    const uint32_t reg_num_ind1 = static_cast<uint32_t>(pop_1.size());
+    const uint32_t reg_beats_per_ind = static_cast<uint32_t>(BEATS_PER_INDIVIDUAL);
+
+    coyote_thread.setCSR(0, reg_num_ind0);
+    coyote_thread.setCSR(1, reg_num_ind1);
+    coyote_thread.setCSR(2, reg_beats_per_ind);
 
     HEADER("PERF DUAL STREAM LOCAL");
     std::cout << "Streaming encoded individuals across 2 streams..." << std::endl;

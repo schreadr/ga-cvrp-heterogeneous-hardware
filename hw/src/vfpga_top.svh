@@ -24,16 +24,56 @@
  * SOFTWARE.
  */
 
-import lynxTypes::*;
+processing_node_hls_ip inst_pn(
+    .ap_clk        (aclk),
+    .ap_rst_n      (aresetn),
 
-// Pair host and card streams as the two parents, then emit both children.
-perf_local inst_genetic_core (
-    .axis_parent_1_in (axis_host_recv[0]),
-    .axis_parent_2_in (axis_host_recv[1]),
-    .axis_child_1_out (axis_host_send[0]),
-    .axis_child_2_out (axis_host_send[1]),
-    .aclk             (aclk),
-    .aresetn          (aresetn)
+    // Coyote AXI-Lite CSR Interface Bridge
+    .s_axi_control_AWADDR      (axi_ctrl.awaddr[11:0]),
+    .s_axi_control_AWVALID     (axi_ctrl.awvalid),
+    .s_axi_control_AWREADY     (axi_ctrl.awready),
+    .s_axi_control_WDATA       (axi_ctrl.wdata),
+    .s_axi_control_WSTRB       (axi_ctrl.wstrb),
+    .s_axi_control_WVALID      (axi_ctrl.wvalid),
+    .s_axi_control_WREADY      (axi_ctrl.wready),
+    .s_axi_control_BRESP       (axi_ctrl.bresp),
+    .s_axi_control_BVALID      (axi_ctrl.bvalid),
+    .s_axi_control_BREADY      (axi_ctrl.bready),
+    .s_axi_control_ARADDR      (axi_ctrl.araddr[11:0]),
+    .s_axi_control_ARVALID     (axi_ctrl.arvalid),
+    .s_axi_control_ARREADY     (axi_ctrl.arready),
+    .s_axi_control_RDATA       (axi_ctrl.rdata),
+    .s_axi_control_RRESP       (axi_ctrl.rresp),
+    .s_axi_control_RVALID      (axi_ctrl.rvalid),
+    .s_axi_control_RREADY      (axi_ctrl.rready),
+
+    // AXI-Stream input 0
+    .in0_TDATA     (axis_host_recv[0].tdata),
+    .in0_TKEEP     (axis_host_recv[0].tkeep),
+    .in0_TLAST     (axis_host_recv[0].tlast),
+    .in0_TVALID    (axis_host_recv[0].tvalid),
+    .in0_TREADY    (axis_host_recv[0].tready),
+
+    // AXI-Stream input 1
+    .in1_TDATA     (axis_host_recv[1].tdata),
+    .in1_TKEEP     (axis_host_recv[1].tkeep),
+    .in1_TLAST     (axis_host_recv[1].tlast),
+    .in1_TVALID    (axis_host_recv[1].tvalid),
+    .in1_TREADY    (axis_host_recv[1].tready),
+
+    // AXI-Stream output 0
+    .out0_TDATA    (axis_host_send[0].tdata),
+    .out0_TKEEP    (axis_host_send[0].tkeep),
+    .out0_TLAST    (axis_host_send[0].tlast),
+    .out0_TVALID   (axis_host_send[0].tvalid),
+    .out0_TREADY   (axis_host_send[0].tready),
+
+    // AXI-Stream output 1
+    .out1_TDATA    (axis_host_send[1].tdata),
+    .out1_TKEEP    (axis_host_send[1].tkeep),
+    .out1_TLAST    (axis_host_send[1].tlast),
+    .out1_TVALID   (axis_host_send[1].tvalid),
+    .out1_TREADY   (axis_host_send[1].tready)
 );
 
 // Tie-off unused signals to avoid synthesis problems
@@ -42,11 +82,7 @@ always_comb sq_rd.tie_off_m();
 always_comb sq_wr.tie_off_m();
 always_comb cq_rd.tie_off_s();
 always_comb cq_wr.tie_off_s();
-always_comb axi_ctrl.tie_off_s();
 
-// Integrated Logic Analyzer (ILA) for debugging on hardware
-// Fairly simple ILA, primary meant as an example, to be extended when debugging actual bugs
-// See the README.md and init_ip.tcl for more details on how to use and configure ILA
 ila_perf_host inst_ila_perf_host (
     .clk(aclk),
     .probe0(axis_host_recv[0].tvalid),  // 1 bit
