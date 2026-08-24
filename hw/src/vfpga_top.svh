@@ -11,10 +11,10 @@
  * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
  * copies of the Software, and to permit persons to whom the Software is
  * furnished to do so, subject to the following conditions:
-
+ *
  * The above copyright notice and this permission notice shall be included in all
  * copies or substantial portions of the Software.
-
+ *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -24,28 +24,51 @@
  * SOFTWARE.
  */
 
+/////////////////////////////////////////////////////////
+//               CONTROL REGISTERS                    //
+///////////////////////////////////////////////////////
+// Parses the kernel configuration, set by the user from the software via setCSR(...)
+// Register 0 : Number of individuals on stream 0
+// Register 1 : Number of individuals on stream 1
+// Register 2 : Number of beats per individual; writing this register (the software
+//              should write it last) latches the configuration and forwards it
+//              to the HLS kernel over the m_axis_cfg stream
+// For more details, see hdl/ga_cvrp_axi_ctrl_parser.sv and the user software
+logic [95:0] cfg_tdata;
+logic [11:0] cfg_tkeep;
+logic        cfg_tlast;
+logic        cfg_tvalid;
+logic        cfg_tready;
+
+ga_cvrp_axi_ctrl_parser inst_ga_cvrp_axi_ctrl_parser (
+    .aclk(aclk),
+    .aresetn(aresetn),
+
+    .axi_ctrl(axi_ctrl),
+
+    .m_axis_cfg_tdata(cfg_tdata),
+    .m_axis_cfg_tkeep(cfg_tkeep),
+    .m_axis_cfg_tlast(cfg_tlast),
+    .m_axis_cfg_tvalid(cfg_tvalid),
+    .m_axis_cfg_tready(cfg_tready)
+);
+
+/////////////////////////////////////////////////////////
+//               PROCESSING NODE (HLS)                //
+///////////////////////////////////////////////////////
+// Free-running kernel; no AP control interface, hence no need to "start" it
+// from the software. The configuration is received from the parser above over
+// the cfg AXI4-Stream interface
 processing_node_hls_ip inst_pn(
     .ap_clk        (aclk),
     .ap_rst_n      (aresetn),
 
-    // Coyote AXI-Lite CSR Interface Bridge
-    .s_axi_control_AWADDR      (axi_ctrl.awaddr[11:0]),
-    .s_axi_control_AWVALID     (axi_ctrl.awvalid),
-    .s_axi_control_AWREADY     (axi_ctrl.awready),
-    .s_axi_control_WDATA       (axi_ctrl.wdata),
-    .s_axi_control_WSTRB       (axi_ctrl.wstrb),
-    .s_axi_control_WVALID      (axi_ctrl.wvalid),
-    .s_axi_control_WREADY      (axi_ctrl.wready),
-    .s_axi_control_BRESP       (axi_ctrl.bresp),
-    .s_axi_control_BVALID      (axi_ctrl.bvalid),
-    .s_axi_control_BREADY      (axi_ctrl.bready),
-    .s_axi_control_ARADDR      (axi_ctrl.araddr[11:0]),
-    .s_axi_control_ARVALID     (axi_ctrl.arvalid),
-    .s_axi_control_ARREADY     (axi_ctrl.arready),
-    .s_axi_control_RDATA       (axi_ctrl.rdata),
-    .s_axi_control_RRESP       (axi_ctrl.rresp),
-    .s_axi_control_RVALID      (axi_ctrl.rvalid),
-    .s_axi_control_RREADY      (axi_ctrl.rready),
+    // AXI4-Stream configuration input
+    .cfg_TDATA     (cfg_tdata),
+    .cfg_TKEEP     (cfg_tkeep),
+    .cfg_TLAST     (cfg_tlast),
+    .cfg_TVALID    (cfg_tvalid),
+    .cfg_TREADY    (cfg_tready),
 
     // AXI-Stream input 0
     .in0_TDATA     (axis_host_recv[0].tdata),
@@ -83,7 +106,7 @@ always_comb sq_wr.tie_off_m();
 always_comb cq_rd.tie_off_s();
 always_comb cq_wr.tie_off_s();
 
-ila_perf_host inst_ila_perf_host (
+ila_processing_node inst_ila_processing_node (
     .clk(aclk),
     .probe0(axis_host_recv[0].tvalid),  // 1 bit
     .probe1(axis_host_recv[0].tready),  // 1 bit

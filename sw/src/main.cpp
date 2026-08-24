@@ -73,9 +73,12 @@ namespace {
 
 constexpr std::size_t kPopulationMultiplier = 20; // must be even to work atm
 constexpr std::uint32_t kPopulationSeed = 0xC0FFEEu;
-constexpr uint32_t CSR_NUM_INDIVIDUALS_0     = 4;
-constexpr uint32_t CSR_NUM_INDIVIDUALS_1     = 6;
-constexpr uint32_t CSR_BEATS_PER_INDIVIDUAL  = 8;
+// Control register indices, matching the register map in ga_cvrp_axi_ctrl_parser.sv.
+// The configuration is latched and forwarded to the HLS kernel when the last
+// register (CSR_BEATS_PER_INDIVIDUAL) is written, so it must be written last.
+constexpr uint32_t CSR_NUM_INDIVIDUALS_0     = 0;
+constexpr uint32_t CSR_NUM_INDIVIDUALS_1     = 1;
+constexpr uint32_t CSR_BEATS_PER_INDIVIDUAL  = 2;
 constexpr const char kDefaultProblemFile[] = "../../P-n16-k8.vrp";
 
 struct ProblemNode {
@@ -638,6 +641,9 @@ int main(int argc, char *argv[])  {
     const uint32_t reg_num_ind1 = static_cast<uint32_t>(pop_1.size());
     const uint32_t reg_beats_per_ind = static_cast<uint32_t>(BEATS_PER_INDIVIDUAL);
 
+    // Set the kernel configuration registers; CSR_BEATS_PER_INDIVIDUAL must be
+    // written last, as the hardware latches and forwards the configuration to the
+    // HLS kernel on that write (see ga_cvrp_axi_ctrl_parser.sv)
     coyote_thread.setCSR(reg_num_ind0, CSR_NUM_INDIVIDUALS_0);
     coyote_thread.setCSR(reg_num_ind1, CSR_NUM_INDIVIDUALS_1);
     coyote_thread.setCSR(reg_beats_per_ind, CSR_BEATS_PER_INDIVIDUAL);
@@ -651,8 +657,6 @@ int main(int argc, char *argv[])  {
         coyote_thread.clearCompleted();
         std::memset(dst_mem_0, 0, bytes_0);
         std::memset(dst_mem_1, 0, bytes_1);
-        coyote_thread.setCSR(0x81, 0);
-        // TODO check if 0 can be read
     };
 
     auto bench_fn = [&]() {
