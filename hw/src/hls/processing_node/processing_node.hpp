@@ -9,15 +9,20 @@
 // Struct providing full AXI4-Stream signal bundle expected by Coyote (data path)
 typedef ap_axiu<512, 0, 0, 0> axi_word_t;
 
+// A helper struct to safely bundle the configuration over an internal HLS stream
+struct config_t {
+    int num_individuals;
+    int beats_per_individual;
+};
+
 // Continuously reads pairs of individuals from in_stream, swaps them, and writes
 // to out_stream. Free-running (infinite loop); processes one batch (num individuals)
 // per iteration.
 void swap_stream(
     hls::stream<axi_word_t> &in_stream,
     hls::stream<axi_word_t> &out_stream,
-    int num_individuals,
-    int beats_per_individual
-);
+    hls::stream<config_t> &cfg_in
+) ;
 
 // Top-level: two independent free-running streams.
 //

@@ -1,11 +1,34 @@
 #include "processing_node.hpp"
 
+// 1. New dedicated sub-function to house the spin-wait and distribute config
+void config_trigger(
+    int num_ind0, int num_ind1, int beats_per_ind,
+    hls::stream<config_t> &cfg0, hls::stream<config_t> &cfg1
+) {
+    #pragma HLS PIPELINE II=1
+    // The spin-wait loop is now safely isolated from the main DATAFLOW block structure
+    while (beats_per_ind == 0) {
+        #pragma HLS PROTOCOL
+    }
+    
+    config_t c0 = {num_ind0, beats_per_ind};
+    config_t c1 = {num_ind1, beats_per_ind};
+    
+    cfg0.write(c0);
+    cfg1.write(c1);
+}
+
+// 2. Updated worker function to read its config from the stream
 void swap_stream(
     hls::stream<axi_word_t> &in_stream,
     hls::stream<axi_word_t> &out_stream,
-    int num_individuals,
-    int beats_per_individual
+    hls::stream<config_t> &cfg_in
 ) {
+    // Read the latched configuration parameters once at startup
+    config_t cfg = cfg_in.read();
+    int num_individuals = cfg.num_individuals;
+    int beats_per_individual = cfg.beats_per_individual;
+
     // Buffers for two individuals (fixed maximum size)
     axi_word_t first[MAX_BEATS_PER_INDIVIDUAL];
     axi_word_t second[MAX_BEATS_PER_INDIVIDUAL];
@@ -96,13 +119,17 @@ void processing_node(
     // Free-running kernel: no AXI-Lite control interface / no start handshake
     #pragma HLS INTERFACE ap_ctrl_none port=return
 
-    // Wait until the software has programmed the configuration; beats_per_individual
-    // is written last, so it acts as the configuration-valid trigger
-    while (beats_per_individual == 0) {
-    }
+    // Internal structural streams to coordinate dataflow execution ordering
+    hls::stream<config_t> config0_channel("config0_channel");
+    hls::stream<config_t> config1_channel("config1_channel");
+    #pragma HLS STREAM variable=config0_channel depth=2
+    #pragma HLS STREAM variable=config1_channel depth=2
 
-    // Process the two streams concurrently
     #pragma HLS DATAFLOW
-    swap_stream(in0, out0, num_individuals0, beats_per_individual);
-    swap_stream(in1, out1, num_individuals1, beats_per_individual);
+    // Step A: Holds hardware activation until register map validates
+    config_trigger(num_individuals0, num_individuals1, beats_per_individual, config0_channel, config1_channel);
+    
+    // Step B: Parallel execution engine channels
+    swap_stream(in0, out0, config0_channel);
+    swap_stream(in1, out1, config1_channel);
 }
