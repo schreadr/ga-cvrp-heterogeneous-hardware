@@ -40,10 +40,9 @@
 
 
 // User-configurable constants 
-#define NUM_CITIES       16
+#define NUM_CITIES       15 // depot is excluded
 #define COORD_BITS       7
 #define CAPACITY_BITS    6
-#define FITNESS_BITS     20
 
 // Derived constants
 #define AXI_WIDTH        512
@@ -56,6 +55,9 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <vector>
+
+#include "ga.hpp"
 
 
 std::vector<uint8_t> encode_population_fixed(
