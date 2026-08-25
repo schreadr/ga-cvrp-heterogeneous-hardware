@@ -73,12 +73,17 @@ namespace {
 
 constexpr std::size_t kPopulationMultiplier = 20; // must be even to work atm
 constexpr std::uint32_t kPopulationSeed = 0xC0FFEEu;
-// Control register indices, matching the register map in ga_cvrp_axi_ctrl_parser.sv.
-// The configuration is latched and forwarded to the HLS kernel when the last
-// register (CSR_BEATS_PER_INDIVIDUAL) is written, so it must be written last.
-constexpr uint32_t CSR_NUM_INDIVIDUALS_0     = 0;
-constexpr uint32_t CSR_NUM_INDIVIDUALS_1     = 1;
-constexpr uint32_t CSR_BEATS_PER_INDIVIDUAL  = 2;
+// Control register indices, matching the AXI4-Lite control register map generated
+// by Vitis HLS for the scalar configuration arguments of the processing_node kernel
+// (see hw/src/hls/processing_node/processing_node.cpp). The byte offsets of the
+// kernel registers are 0x10 (num_individuals0), 0x18 (num_individuals1) and
+// 0x20 (beats_per_individual); offsets 0x00-0x0F are reserved by the AXI4-Lite
+// control block. Coyote CSRs are 64-bit wide, so the setCSR index equals
+// byte offset / 8. The kernel is free-running and starts processing once
+// beats_per_individual reads non-zero, so it must be written last.
+constexpr uint32_t CSR_NUM_INDIVIDUALS_0     = 0x10 / 8;
+constexpr uint32_t CSR_NUM_INDIVIDUALS_1     = 0x18 / 8;
+constexpr uint32_t CSR_BEATS_PER_INDIVIDUAL  = 0x20 / 8;
 constexpr const char kDefaultProblemFile[] = "../../P-n16-k8.vrp";
 
 struct ProblemNode {
@@ -641,9 +646,9 @@ int main(int argc, char *argv[])  {
     const uint32_t reg_num_ind1 = static_cast<uint32_t>(pop_1.size());
     const uint32_t reg_beats_per_ind = static_cast<uint32_t>(BEATS_PER_INDIVIDUAL);
 
-    // Set the kernel configuration registers; CSR_BEATS_PER_INDIVIDUAL must be
-    // written last, as the hardware latches and forwards the configuration to the
-    // HLS kernel on that write (see ga_cvrp_axi_ctrl_parser.sv)
+    // Set the kernel configuration registers; the free-running HLS kernel starts
+    // processing as soon as beats_per_individual reads non-zero, so it must be
+    // written last (see hw/src/hls/processing_node/processing_node.cpp)
     coyote_thread.setCSR(reg_num_ind0, CSR_NUM_INDIVIDUALS_0);
     coyote_thread.setCSR(reg_num_ind1, CSR_NUM_INDIVIDUALS_1);
     coyote_thread.setCSR(reg_beats_per_ind, CSR_BEATS_PER_INDIVIDUAL);

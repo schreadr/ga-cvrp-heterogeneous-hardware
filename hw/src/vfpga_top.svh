@@ -25,50 +25,122 @@
  */
 
 /////////////////////////////////////////////////////////
-//               CONTROL REGISTERS                    //
-///////////////////////////////////////////////////////
-// Parses the kernel configuration, set by the user from the software via setCSR(...)
-// Register 0 : Number of individuals on stream 0
-// Register 1 : Number of individuals on stream 1
-// Register 2 : Number of beats per individual; writing this register (the software
-//              should write it last) latches the configuration and forwards it
-//              to the HLS kernel over the m_axis_cfg stream
-// For more details, see hdl/ga_cvrp_axi_ctrl_parser.sv and the user software
-logic [95:0] cfg_tdata;
-logic [11:0] cfg_tkeep;
-logic        cfg_tlast;
-logic        cfg_tvalid;
-logic        cfg_tready;
+//              CONTROL REGISTER INTERFACE             //
+/////////////////////////////////////////////////////////
+// The kernel configuration values (num_individuals0, num_individuals1,
+// beats_per_individual) are scalar arguments of the HLS kernel itself. Vitis HLS
+// maps each of them to a register of the AXI4-Lite control interface generated
+// directly for the kernel (bundle 'control'); the control register handling is
+// therefore done by HLS, no custom register parser is needed anymore.
+//
+// Software programs the registers with setCSR(...):
+//   setCSR(num_individuals0,     2)  -> byte offset 0x10
+//   setCSR(num_individuals1,     3)  -> byte offset 0x18
+//   setCSR(beats_per_individual, 4)  -> byte offset 0x20 (write last)
+// (Coyote CSRs are 64-bit wide, hence the CSR index equals offset / 8; the
+// offsets 0x00-0x0F are reserved by the AXI4-Lite control block.)
+//
+// Coyote offers the user CSRs over axi_ctrl, a 64-bit AXI4-Lite bus, while the
+// HLS-generated control interface is 32-bit wide. An AXI4-Lite data width
+// converter downsizes the 64-bit accesses; since every configured value fits
+// into the lower 32 bits of a CSR write, each CSR write programs exactly one
+// kernel register.
 
-ga_cvrp_axi_ctrl_parser inst_ga_cvrp_axi_ctrl_parser (
-    .aclk(aclk),
-    .aresetn(aresetn),
+logic [31:0] hls_ctrl_awaddr;
+logic [2:0]  hls_ctrl_awprot;
+logic        hls_ctrl_awvalid;
+logic        hls_ctrl_awready;
+logic [31:0] hls_ctrl_wdata;
+logic [3:0]  hls_ctrl_wstrb;
+logic        hls_ctrl_wvalid;
+logic        hls_ctrl_wready;
+logic [1:0]  hls_ctrl_bresp;
+logic        hls_ctrl_bvalid;
+logic        hls_ctrl_bready;
+logic [31:0] hls_ctrl_araddr;
+logic [2:0]  hls_ctrl_arprot;
+logic        hls_ctrl_arvalid;
+logic        hls_ctrl_arready;
+logic [31:0] hls_ctrl_rdata;
+logic [1:0]  hls_ctrl_rresp;
+logic        hls_ctrl_rvalid;
+logic        hls_ctrl_rready;
 
-    .axi_ctrl(axi_ctrl),
+axil_ctrl_dwidth_64_32 inst_axil_ctrl_dwidth (
+    .s_axi_aclk(aclk),
+    .s_axi_aresetn(aresetn),
 
-    .m_axis_cfg_tdata(cfg_tdata),
-    .m_axis_cfg_tkeep(cfg_tkeep),
-    .m_axis_cfg_tlast(cfg_tlast),
-    .m_axis_cfg_tvalid(cfg_tvalid),
-    .m_axis_cfg_tready(cfg_tready)
+    // Slave interface: 64-bit AXI4-Lite, Coyote user CSR bus
+    .s_axi_awaddr(axi_ctrl.awaddr[31:0]),
+    .s_axi_awprot(axi_ctrl.awprot),
+    .s_axi_awvalid(axi_ctrl.awvalid),
+    .s_axi_awready(axi_ctrl.awready),
+    .s_axi_wdata(axi_ctrl.wdata),
+    .s_axi_wstrb(axi_ctrl.wstrb),
+    .s_axi_wvalid(axi_ctrl.wvalid),
+    .s_axi_wready(axi_ctrl.wready),
+    .s_axi_bresp(axi_ctrl.bresp),
+    .s_axi_bvalid(axi_ctrl.bvalid),
+    .s_axi_bready(axi_ctrl.bready),
+    .s_axi_araddr(axi_ctrl.araddr[31:0]),
+    .s_axi_arprot(axi_ctrl.arprot),
+    .s_axi_arvalid(axi_ctrl.arvalid),
+    .s_axi_arready(axi_ctrl.arready),
+    .s_axi_rdata(axi_ctrl.rdata),
+    .s_axi_rresp(axi_ctrl.rresp),
+    .s_axi_rvalid(axi_ctrl.rvalid),
+    .s_axi_rready(axi_ctrl.rready),
+
+    // Master interface: 32-bit AXI4-Lite, to the HLS kernel control registers
+    .m_axi_awaddr(hls_ctrl_awaddr),
+    .m_axi_awprot(hls_ctrl_awprot),
+    .m_axi_awvalid(hls_ctrl_awvalid),
+    .m_axi_awready(hls_ctrl_awready),
+    .m_axi_wdata(hls_ctrl_wdata),
+    .m_axi_wstrb(hls_ctrl_wstrb),
+    .m_axi_wvalid(hls_ctrl_wvalid),
+    .m_axi_wready(hls_ctrl_wready),
+    .m_axi_bresp(hls_ctrl_bresp),
+    .m_axi_bvalid(hls_ctrl_bvalid),
+    .m_axi_bready(hls_ctrl_bready),
+    .m_axi_araddr(hls_ctrl_araddr),
+    .m_axi_arprot(hls_ctrl_arprot),
+    .m_axi_arvalid(hls_ctrl_arvalid),
+    .m_axi_arready(hls_ctrl_arready),
+    .m_axi_rdata(hls_ctrl_rdata),
+    .m_axi_rresp(hls_ctrl_rresp),
+    .m_axi_rvalid(hls_ctrl_rvalid),
+    .m_axi_rready(hls_ctrl_rready)
 );
 
 /////////////////////////////////////////////////////////
 //               PROCESSING NODE (HLS)                //
-///////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////
 // Free-running kernel; no AP control interface, hence no need to "start" it
-// from the software. The configuration is received from the parser above over
-// the cfg AXI4-Stream interface
+// from the software. The configuration is received over the AXI4-Lite control
+// interface generated by HLS for the scalar arguments of the kernel
 processing_node_hls_ip inst_pn(
     .ap_clk        (aclk),
     .ap_rst_n      (aresetn),
 
-    // AXI4-Stream configuration input
-    .cfg_TDATA     (cfg_tdata),
-    .cfg_TKEEP     (cfg_tkeep),
-    .cfg_TLAST     (cfg_tlast),
-    .cfg_TVALID    (cfg_tvalid),
-    .cfg_TREADY    (cfg_tready),
+    // AXI4-Lite control interface (kernel configuration registers)
+    .s_axi_control_AWADDR (hls_ctrl_awaddr),
+    .s_axi_control_AWVALID(hls_ctrl_awvalid),
+    .s_axi_control_AWREADY(hls_ctrl_awready),
+    .s_axi_control_WDATA  (hls_ctrl_wdata),
+    .s_axi_control_WSTRB  (hls_ctrl_wstrb),
+    .s_axi_control_WVALID (hls_ctrl_wvalid),
+    .s_axi_control_WREADY (hls_ctrl_wready),
+    .s_axi_control_BRESP  (hls_ctrl_bresp),
+    .s_axi_control_BVALID (hls_ctrl_bvalid),
+    .s_axi_control_BREADY (hls_ctrl_bready),
+    .s_axi_control_ARADDR (hls_ctrl_araddr),
+    .s_axi_control_ARVALID(hls_ctrl_arvalid),
+    .s_axi_control_ARREADY(hls_ctrl_arready),
+    .s_axi_control_RDATA  (hls_ctrl_rdata),
+    .s_axi_control_RRESP  (hls_ctrl_rresp),
+    .s_axi_control_RVALID (hls_ctrl_rvalid),
+    .s_axi_control_RREADY (hls_ctrl_rready),
 
     // AXI-Stream input 0
     .in0_TDATA     (axis_host_recv[0].tdata),

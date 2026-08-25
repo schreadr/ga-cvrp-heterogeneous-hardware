@@ -3,24 +3,14 @@
 
 #include "hls_stream.h"
 #include "ap_axi_sdata.h"
-#include "ap_int.h"
 
 #define MAX_BEATS_PER_INDIVIDUAL 64
-
-// Bit layout of the 96-bit configuration word (cfg stream), matching
-// ga_cvrp_axi_ctrl_parser.sv: {beats_per_individual[31:0], num_individuals1[31:0], num_individuals0[31:0]}
-#define CFG_NUM_IND_0_OFFS    0
-#define CFG_NUM_IND_1_OFFS    32
-#define CFG_BEATS_PER_IND_OFFS 64
 
 // Struct providing full AXI4-Stream signal bundle expected by Coyote (data path)
 typedef ap_axiu<512, 0, 0, 0> axi_word_t;
 
-// Configuration word carried over the thin cfg AXI4-Stream from the SV register parser
-typedef ap_axiu<96, 0, 0, 0> cfg_word_t;
-
 // Continuously reads pairs of individuals from in_stream, swaps them, and writes
-// to out_stream. Free-running (infinite loop); process one batch (num individuals)
+// to out_stream. Free-running (infinite loop); processes one batch (num individuals)
 // per iteration.
 void swap_stream(
     hls::stream<axi_word_t> &in_stream,
@@ -29,16 +19,24 @@ void swap_stream(
     int beats_per_individual
 );
 
-// Top-level: two independent free-running streams, configuration via cfg stream.
-// The kernel has no AXI-Lite control interface (ap_ctrl_none); instead the
-// configuration registers set from software (see ga_cvrp_axi_ctrl_parser.sv)
-// are delivered over the cfg stream as a single word.
+// Top-level: two independent free-running streams.
+//
+// The configuration (num_individuals0, num_individuals1, beats_per_individual) is
+// provided as scalar function arguments. Each of them is mapped to an AXI4-Lite
+// register of the HLS-generated control interface (s_axilite), so the control
+// register handling is done by HLS directly. Software programs them with setCSR(...).
+//
+// The kernel is free-running (no AXI-Lite control handshake, ap_ctrl_none). It waits
+// until the configuration registers are programmed and then continuously processes
+// the data streams batch after batch.
 void processing_node(
     hls::stream<axi_word_t> &in0,
     hls::stream<axi_word_t> &out0,
     hls::stream<axi_word_t> &in1,
     hls::stream<axi_word_t> &out1,
-    hls::stream<cfg_word_t> &cfg
+    int num_individuals0,
+    int num_individuals1,
+    int beats_per_individual
 );
 
 #endif
