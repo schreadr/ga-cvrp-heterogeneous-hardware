@@ -65,12 +65,23 @@ std::vector<uint8_t> encode_population_fixed(
     const std::vector<Individual> &population
 );
 
+Individual decode_individual_fixed(
+    const ProblemInstance &problem,
+    const std::uint8_t *beat_bytes
+);
+
 std::vector<Individual> decode_population_fixed(
     const ProblemInstance &problem,
     const std::uint8_t *buffer,
     std::size_t num_individuals
 );
 
+void population_from_buffer(
+    const std::uint8_t *buffer,
+    std::size_t num_individuals,
+    std::vector<EncodedIndividual> &generation
+);
 
+void population_to_buffer(std::vector<EncodedIndividual> &population, std::uint8_t* bytes, bool reversedOrder=false);
 
 #endif

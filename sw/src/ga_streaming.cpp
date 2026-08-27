@@ -1,9 +1,8 @@
-#include "ga_streaming.hpp"
-
 #include <array>
+#include <cstring>
 
-#include <ga.hpp>
-
+#include "ga_streaming.hpp"
+#include "ga.hpp"
 
 void write_bits_le(std::uint8_t *word_bytes, std::size_t start_bit, unsigned width, std::uint32_t value) {
     for (unsigned bit = 0; bit < width; ++bit) {
@@ -164,4 +163,39 @@ std::vector<Individual> decode_population_fixed(
     }
 
     return population;
+}
+
+void population_from_buffer(
+    const std::uint8_t *buffer,
+    std::size_t num_individuals,
+    std::vector<EncodedIndividual> &population
+) {
+    // return a the population of ecoded individuals, each with a pointer to its bytes, read the fitness from the offset, see constants. make it as efficent as possible
+    const std::size_t bytes_per_individual = BEATS_PER_INDIVIDUAL * AXI_BYTES;
+    for (std::size_t i = 0; i < num_individuals; ++i) {
+        const std::uint8_t *ind_bytes = buffer + (i * bytes_per_individual);
+        std::uint32_t fitness;
+        std::memcpy(&fitness, ind_bytes, sizeof(fitness));
+        fitness = fitness & ((1u << FIELD_BITS) - 1u);
+        population[i].fitness=fitness;
+        population[i].bytes=ind_bytes;
+    }
+}
+
+void population_to_buffer(std::vector<EncodedIndividual> &population, std::uint8_t* bytes, bool reversedOrder=false) {
+    if (reversedOrder) {
+        for (int i=population.size()-1; i>=0; --i) {
+            // Serialize each individual and write to bytes
+            std::memcpy(bytes, population[i].bytes, BEATS_PER_INDIVIDUAL * AXI_BYTES);
+            population[i] = EncodedIndividual{bytes, population[i].fitness};
+            bytes += BEATS_PER_INDIVIDUAL * AXI_BYTES;
+        }
+    } else {
+        for (int i=0; i<population.size(); ++i) {
+            // Serialize each individual and write to bytes
+            std::memcpy(bytes, population[i].bytes, BEATS_PER_INDIVIDUAL * AXI_BYTES);
+            population[i] = EncodedIndividual{bytes, population[i].fitness};
+            bytes += BEATS_PER_INDIVIDUAL * AXI_BYTES;
+        }
+    }
 }

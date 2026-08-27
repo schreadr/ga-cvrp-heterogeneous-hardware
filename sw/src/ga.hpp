@@ -37,6 +37,7 @@
 #include <string>
 #include <vector>
 #include <iostream>
+#include <functional>
 
 struct ProblemNode {
     int id = 0;
@@ -103,6 +104,27 @@ struct Individual {
     }
 };
 
+struct EncodedIndividual {
+    const std::uint8_t* bytes;
+    std::uint32_t fitness = 0;
+
+    bool operator<(const EncodedIndividual& other) const {
+        return fitness < other.fitness;
+    }
+};
+
+struct GAParams {
+    std::size_t population_size_multiplier = 0;
+    std::size_t n_generations = 0;
+    std::uint32_t seed = 0;
+
+    std::uint8_t* buffer_src_0 = nullptr;
+    std::uint8_t* buffer_src_1 = nullptr;
+    std::uint8_t* buffer_dst_0 = nullptr;
+
+    std::uint8_t* buffer_pop = nullptr;
+};
+
 // Ceiled Euclidean distance between two problem nodes
 std::uint32_t ceil_euclidean_distance(const ProblemNode &lhs, const ProblemNode &rhs);
 
@@ -120,5 +142,14 @@ Individual build_individual(const ProblemInstance &problem, const std::vector<in
  * shuffling / rotating / reversing the customer order with a fixed seed.
  */
 std::vector<Individual> build_initial_population(const ProblemInstance &problem, std::size_t population_size, std::uint32_t population_seed);
+
+/*
+ * Update the population with the new generation, keeping the best n_keep_best individuals over both generations. The new generation is sorted by fitness in ascending order (lower fitness is better). No duplicates are allowed in the new population. If a duplicate is found, it is replaced by the next best individual from the current population.
+ */
+void update_population(std::vector<EncodedIndividual> &population, std::vector<EncodedIndividual> &new_generation, std::vector<EncodedIndividual> &new_population, int n_keep_best);
+
+void create_parent_pairs(const std::vector<EncodedIndividual> &population, std::vector<EncodedIndividual> &parents1, std::vector<EncodedIndividual> &parents2, std::uint32_t seed);
+
+void run_ga(const ProblemInstance& problem, GAParams& params, std::function<void()> create_new_generation);
 
 #endif
