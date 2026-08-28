@@ -25,6 +25,7 @@
  */
 
 #include "problem_parser.hpp"
+#include "ga_streaming.hpp"
 
 #include <algorithm>
 #include <fstream>
@@ -32,6 +33,18 @@
 #include <sstream>
 #include <stdexcept>
 #include <utility>
+#include <cmath>
+
+template <typename T>
+int bit_width(T n) {
+    if (n == 0) return 0;
+    
+    if constexpr (sizeof(T) <= sizeof(unsigned int)) {
+        return 32 - __builtin_clz(static_cast<unsigned int>(n));
+    } else {
+        return 64 - __builtin_clzll(static_cast<unsigned long long>(n));
+    }
+}
 
 std::string trim(const std::string &text) {
     const auto first = text.find_first_not_of(" \t\r\n");
@@ -162,14 +175,39 @@ ProblemInstance parse_vrp(const std::string &path) {
         min_x = std::min(min_x, problem.nodes.at(static_cast<std::size_t>(id)).x);
         min_y = std::min(min_y, problem.nodes.at(static_cast<std::size_t>(id)).y);
     }
+
+    int max_trans_x = std::numeric_limits<int>::min();
+    int max_trans_y = std::numeric_limits<int>::min();
     for (int id = 1; id <= problem.dimension; ++id) {
         problem.nodes.at(static_cast<std::size_t>(id)).x -= min_x;
         problem.nodes.at(static_cast<std::size_t>(id)).y -= min_y;
+        max_trans_x = std::max(max_trans_x, problem.nodes.at(static_cast<std::size_t>(id)).x);
+        max_trans_y = std::max(max_trans_y, problem.nodes.at(static_cast<std::size_t>(id)).y);
     }
 
-    // TODO check constant bit constraint against the problem instance (max x/y, max demand, max capacity)
-    // For example, ensure that the maximum x and y coordinates fit within COORD_BITS
-    // and that the maximum demand and capacity fit within their respective bit widths.
+    int expected_coord_bits = bit_width(std::max(max_trans_x, max_trans_y));
+    if (COORD_BITS < expected_coord_bits) {
+        throw std::runtime_error("COORD_BITS is too small for the given problem instance. Required: " + std::to_string(expected_coord_bits));
+    }
+
+    int expected_capacity_bits = bit_width(problem.capacity);
+    if (CAPACITY_BITS < expected_capacity_bits) {
+        throw std::runtime_error("CAPACITY_BITS is too small for the given problem instance (max capacity must fit in). Required: " + std::to_string(expected_capacity_bits));
+    }
+
+    int max_demand = 0;
+    for (int id = 1; id <= problem.dimension; ++id) {
+        max_demand = std::max(max_demand, problem.nodes.at(static_cast<std::size_t>(id)).demand);
+    }
+    int expected_demand_bits = bit_width(max_demand);
+    if (CAPACITY_BITS < expected_demand_bits) {
+        throw std::runtime_error("CAPACITY_BITS is too small for the given problem instance (max demand must fit in). Required: " + std::to_string(expected_demand_bits));
+    }
+
+    int max_fitness = 2 * std::ceil(std::sqrt(max_trans_x*max_trans_x + max_trans_y*max_trans_y)) * (problem.dimension - 1);
+    if (FIELD_BITS < bit_width(max_fitness)) {
+        throw std::runtime_error("FIELD_BITS is too small for the given problem instance (max fitness must fit in). Required: " + std::to_string(bit_width(max_fitness)));
+    }
 
     return problem;
 }
