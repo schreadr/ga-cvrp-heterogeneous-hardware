@@ -41,13 +41,16 @@
  *           region, is run once per stream (both threads in parallel, like in
  *           hardware) over several configurations: even/odd numbers of
  *           individuals, single beat, several beats and the maximum number of
- *           beats per individual.
+ *           beats per individual. Configuration is supplied directly as scalar
+ *           arguments (the same AXI4-Lite registers the hardware exposes).
  *   Test 3: with beats_per_individual == 0, the kernel must stay in the
  *           configuration spin-wait and neither consume nor produce data.
  *
  * The configuration scalars are plain C function arguments in simulation
  * (in hardware they are live AXI4-Lite registers), so reconfiguration at
- * runtime cannot be exercised here.
+ * runtime cannot be exercised here. TLAST is asserted only on the last beat of
+ * the whole batch (not pass-through), matching what Coyote needs to terminate a
+ * LOCAL_TRANSFER.
  *
  * The streams are allocated on the heap on purpose: the detached,
  * never-returning kernel threads keep references to them, so they must
@@ -139,10 +142,12 @@ bool read_word(hls::stream<axi_word_t> &strm, axi_word_t &word, const char *name
     return true;
 }
 
-// Verify one complete batch: swapped order of the tags plus tkeep/tlast
-// pass-through
+// Verify one complete batch: swapped order of the tags, tkeep pass-through, and
+// TLAST asserted on the very last beat of the whole batch (Coyote terminates the
+// LOCAL_TRANSFER on that TLAST).
 bool check_stream(hls::stream<axi_word_t> &strm, const char *name,
                   const std::vector<std::uint32_t> &expected, int beats_per_individual) {
+    (void)beats_per_individual;
     for (std::size_t i = 0; i < expected.size(); ++i) {
         axi_word_t word;
         if (!read_word(strm, word, name, i)) {
@@ -153,13 +158,14 @@ bool check_stream(hls::stream<axi_word_t> &strm, const char *name,
         const std::uint32_t got_tag = word.data.to_uint();
         const std::uint64_t got_keep = word.keep.to_uint64();
         const bool got_last = word.last.to_bool();
+        const bool expect_last = (i == expected.size() - 1);
 
-        if (got_tag != expected[i] || got_keep != make_keep(b) || got_last != (b == beats_per_individual - 1)) {
+        if (got_tag != expected[i] || got_keep != make_keep(b) || got_last != expect_last) {
             std::printf("FAIL %s word %zu: got tag=0x%08x keep=0x%016llx last=%d, "
                         "expected tag=0x%08x keep=0x%016llx last=%d\n",
                         name, i, got_tag, (unsigned long long)got_keep, got_last ? 1 : 0,
                         expected[i], (unsigned long long)make_keep(b),
-                        (b == beats_per_individual - 1) ? 1 : 0);
+                        expect_last ? 1 : 0);
             return false;
         }
     }
@@ -198,19 +204,17 @@ bool run_top_case() {
 // ----------------------------------------------------------------------
 // Test 2: swap_stream DATAFLOW sub-unit, both streams in parallel
 // ----------------------------------------------------------------------
+// ----------------------------------------------------------------------
+// Test 2: swap_stream unit (both streams in parallel)
+// ----------------------------------------------------------------------
 bool run_swap_case(char id, int n0, int n1, int beats) {
     Streams *s = new Streams;
-    
-    // Config stream channels to match the swap_stream interface
-    auto *cfg0 = new hls::stream<config_t>("test_cfg0");
-    auto *cfg1 = new hls::stream<config_t>("test_cfg1");
 
-    cfg0->write({n0, beats});
-    cfg1->write({n1, beats});
-
-    // Mirror the hardware DATAFLOW region: one free-running instance per stream
-    std::thread t0(swap_stream, std::ref(s->in0), std::ref(s->out0), std::ref(*cfg0));
-    std::thread t1(swap_stream, std::ref(s->in1), std::ref(s->out1), std::ref(*cfg1));
+    // swap_stream takes its configuration directly as scalar arguments (in
+    // hardware: live AXI4-Lite registers). One free-running instance per stream,
+    // mirroring the hardware DATAFLOW region.
+    std::thread t0(swap_stream, std::ref(s->in0), std::ref(s->out0), n0, beats);
+    std::thread t1(swap_stream, std::ref(s->in1), std::ref(s->out1), n1, beats);
     t0.detach();
     t1.detach();
 
