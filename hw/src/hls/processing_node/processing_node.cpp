@@ -1,83 +1,122 @@
 #include "processing_node.hpp"
+#include <hls_print.h>
 
-// swap_stream: free-running kernel for a single data stream.
-//
-// Configuration is supplied directly as scalar arguments (in hardware these are
-// the AXI4-Lite registers programmed by software via setCSR). The function
-// waits until beats_per_individual is non-zero, then continuously processes
-// num_individuals individuals in swapped pairs:
-//   (0,1) -> (1,0), (2,3) -> (3,2), ...
-// An odd trailing individual is passed through unchanged.
-//
-// TLAST is asserted on the LAST beat of the whole batch so that Coyote's
-// LOCAL_TRANSFER read-DMA can terminate the packet and report completion.
+// Helper to buffer two incoming individuals from AXI-Stream into intermediate FIFOs
+static void read_individuals(
+    hls::stream<axi_word_t> &in_stream,
+    hls::stream<ap_uint<512>> &buf_first,
+    hls::stream<ap_uint<512>> &buf_second,
+    int num_individuals,
+    int beats_per_individual
+) {
+    for (int i = 0; i < num_individuals; i += 2) {
+        // Handle odd trailing individual directly to output buffer
+        if (i + 1 >= num_individuals) {
+            for (int b = 0; b < beats_per_individual; b++) {
+                #pragma HLS PIPELINE II=1
+                buf_first.write(in_stream.read().data);
+            }
+            break;
+        }
+
+        // Buffer first individual
+        for (int b = 0; b < beats_per_individual; b++) {
+            #pragma HLS PIPELINE II=1
+            buf_first.write(in_stream.read().data);
+        }
+
+        // Buffer second individual
+        for (int b = 0; b < beats_per_individual; b++) {
+            #pragma HLS PIPELINE II=1
+            buf_second.write(in_stream.read().data);
+        }
+    }
+}
+
+// Helper to write buffered individuals in swapped order with TLAST handling
+static void write_swapped_individuals(
+    hls::stream<ap_uint<512>> &buf_first,
+    hls::stream<ap_uint<512>> &buf_second,
+    hls::stream<axi_word_t> &out_stream,
+    int num_individuals,
+    int beats_per_individual
+) {
+    for (int i = 0; i < num_individuals; i += 2) {
+        // Odd trailing individual pass-through
+        if (i + 1 >= num_individuals) {
+            for (int b = 0; b < beats_per_individual; b++) {
+                #pragma HLS PIPELINE II=1
+                axi_word_t word;
+                word.data = buf_first.read();
+                word.keep = -1;
+                word.strb = -1;
+                word.last = (b == beats_per_individual - 1) ? 1 : 0;
+                out_stream.write(word);
+            }
+            break;
+        }
+
+        bool last_pair = (i + 2 >= num_individuals);
+
+        // Stream out second individual first (TLAST is forced low)
+        for (int b = 0; b < beats_per_individual; b++) {
+            #pragma HLS PIPELINE II=1
+            axi_word_t word;
+            word.data = buf_second.read();
+            word.keep = -1;
+            word.strb = -1;
+            word.last = 0;
+            out_stream.write(word);
+        }
+
+        // Stream out first individual second (TLAST high on final beat of final pair)
+        for (int b = 0; b < beats_per_individual; b++) {
+            #pragma HLS PIPELINE II=1
+            axi_word_t word;
+            word.data = buf_first.read();
+            word.keep = -1;
+            word.strb = -1;
+            word.last = (last_pair && (b == beats_per_individual - 1)) ? 1 : 0;
+            out_stream.write(word);
+        }
+    }
+}
+
+// Swap stream kernel supporting Task-Level Dataflow pipelining
 void swap_stream(
     hls::stream<axi_word_t> &in_stream,
     hls::stream<axi_word_t> &out_stream,
     int num_individuals,
     int beats_per_individual
 ) {
-    // Wait for software to program the configuration registers.
-    while (beats_per_individual == 0) {
-        #pragma HLS PIPELINE OFF
-    }
+    // Avoid execution until scalar registers are programmed by host software
+    //while (beats_per_individual == 0 || num_individuals == 0) {
+    //    #pragma HLS PIPELINE II=1
+    //    // Spin-wait on scalar configuration registers (AXI4-Lite)
+    //}
 
-    // Buffers for two individuals (fixed maximum size)
-    axi_word_t first[MAX_BEATS_PER_INDIVIDUAL];
-    axi_word_t second[MAX_BEATS_PER_INDIVIDUAL];
-    #pragma HLS ARRAY_PARTITION variable=first cyclic factor=8 dim=1
-    #pragma HLS ARRAY_PARTITION variable=second cyclic factor=8 dim=1
+    // Stream depth sized to hold up to MAX_BEATS_PER_INDIVIDUAL
+    hls::stream<ap_uint<512>> buf_first("buf_first");
+    hls::stream<ap_uint<512>> buf_second("buf_second");
+    #pragma HLS STREAM variable=buf_first depth=MAX_BEATS_PER_INDIVIDUAL
+    #pragma HLS STREAM variable=buf_second depth=MAX_BEATS_PER_INDIVIDUAL
 
-    // Free-running: process batch after batch of individuals
-    while (true) {
-        for (int i = 0; i < num_individuals; i += 2) {
-            // If odd number, output last individual unchanged
-            if (i + 1 >= num_individuals) {
-                for (int b = 0; b < beats_per_individual; b++) {
-                    #pragma HLS PIPELINE II=1
-                    axi_word_t word = in_stream.read();
-                    word.last = (b == beats_per_individual - 1) ? 1 : 0;
-                    out_stream.write(word);
-                }
-                break;
-            }
-
-            // Read first individual
-            for (int b = 0; b < beats_per_individual; b++) {
-                #pragma HLS PIPELINE II=1
-                first[b] = in_stream.read();
-            }
-
-            // Read second individual
-            for (int b = 0; b < beats_per_individual; b++) {
-                #pragma HLS PIPELINE II=1
-                second[b] = in_stream.read();
-            }
-
-            bool last_pair = (i + 2 >= num_individuals);
-
-            // Output second individual first (never the final beat of the batch)
-            for (int b = 0; b < beats_per_individual; b++) {
-                #pragma HLS PIPELINE II=1
-                axi_word_t w = second[b];
-                w.last = 0;
-                out_stream.write(w);
-            }
-            // Output first individual second; the final beat of the whole batch
-            // carries TLAST so Coyote can terminate the LOCAL_TRANSFER.
-            for (int b = 0; b < beats_per_individual; b++) {
-                #pragma HLS PIPELINE II=1
-                axi_word_t w = first[b];
-                w.last = (last_pair && (b == beats_per_individual - 1)) ? 1 : 0;
-                out_stream.write(w);
-            }
-        }
-    }
+    // Internal task-level dataflow: concurrently read and write stream pairs
+    #pragma HLS DATAFLOW
+    read_individuals(in_stream, buf_first, buf_second, num_individuals, beats_per_individual);
+    write_swapped_individuals(buf_first, buf_second, out_stream, num_individuals, beats_per_individual);
 }
 
-// ----------------------------------------------------------------------
-// Top-level: two independent, free-running streams
-// ----------------------------------------------------------------------
+static void drive_debug_probes(
+    int num0, int num1, int beats,
+    int *dbg0, int *dbg1, int *dbg_beats
+) {
+    *dbg0 = num0;
+    *dbg1 = num1;
+    *dbg_beats = beats;
+}
+
+// Top-Level Processing Node
 void processing_node(
     hls::stream<axi_word_t> &in0,
     hls::stream<axi_word_t> &out0,
@@ -85,25 +124,35 @@ void processing_node(
     hls::stream<axi_word_t> &out1,
     int num_individuals0,
     int num_individuals1,
-    int beats_per_individual
+    int beats_per_individual,
+    // Hardware Debug Probe Ports
+    int *dbg_num_individuals0,
+    int *dbg_num_individuals1,
+    int *dbg_beats_per_individual
 ) {
-    // Expose data streaming ports as AXI4-Stream
+    // AXI4-Stream interfaces
     #pragma HLS INTERFACE axis port=in0
     #pragma HLS INTERFACE axis port=out0
     #pragma HLS INTERFACE axis port=in1
     #pragma HLS INTERFACE axis port=out1
 
-    // Expose the configuration scalars as AXI4-Lite registers (control interface
-    // generated by HLS, single bundle 'control')
+    // AXI4-Lite control interface registers
     #pragma HLS INTERFACE s_axilite port=num_individuals0 offset=0x10 bundle=control
     #pragma HLS INTERFACE s_axilite port=num_individuals1 offset=0x18 bundle=control
     #pragma HLS INTERFACE s_axilite port=beats_per_individual offset=0x20 bundle=control
 
-    // Free-running kernel: no AXI-Lite control handshake / no start handshake
+    // Hardware Debug Probes (ap_vld generates dedicated output pins for Vivado ILA)
+    #pragma HLS INTERFACE ap_vld port=dbg_num_individuals0
+    #pragma HLS INTERFACE ap_vld port=dbg_num_individuals1
+    #pragma HLS INTERFACE ap_vld port=dbg_beats_per_individual
+
+    // Free-running kernel execution control
     #pragma HLS INTERFACE ap_ctrl_none port=return
 
-    // The two streams are fully independent: run them concurrently.
+    // Run independent streams concurrently using top-level DATAFLOW (required since free running kernel)
     #pragma HLS DATAFLOW
+    drive_debug_probes(num_individuals0, num_individuals1, beats_per_individual,
+                       dbg_num_individuals0, dbg_num_individuals1, dbg_beats_per_individual);
     swap_stream(in0, out0, num_individuals0, beats_per_individual);
     swap_stream(in1, out1, num_individuals1, beats_per_individual);
 }

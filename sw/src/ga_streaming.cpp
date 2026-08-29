@@ -182,7 +182,7 @@ void population_from_buffer(
     }
 }
 
-void population_to_buffer(std::vector<EncodedIndividual> &population, std::uint8_t* bytes, bool reversedOrder=false) {
+void population_to_buffer(std::vector<EncodedIndividual> &population, std::uint8_t* bytes, bool reversedOrder) {
     if (reversedOrder) {
         for (int i=population.size()-1; i>=0; --i) {
             // Serialize each individual and write to bytes

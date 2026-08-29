@@ -49,7 +49,11 @@ void processing_node(
     hls::stream<axi_word_t> &out1,
     int num_individuals0,
     int num_individuals1,
-    int beats_per_individual
+    int beats_per_individual,
+    // Hardware Debug Probe Ports
+    int *dbg_num_individuals0,
+    int *dbg_num_individuals1,
+    int *dbg_beats_per_individual
 );
 
 #endif

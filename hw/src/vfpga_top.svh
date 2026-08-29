@@ -113,6 +113,18 @@ axil_ctrl_dwidth_64_32 inst_axil_ctrl_dwidth (
     .m_axi_rready(hls_ctrl_rready)
 );
 
+
+// debug vars
+
+(* mark_debug = "true" *) wire [31:0] dbg_num_ind0;
+(* mark_debug = "true" *) wire        dbg_num_ind0_vld;
+    
+(* mark_debug = "true" *) wire [31:0] dbg_num_ind1;
+(* mark_debug = "true" *) wire        dbg_num_ind1_vld;
+
+(* mark_debug = "true" *) wire [31:0] dbg_beats;
+(* mark_debug = "true" *) wire        dbg_beats_vld;
+
 /////////////////////////////////////////////////////////
 //               PROCESSING NODE (HLS)                //
 /////////////////////////////////////////////////////////
@@ -168,7 +180,16 @@ processing_node_hls_ip inst_pn(
     .out1_TKEEP    (axis_host_send[1].tkeep),
     .out1_TLAST    (axis_host_send[1].tlast),
     .out1_TVALID   (axis_host_send[1].tvalid),
-    .out1_TREADY   (axis_host_send[1].tready)
+    .out1_TREADY   (axis_host_send[1].tready),
+
+
+    // debug
+    .dbg_num_individuals0     (dbg_num_ind0),
+    .dbg_num_individuals0_ap_vld(dbg_num_ind0_vld),
+    .dbg_num_individuals1     (dbg_num_ind1),
+    .dbg_num_individuals1_ap_vld(dbg_num_ind1_vld),
+    .dbg_beats_per_individual (dbg_beats),
+    .dbg_beats_per_individual_ap_vld(dbg_beats_vld)
 );
 
 // Tie-off unused signals to avoid synthesis problems
@@ -195,5 +216,12 @@ ila_processing_node inst_ila_processing_node (
     .probe12(axis_host_send[1].tvalid),  // 1 bit
     .probe13(axis_host_send[1].tready),  // 1 bit
     .probe14(axis_host_send[1].tlast),   // 1 bit
-    .probe15(axis_host_send[1].tdata)    // 512 bits
+    .probe15(axis_host_send[1].tdata),    // 512 bits
+
+    .probe16     (dbg_num_ind0),
+    .probe17     (dbg_num_ind0_vld),
+    .probe18     (dbg_num_ind1),
+    .probe19     (dbg_num_ind1_vld),
+    .probe20     (dbg_beats),
+    .probe21     (dbg_beats_vld)
 );
