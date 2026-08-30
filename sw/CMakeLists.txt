@@ -45,11 +45,21 @@ endif()
 # Directory containing the executable(s) to be compiled
 set(TARGET_DIR "${CMAKE_SOURCE_DIR}/src/")
 
+# Common CVRP sources (no Coyote dependency)
+set(CVRP_SOURCES
+    ${TARGET_DIR}/ga.cpp
+    ${TARGET_DIR}/ga_streaming.cpp
+    ${TARGET_DIR}/problem_parser.cpp
+)
+
 # Create build targets and link against required libraries
 set(EXEC test)
-add_executable(${EXEC} ${TARGET_DIR}/main.cpp)
+add_executable(${EXEC} ${TARGET_DIR}/main.cpp ${CVRP_SOURCES})
 
 target_link_libraries(${EXEC} PUBLIC Coyote)
 
 find_package(Boost REQUIRED COMPONENTS program_options)
 target_link_libraries(${EXEC} PUBLIC Boost::program_options)
+
+# Standalone encode/decode unit test (no Coyote dependency)
+add_executable(test_encode_decode ${TARGET_DIR}/test_encode_decode.cpp ${CVRP_SOURCES})

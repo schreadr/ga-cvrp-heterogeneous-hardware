@@ -25,96 +25,91 @@
  */
 
 #include <cstdlib>
+#include <array>
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <cstring>
+#include <fstream>
 #include <iostream>
+#include <iomanip>
+#include <limits>
+#include <numeric>
+#include <random>
+#include <sstream>
+#include <stdexcept>
+#include <string>
+#include <utility>
+#include <vector>
 #include <sys/mman.h>
 
-// External library for easier parsing of CLI arguments by the executable
 #include <boost/program_options.hpp>
-
-// Coyote-specific includes
 #include <coyote/cBench.hpp>
 #include <coyote/cThread.hpp>
 
+#include "ga_streaming.hpp"
+#include "ga.hpp"
+#include "problem_parser.hpp"
+#include "ga_streaming.hpp"
+
 // Constants
 #define N_LATENCY_REPS 1
-#define N_THROUGHPUT_REPS 32
+#define N_THROUGHPUT_REPS 1
 
 // Default vFPGA to assign cThreads to; for designs with one region (vFPGA) this is the only possible value
 #define DEFAULT_VFPGA_ID 0
 
-// Note, how the Coyote thread is passed by reference; to avoid creating a copy of 
-// the thread object which can lead to undefined behaviour and bugs. 
-double run_bench(
-    coyote::cThread &coyote_thread, coyote::localSg &src_sg, coyote::localSg &dst_sg, 
-    int *src_mem, int *dst_mem, uint transfers, uint n_runs, bool sync_back
-) {
-    // Initialise helper benchmarking class
-    // Used for keeping track of execution times & some helper functions (mean, P25, P75 etc.)
-    coyote::cBench bench(n_runs);
-    
-    // Randomly set the source data between -512 and +512; initialise destination memory to 0
-    for (int i = 0; i < src_sg.len / sizeof(int); i++) {
-        src_mem[i] = rand() % 1024 - 512;     
-        dst_mem[i] = 0;                        
-    }
+constexpr std::size_t kPopulationMultiplier = 20; // must be even to work atm
+constexpr std::uint32_t kPopulationSeed = 0xC0FFEEu;
 
-    // Function called before every iteration of the benchmark, can be used to clear previous flags, states etc.
-    auto prep_fn = [&]() {
-        // Clear the completion counters, so that the test can be repeated multiple times independently
-        // Essentially, sets the result from the function checkCompleted(...) to zero
-        coyote_thread.clearCompleted();
-    };
+// Control register indices, matching the AXI4-Lite control register map generated
+// by Vitis HLS for the scalar configuration arguments of the processing_node kernel
+// (see hw/src/hls/processing_node/processing_node.cpp). The byte offsets of the
+// kernel registers are 0x10 (num_individuals0), 0x18 (num_individuals1) and
+// 0x20 (beats_per_individual); offsets 0x00-0x0F are reserved by the AXI4-Lite
+// control block. Coyote CSRs are 64-bit wide, so the setCSR index equals
+// byte offset / 8. The kernel is free-running and starts processing once
+// beats_per_individual reads non-zero, so it must be written last.
+constexpr uint32_t CSR_NUM_INDIVIDUALS_0     = 0x10 / 8;
+constexpr uint32_t CSR_NUM_INDIVIDUALS_1     = 0x18 / 8;
+constexpr uint32_t CSR_BEATS_PER_INDIVIDUAL  = 0x20 / 8;
+constexpr const char kDefaultProblemFile[] = "../../P-n16-k8.vrp";
 
-    // Execute benchmark
-    auto bench_fn = [&]() {
-        // Launch (queue) multiple transfers in parallel for throughput tests, or 1 in case of latency tests
-        // Recall, coyote_thread->invoke is asynchronous (can be made sync through different sgFlags)
-        for (int i = 0; i < transfers; i++) {
-            coyote_thread.invoke(coyote::CoyoteOper::LOCAL_TRANSFER, src_sg, dst_sg);
-        }
-
-        // Wait until all of them are finished; short sleep to avoid busy-waiting
-        while (coyote_thread.checkCompleted(coyote::CoyoteOper::LOCAL_TRANSFER) != transfers) {}
-    };
-
-    bench.execute(bench_fn, prep_fn);
-    
-    // Sync data back, if required (stream == CARD)
-    if (sync_back) {
-        coyote::syncSg sg_sync;
-        sg_sync = {.addr = src_mem, .len = src_sg.len }; 
-        coyote_thread.invoke(coyote::CoyoteOper::LOCAL_SYNC, sg_sync);
-
-        sg_sync = {.addr = dst_mem, .len = dst_sg.len }; 
-        coyote_thread.invoke(coyote::CoyoteOper::LOCAL_SYNC, sg_sync);
-    }
-
-    // Make sure destination matches the source + 1 (the vFPGA logic in perf_local adds 1 to every 32-bit element, i.e. integer)
-    for (int i = 0; i < src_sg.len / sizeof(int); i++) {
-        if ((src_mem[i] + 1) != dst_mem[i]) {
-            throw std::runtime_error("Wrong result!");
-        }
-    }
-
-    // Return average time taken for the data transfer
-    return bench.getAvg();
+std::size_t round_up(std::size_t value, std::size_t alignment) {
+    return ((value + alignment - 1) / alignment) * alignment;
 }
 
-int main(int argc, char *argv[])  {
-    // Run-time options; for more details see the description below
-    bool hugepages, mapped, stream;
-    unsigned int min_size, max_size, n_runs;
+std::uint8_t *allocate_buffer(coyote::cThread &coyote_thread, std::size_t bytes, bool mapped, bool hugepages) {
+    const std::size_t allocation_bytes = round_up(bytes, coyote::PAGE_SIZE);
 
-    // Parse CLI arguments using Boost, an external library, providing easy parsing of run-time parameters
-    // We can easily set the variable type, the variable used for storing the parameter and default values
-    boost::program_options::options_description runtime_options("Coyote Hello World Example");
+    if (mapped) {
+        if (hugepages) {
+            return reinterpret_cast<std::uint8_t *>(coyote_thread.getMem({coyote::CoyoteAllocType::HPF, allocation_bytes}));
+        }
+        return reinterpret_cast<std::uint8_t *>(coyote_thread.getMem({coyote::CoyoteAllocType::REG, allocation_bytes}));
+    }
+
+    if (hugepages) {
+        return reinterpret_cast<std::uint8_t *>(mmap(nullptr, allocation_bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB, -1, 0));
+    }
+
+    return reinterpret_cast<std::uint8_t *>(aligned_alloc(coyote::PAGE_SIZE, allocation_bytes));
+}
+
+// Note, how the Coyote thread is passed by reference; to avoid creating a copy of 
+// the thread object which can lead to undefined behaviour and bugs. 
+int main(int argc, char *argv[])  {
+    bool hugepages, mapped, stream;
+    unsigned int n_runs;
+    std::string vrp_file;
+
+    boost::program_options::options_description runtime_options("Coyote CVRP Dual Stream");
     runtime_options.add_options()
         ("hugepages,h", boost::program_options::value<bool>(&hugepages)->default_value(true), "Use hugepages")
-        ("mapped,m", boost::program_options::value<bool>(&mapped)->default_value(true), "Use mapped memory (see README for more details)")
-        ("stream,s", boost::program_options::value<bool>(&stream)->default_value(1), "Source / destination data stream: HOST(1) or FPGA(0)")
-        ("runs,r", boost::program_options::value<unsigned int>(&n_runs)->default_value(50), "Number of times to repeat the test")
-        ("min_size,x", boost::program_options::value<unsigned int>(&min_size)->default_value(64), "Starting (minimum) transfer size [B]")
-        ("max_size,X", boost::program_options::value<unsigned int>(&max_size)->default_value(4 * 1024 * 1024), "Ending (maximum) transfer size [B]");
+        ("mapped,m", boost::program_options::value<bool>(&mapped)->default_value(true), "Use mapped memory")
+        ("stream,s", boost::program_options::value<bool>(&stream)->default_value(true), "Source / destination data stream: HOST(1) or FPGA(0)")
+        ("runs,r", boost::program_options::value<unsigned int>(&n_runs)->default_value(1), "Number of times to repeat the test")
+        ("vrp_file,f", boost::program_options::value<std::string>(&vrp_file)->default_value(kDefaultProblemFile), "Path to the CVRP instance file");
     boost::program_options::variables_map command_line_arguments;
     boost::program_options::store(boost::program_options::parse_command_line(argc, argv, runtime_options), command_line_arguments);
     boost::program_options::notify(command_line_arguments);
@@ -124,70 +119,136 @@ int main(int argc, char *argv[])  {
     std::cout << "Enable mapped pages: " << mapped << std::endl;
     std::cout << "Data stream: " << (stream ? "HOST" : "CARD") << std::endl;
     std::cout << "Number of test runs: " << n_runs << std::endl;
-    std::cout << "Starting transfer size: " << min_size << std::endl;
-    std::cout << "Ending transfer size: " << max_size << std::endl << std::endl;
+    std::cout << "VRP file: " << vrp_file << std::endl << std::endl;
 
-    // Obtain a Coyote thread
+    const ProblemInstance problem = parse_vrp(vrp_file);
+    const std::vector<Individual> population = build_initial_population(problem, problem.dimension * kPopulationMultiplier, kPopulationSeed);
+
+    // Split the population vector into two equal halves
+    const std::size_t half_pop_size = population.size() / 2;
+    const std::vector<Individual> pop_0(population.begin(), population.begin() + half_pop_size);
+    const std::vector<Individual> pop_1(population.begin() + half_pop_size, population.end());
+
+    // Encode each split vector individually
+    const std::vector<std::uint8_t> encoded_pop_0 = encode_population_fixed(problem, pop_0);
+    const std::vector<std::uint8_t> encoded_pop_1 = encode_population_fixed(problem, pop_1);
+
+    const std::size_t bytes_0 = encoded_pop_0.size();
+    const std::size_t bytes_1 = encoded_pop_1.size();
+
+    std::cout << "Loaded problem: " << problem.name << std::endl;
+    std::cout << "Dimension: " << problem.dimension << std::endl;
+    std::cout << "Vehicle capacity: " << problem.capacity << std::endl;
+    std::cout << "Total population size: " << population.size() << " (Stream 0: " << pop_0.size() << ", Stream 1: " << pop_1.size() << ")" << std::endl;
+    std::cout << "Stream 0 payload: " << bytes_0 << " B | Stream 1 payload: " << bytes_1 << " B" << std::endl << std::endl;
+
+    // Obtain Coyote thread
     coyote::cThread coyote_thread(DEFAULT_VFPGA_ID, getpid());
 
-    // Allocate memory for source and destination data
-    // We cast to integer arrays, so that we can compare source and destination values after transfers 
-    // For more details on the difference between mapped and non-mapped memory, refer to the README for this example
-    int *src_mem, *dst_mem;
-    if (mapped) {
-        if (hugepages) {
-            src_mem = (int *) coyote_thread.getMem({coyote::CoyoteAllocType::HPF, max_size});
-            dst_mem = (int *) coyote_thread.getMem({coyote::CoyoteAllocType::HPF, max_size});
-        } else {
-            src_mem = (int *) coyote_thread.getMem({coyote::CoyoteAllocType::REG, max_size});
-            dst_mem = (int *) coyote_thread.getMem({coyote::CoyoteAllocType::REG, max_size});
+    // Allocate memory for both streams (2 inputs, 2 outputs)
+    std::uint8_t *src_mem_0 = allocate_buffer(coyote_thread, bytes_0, mapped, hugepages);
+    std::uint8_t *src_mem_1 = allocate_buffer(coyote_thread, bytes_1, mapped, hugepages);
+    std::uint8_t *dst_mem_0 = allocate_buffer(coyote_thread, bytes_0, mapped, hugepages);
+    std::uint8_t *dst_mem_1 = allocate_buffer(coyote_thread, bytes_1, mapped, hugepages);
+
+    if (!src_mem_0 || !src_mem_1 || !dst_mem_0 || !dst_mem_1) {
+        throw std::runtime_error("Could not allocate split buffers; exiting...");
+    }
+
+    // Copy encoded population data to respective allocated source buffers
+    std::memcpy(src_mem_0, encoded_pop_0.data(), bytes_0);
+    std::memcpy(src_mem_1, encoded_pop_1.data(), bytes_1);
+    std::memset(dst_mem_0, 0, bytes_0);
+    std::memset(dst_mem_1, 0, bytes_1);
+
+    // Setup Scatter-Gather descriptors for Stream 0 and Stream 1
+    coyote::localSg src_sg_0 = { .addr = src_mem_0, .len = bytes_0, .stream = stream, .dest = 0 };
+    coyote::localSg src_sg_1 = { .addr = src_mem_1, .len = bytes_1, .stream = stream, .dest = 1 };
+
+    coyote::localSg dst_sg_0 = { .addr = dst_mem_0, .len = bytes_0, .stream = stream, .dest = 0 };
+    coyote::localSg dst_sg_1 = { .addr = dst_mem_1, .len = bytes_1, .stream = stream, .dest = 1 };
+
+    const uint32_t reg_num_ind0 = static_cast<uint32_t>(pop_0.size());
+    const uint32_t reg_num_ind1 = static_cast<uint32_t>(pop_1.size());
+    const uint32_t reg_beats_per_ind = static_cast<uint32_t>(BEATS_PER_INDIVIDUAL);
+
+    // Set the kernel configuration registers; the free-running HLS kernel starts
+    // processing as soon as beats_per_individual reads non-zero, so it must be
+    // written last (see hw/src/hls/processing_node/processing_node.cpp)
+    coyote_thread.setCSR(reg_num_ind0, CSR_NUM_INDIVIDUALS_0);
+    coyote_thread.setCSR(reg_num_ind1, CSR_NUM_INDIVIDUALS_1);
+    coyote_thread.setCSR(reg_beats_per_ind, CSR_BEATS_PER_INDIVIDUAL);
+
+    HEADER("PERF DUAL STREAM LOCAL");
+    std::cout << "Streaming encoded individuals across 2 streams..." << std::endl;
+
+    coyote::cBench bench(n_runs);
+
+    auto prep_fn = [&]() {
+        coyote_thread.clearCompleted();
+        std::memset(dst_mem_0, 0, bytes_0);
+        std::memset(dst_mem_1, 0, bytes_1);
+    };
+
+    auto bench_fn = [&]() {
+        for (uint i = 0; i < N_THROUGHPUT_REPS; ++i) {
+            // Queue operations on Stream 0 and Stream 1
+            coyote_thread.invoke(coyote::CoyoteOper::LOCAL_TRANSFER, src_sg_0, dst_sg_0);
+            coyote_thread.invoke(coyote::CoyoteOper::LOCAL_TRANSFER, src_sg_1, dst_sg_1);
         }
-    } else {
-        if (hugepages) {
-            src_mem = (int *) mmap(NULL, max_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB, -1, 0);
-            dst_mem = (int *) mmap(NULL, max_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB, -1, 0);
-        } else {
-            src_mem = (int *) aligned_alloc(coyote::PAGE_SIZE, max_size);
-            dst_mem = (int *) aligned_alloc(coyote::PAGE_SIZE, max_size);
+        // Wait for both stream completions (2 transfers per iteration)
+        while (coyote_thread.checkCompleted(coyote::CoyoteOper::LOCAL_TRANSFER) != (2 * N_THROUGHPUT_REPS)) {}
+    };
+
+    bench.execute(bench_fn, prep_fn);
+
+    if (!stream) {
+        coyote::syncSg sg_sync;
+        sg_sync = {.addr = src_mem_0, .len = bytes_0 }; coyote_thread.invoke(coyote::CoyoteOper::LOCAL_SYNC, sg_sync);
+        sg_sync = {.addr = src_mem_1, .len = bytes_1 }; coyote_thread.invoke(coyote::CoyoteOper::LOCAL_SYNC, sg_sync);
+        sg_sync = {.addr = dst_mem_0, .len = bytes_0 }; coyote_thread.invoke(coyote::CoyoteOper::LOCAL_SYNC, sg_sync);
+        sg_sync = {.addr = dst_mem_1, .len = bytes_1 }; coyote_thread.invoke(coyote::CoyoteOper::LOCAL_SYNC, sg_sync);
+    }
+
+    const double throughput_time = bench.getAvg();
+    const double total_transferred_bytes = (bytes_0 + bytes_1) * N_THROUGHPUT_REPS;
+    const double throughput = total_transferred_bytes / (1024.0 * 1024.0 * throughput_time * 1e-9);
+    std::cout << "Average throughput: " << std::setw(8) << throughput << " MB/s" << std::endl;
+
+    // Decoding output streams after execution
+    std::vector<Individual> result_pop_0 = decode_population_fixed(problem, dst_mem_0, pop_0.size());
+    std::vector<Individual> result_pop_1 = decode_population_fixed(problem, dst_mem_1, pop_1.size());
+
+    for(int i=0; i < static_cast<int>(pop_0.size()); i+=2) {
+        if (result_pop_0[i+1] != pop_0[i]) {
+            std::cerr << "Mismatch in Stream 0 at index " << i << ":\n -" << result_pop_0[i+1] << "\n -" << pop_0[i] << std::endl;
+            return EXIT_FAILURE;
+        }
+        if (result_pop_0[i] != pop_0[i+1]) {
+            std::cerr << "Mismatch in Stream 0 at index " << i << ":\n -" << result_pop_0[i] << "\n -" << pop_0[i+1] << std::endl;
+            return EXIT_FAILURE;
+        }
+
+        if (result_pop_1[i+1] != pop_1[i]) {
+            std::cerr << "Mismatch in Stream 1 at index " << i << ":\n -" << result_pop_1[i+1] << "\n -" << pop_1[i] << std::endl;
+            return EXIT_FAILURE;
+        }
+        if (result_pop_1[i] != pop_1[i+1]) {
+            std::cerr << "Mismatch in Stream 1 at index " << i << ":\n -" << result_pop_1[i] << "\n -" << pop_1[i+1] << std::endl;
+            return EXIT_FAILURE;
         }
     }
 
-    // Exit if memory couldn't be allocated
-    if (!src_mem || !dst_mem) { throw std::runtime_error("Could not allocate memory; exiting..."); }
-
-    // Initialises a Scatter-Gather (SG) entry 
-    // SG entries are used in DMA operations to describe source & dest memory buffers, their addresses, sizes etc.
-    // Coyote has its own implementation of SG entires for various data movement, such as local, RDMA, TCP etc, with varying fields
-    coyote::localSg src_sg = { .addr = src_mem, .stream = stream };
-    coyote::localSg dst_sg = { .addr = dst_mem, .stream = stream };
-
-    HEADER("PERF LOCAL");
-    unsigned int curr_size = min_size;
-    while(curr_size <= max_size) {
-        // Update SG size entry
-        std::cout << "Size: " << std::setw(8) << curr_size << "; ";
-        src_sg.len = curr_size; dst_sg.len = curr_size; 
-
-        // Run throughput test
-        double throughput_time = run_bench(coyote_thread, src_sg, dst_sg, src_mem, dst_mem, N_THROUGHPUT_REPS, n_runs, !stream);
-        double throughput = ((double) N_THROUGHPUT_REPS * (double) curr_size) / (1024.0 * 1024.0 * throughput_time * 1e-9);
-        std::cout << "Average throughput: " << std::setw(8) << throughput << " MB/s; ";
-        
-        // Run latency test
-        double latency_time = run_bench(coyote_thread, src_sg, dst_sg, src_mem, dst_mem, N_LATENCY_REPS, n_runs, !stream);
-        std::cout << "Average latency: " << std::setw(8) << latency_time / 1e3 << " us" << std::endl;
-
-        // Update size and proceed to next iteration
-        curr_size *= 2;
+    if (!mapped) {
+        const std::size_t alloc_0 = round_up(bytes_0, coyote::PAGE_SIZE);
+        const std::size_t alloc_1 = round_up(bytes_1, coyote::PAGE_SIZE);
+        if (!hugepages) { 
+            free(src_mem_0); free(src_mem_1); free(dst_mem_0); free(dst_mem_1); 
+        } else { 
+            munmap(src_mem_0, alloc_0); munmap(src_mem_1, alloc_1); 
+            munmap(dst_mem_0, alloc_0); munmap(dst_mem_1, alloc_1); 
+        }
     }
 
-    // Release dynamically allocated memory & exit
-    // NOTE: For memory allocated using Coyote's internal getMem()
-    // Memory de-allocation is automatically handled in the the thread destructor
-    if(!mapped) {
-        if(!hugepages) { free(src_mem); free(dst_mem); }
-        else { munmap(src_mem, max_size); munmap(dst_mem, max_size); }
-    }
-    
     return EXIT_SUCCESS;
 }

@@ -1,0 +1,155 @@
+/**
+ * This file is part of the Coyote <https://github.com/fpgasystems/Coyote>
+ *
+ * MIT Licence
+ * Copyright (c) 2021-2025, Systems Group, ETH Zurich
+ * All rights reserved.
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+
+/**
+ * GA data structures and population generation for the CVRP.
+ * Pure host code, no Coyote dependency.
+ */
+
+#ifndef CVRP_INDIVIDUAL_HPP
+#define CVRP_INDIVIDUAL_HPP
+
+#include <cstdint>
+#include <iosfwd>
+#include <string>
+#include <vector>
+#include <iostream>
+#include <functional>
+
+struct ProblemNode {
+    int id = 0;
+    int x = 0;
+    int y = 0;
+    int demand = 0;
+};
+
+struct ProblemInstance {
+    std::string name;
+    int capacity = 0;
+    int dimension = 0;
+    int depotId = 1;
+    std::vector<ProblemNode> nodes;
+};
+
+// Number of customers of a problem instance (all nodes except the depot)
+constexpr std::size_t numCustomers(const ProblemInstance &problem) {
+    return static_cast<std::size_t>(problem.dimension - 1);
+}
+
+struct TourGene {
+    int node_id = 0;
+    bool depot_after = false;
+
+    bool operator==(const TourGene &rhs) const {
+        return node_id == rhs.node_id && depot_after == rhs.depot_after;
+    }
+
+    bool operator!=(const TourGene &rhs) const {
+        return !(*this == rhs);
+    }
+};
+
+struct Individual {
+    std::vector<TourGene> tour;
+    std::uint32_t fitness = 0;
+
+    bool operator==(const Individual &rhs) const {
+        return fitness == rhs.fitness && tour == rhs.tour;
+    }
+
+    bool operator!=(const Individual &rhs) const {
+        return !(*this == rhs);
+    }
+
+    friend std::ostream &operator<<(std::ostream &os, const Individual &ind) {
+        os << "Fitness: " << ind.fitness << ", Tour: ";
+        for (std::size_t i = 0; i < ind.tour.size(); ++i) {
+            const auto &gene = ind.tour[i];
+            os << gene.node_id;
+
+            if (gene.depot_after) {
+                if (i + 1 < ind.tour.size()) {
+                    os << " | ";
+                } else {
+                    os << " |";
+                }
+            } else if (i + 1 < ind.tour.size()) {
+                os << ", ";
+            }
+        }
+        return os;
+    }
+};
+
+struct EncodedIndividual {
+    const std::uint8_t* bytes;
+    std::uint32_t fitness = 0;
+
+    bool operator<(const EncodedIndividual& other) const {
+        return fitness < other.fitness;
+    }
+};
+
+struct GAParams {
+    std::size_t population_size_multiplier = 0;
+    std::size_t n_generations = 0;
+    std::uint32_t seed = 0;
+
+    std::uint8_t* buffer_src_0 = nullptr;
+    std::uint8_t* buffer_src_1 = nullptr;
+    std::uint8_t* buffer_dst_0 = nullptr;
+
+    std::uint8_t* buffer_pop = nullptr;
+};
+
+// Ceiled Euclidean distance between two problem nodes
+std::uint32_t ceil_euclidean_distance(const ProblemNode &lhs, const ProblemNode &rhs);
+
+// Total tour distance of an individual (depot -> ... -> depot per route)
+std::uint32_t compute_fitness(const ProblemInstance &problem, const Individual &individual);
+
+/*
+ * Build one individual from a customer visit order: greedily splits the order
+ * into routes that respect the vehicle capacity and computes the fitness.
+ */
+Individual build_individual(const ProblemInstance &problem, const std::vector<int> &customer_order);
+
+/*
+ * Build a deterministic initial population of population_size individuals by
+ * shuffling / rotating / reversing the customer order with a fixed seed.
+ */
+std::vector<Individual> build_initial_population(const ProblemInstance &problem, std::size_t population_size, std::uint32_t population_seed);
+
+/*
+ * Update the population with the new generation, keeping the best n_keep_best individuals over both generations. The new generation is sorted by fitness in ascending order (lower fitness is better). No duplicates are allowed in the new population. If a duplicate is found, it is replaced by the next best individual from the current population.
+ */
+void update_population(std::vector<EncodedIndividual> &population, std::vector<EncodedIndividual> &new_generation, std::vector<EncodedIndividual> &new_population, int n_keep_best);
+
+void create_parent_pairs(const std::vector<EncodedIndividual> &population, std::vector<EncodedIndividual> &parents1, std::vector<EncodedIndividual> &parents2, std::uint32_t seed);
+
+void run_ga(const ProblemInstance& problem, GAParams& params, std::function<void()> create_new_generation);
+
+#endif
