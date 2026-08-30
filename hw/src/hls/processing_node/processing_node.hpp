@@ -4,10 +4,22 @@
 #include "hls_stream.h"
 #include "ap_axi_sdata.h"
 
+// User-configurable encoding constants 
+#define COORD_BITS       7
+#define CAPACITY_BITS    6
+
+// User-configurable problem max size constants
 #define MAX_BEATS_PER_INDIVIDUAL 64
 
+// Encoding constants
+#define AXI_WIDTH        512
+#define AXI_BYTES        (AXI_WIDTH / 8)
+#define DEPOT_BITS       1
+#define FIELD_BITS       (2 * COORD_BITS + CAPACITY_BITS + DEPOT_BITS)
+#define FIELDS_PER_BEAT  (AXI_WIDTH / FIELD_BITS)                             
+
 // Struct providing full AXI4-Stream signal bundle expected by Coyote (data path)
-typedef ap_axiu<512, 0, 0, 0> axi_word_t;
+typedef ap_axiu<AXI_WIDTH, 0, 0, 0> axi_word_t;
 
 // Continuously reads pairs of individuals from in_stream, swaps them, and writes
 // to out_stream. Free-running (infinite loop); processes one batch

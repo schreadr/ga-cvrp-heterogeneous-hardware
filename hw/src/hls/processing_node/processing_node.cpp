@@ -4,8 +4,8 @@
 // Helper to buffer two incoming individuals from AXI-Stream into intermediate FIFOs
 static void read_individuals(
     hls::stream<axi_word_t> &in_stream,
-    hls::stream<ap_uint<512>> &buf_first,
-    hls::stream<ap_uint<512>> &buf_second,
+    hls::stream<ap_uint<AXI_WIDTH>> &buf_first,
+    hls::stream<ap_uint<AXI_WIDTH>> &buf_second,
     int num_individuals,
     int beats_per_individual
 ) {
@@ -35,8 +35,8 @@ static void read_individuals(
 
 // Helper to write buffered individuals in swapped order with TLAST handling
 static void write_swapped_individuals(
-    hls::stream<ap_uint<512>> &buf_first,
-    hls::stream<ap_uint<512>> &buf_second,
+    hls::stream<ap_uint<AXI_WIDTH>> &buf_first,
+    hls::stream<ap_uint<AXI_WIDTH>> &buf_second,
     hls::stream<axi_word_t> &out_stream,
     int num_individuals,
     int beats_per_individual
@@ -89,15 +89,9 @@ void swap_stream(
     int num_individuals,
     int beats_per_individual
 ) {
-    // Avoid execution until scalar registers are programmed by host software
-    //while (beats_per_individual == 0 || num_individuals == 0) {
-    //    #pragma HLS PIPELINE II=1
-    //    // Spin-wait on scalar configuration registers (AXI4-Lite)
-    //}
-
     // Stream depth sized to hold up to MAX_BEATS_PER_INDIVIDUAL
-    hls::stream<ap_uint<512>> buf_first("buf_first");
-    hls::stream<ap_uint<512>> buf_second("buf_second");
+    hls::stream<ap_uint<AXI_WIDTH>> buf_first("buf_first");
+    hls::stream<ap_uint<AXI_WIDTH>> buf_second("buf_second");
     #pragma HLS STREAM variable=buf_first depth=MAX_BEATS_PER_INDIVIDUAL
     #pragma HLS STREAM variable=buf_second depth=MAX_BEATS_PER_INDIVIDUAL
 
