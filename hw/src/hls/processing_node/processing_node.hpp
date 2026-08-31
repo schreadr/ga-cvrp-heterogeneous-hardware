@@ -9,7 +9,7 @@
 #define CAPACITY_BITS    6
 
 // User-configurable problem max size constants
-#define MAX_CITIES 1024
+#define MAX_CITIES 1023
 
 // Encoding constants
 #define AXI_WIDTH        512
@@ -21,19 +21,62 @@
 // AXI4-Stream payload[cite: 3]
 typedef ap_axiu<AXI_WIDTH, 0, 0, 0> axi_word_t;
 
-// Represents a single City instance (Total: 21 bits)[cite: 3]
-struct City {
-    ap_uint<COORD_BITS> coord_x;
-    ap_uint<COORD_BITS> coord_y;
-    ap_uint<CAPACITY_BITS> capacity;
-    ap_uint<DEPOT_BITS> is_depot;
-};
+// Represents a single City instance
+typedef ap_uint<FIELD_BITS> FitnessOrCity;
+typedef ap_uint<COORD_BITS> Coord; 
+typedef ap_uint<CAPACITY_BITS> Capacity; 
+typedef FitnessOrCity Individual[MAX_CITIES+1];
 
-// Struct representing a complete Individual
-struct Individual {
-    ap_uint<FIELD_BITS> fitness;
-    City cities[MAX_CITIES];
-};
+// setters and getters for the City struct fields, using bit ranges of the packed FIELD_BITS
+static inline FitnessOrCity get_fitness(Individual val) {
+    return val[0];
+}
+
+/* starting from 1 */
+static inline FitnessOrCity get_city(Individual val, int i) {
+    return val[i];
+}
+
+static inline Coord get_coord_x(FitnessOrCity val) {
+    return val.range(COORD_BITS-1, 0);
+}
+
+static inline Coord get_coord_y(FitnessOrCity val) {
+    return val.range(2*COORD_BITS-1, COORD_BITS);
+}
+
+static inline Capacity get_capacity(FitnessOrCity val) {
+    return val.range(2*COORD_BITS+CAPACITY_BITS-1, 2*COORD_BITS);
+}
+
+static inline bool get_is_depot(FitnessOrCity val) {
+    return val[2*COORD_BITS+CAPACITY_BITS];
+}
+
+static inline void set_fitness(Individual& val, FitnessOrCity x) {
+    val[0] = x;
+}
+
+static inline void set_city(Individual& val, FitnessOrCity x, int i) {
+    val[i] = x;
+}
+
+static inline void set_coord_x(FitnessOrCity& val, Coord x) {
+    val.range(COORD_BITS-1, 0) = x;
+}
+
+static inline void set_coord_y(FitnessOrCity& val, Coord y) {
+    val.range(2*COORD_BITS-1, COORD_BITS) = y;
+}
+
+static inline void set_capacity(FitnessOrCity& val, Capacity cap) {
+    val.range(2*COORD_BITS+CAPACITY_BITS-1, 2*COORD_BITS) = cap;
+}
+
+static inline void set_is_depot(FitnessOrCity& val, bool depot) {
+    val[2*COORD_BITS+CAPACITY_BITS] = depot;
+}
+
 
 // Top-level function prototype
 void processing_node(

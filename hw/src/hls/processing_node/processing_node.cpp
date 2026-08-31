@@ -1,125 +1,116 @@
 #include "processing_node.hpp"
+#include <hls_streamofblocks.h>
 
-// Helper: Pack a City struct into a field[cite: 2]
-static ap_uint<FIELD_BITS> pack_city(const City &c) {
-    #pragma HLS INLINE
-    ap_uint<FIELD_BITS> val = 0;
-    val.range(COORD_BITS-1, 0)                             = c.coord_x;
-    val.range(2*COORD_BITS-1, COORD_BITS)                  = c.coord_y;
-    val.range(2*COORD_BITS+CAPACITY_BITS-1, 2*COORD_BITS) = c.capacity;
-    val.range(2*COORD_BITS+CAPACITY_BITS, 2*COORD_BITS+CAPACITY_BITS) = c.is_depot;
-    return val;
-}
-
-// Helper: Unpack a field into a City struct[cite: 2]
-static City unpack_city(const ap_uint<FIELD_BITS> &val) {
-    #pragma HLS INLINE
-    City c;
-    c.coord_x  = val.range(COORD_BITS-1, 0);
-    c.coord_y  = val.range(2*COORD_BITS-1, COORD_BITS);
-    c.capacity = val.range(2*COORD_BITS+CAPACITY_BITS-1, 2*COORD_BITS);
-    c.is_depot = val.range(2*COORD_BITS+CAPACITY_BITS, 2*COORD_BITS+CAPACITY_BITS);
-    return c;
-}
-
-// Stage 1: Decode beats into a single Individual struct BRAM
-static void decode_individual(
+static void producer(
     hls::stream<axi_word_t> &in_stream,
-    Individual &ind,
+    hls::stream_of_blocks<Individual> &out,
+    int num_individuals,
     int num_cities
-) {
-    int total_fields = 1 + num_cities; // Field 0 = fitness, Fields 1..N = cities
-    int total_beats = (total_fields + FIELDS_PER_BEAT - 1) / FIELDS_PER_BEAT;
-
-    DECODE_LOOP: for (int b = 0; b < total_beats; b++) {
-        #pragma HLS PIPELINE II=1
-        axi_word_t word = in_stream.read();
-
-        UNPACK_FIELDS: for (int f = 0; f < FIELDS_PER_BEAT; f++) {
-            int global_idx = b * FIELDS_PER_BEAT + f;
-            int low = f * FIELD_BITS;
-            int high = low + FIELD_BITS - 1;
-
-            if (global_idx == 0) {
-                // Field 0 is the individual's fitness
-                ind.fitness = word.data.range(high, low);
-            } else if (global_idx < total_fields) {
-                // Fields 1..num_cities are the cities array
-                ind.cities[global_idx - 1] = unpack_city(word.data.range(high, low));
-            }
-        }
-    }
-}
-
-// Stage 2: Encode a single Individual struct BRAM to output beats
-static void encode_individual(
-    const Individual &ind,
-    hls::stream<axi_word_t> &out_stream,
-    int num_cities,
-    bool is_last_indiv
 ) {
     int total_fields = 1 + num_cities;
     int total_beats = (total_fields + FIELDS_PER_BEAT - 1) / FIELDS_PER_BEAT;
 
-    ENCODE_LOOP: for (int b = 0; b < total_beats; b++) {
-        #pragma HLS PIPELINE II=1
-        ap_uint<AXI_WIDTH> beat_data = 0;
+    PRODUCER_INDIV_LOOP: for (int i = 0; i < num_individuals; i++) {
+        hls::write_lock<Individual> ind(out);
+        DECODE_BEATS: for (int b = 0; b < total_beats; b++) {
+            #pragma HLS PIPELINE II=1
+            axi_word_t word = in_stream.read();
 
-        PACK_FIELDS: for (int f = 0; f < FIELDS_PER_BEAT; f++) {
-            int global_idx = b * FIELDS_PER_BEAT + f;
-            int low = f * FIELD_BITS;
-            int high = low + FIELD_BITS - 1;
+            UNPACK_FIELDS: for (int f = 0; f < FIELDS_PER_BEAT; f++) {
+                int global_idx = b * FIELDS_PER_BEAT + f;
+                int low = f * FIELD_BITS;
+                int high = low + FIELD_BITS - 1;
 
-            if (global_idx == 0) {
-                beat_data.range(high, low) = ind.fitness;
-            } else if (global_idx < total_fields) {
-                beat_data.range(high, low) = pack_city(ind.cities[global_idx - 1]);
+                // since fitness is "first" city we can set it like this
+                FitnessOrCity city_val = word.data.range(high, low);
+                set_city(ind, city_val, global_idx);
             }
         }
-
-        axi_word_t word;
-        word.data = beat_data;
-        word.keep = -1; 
-        word.strb = -1;
-        word.last = (is_last_indiv && (b == total_beats - 1)) ? 1 : 0;
-        
-        out_stream.write(word);
     }
 }
 
-// Dataflow Pipeline Wrapper for a single stream channel
+static void crossover(
+    hls::stream_of_blocks<Individual> &in,
+    hls::stream_of_blocks<Individual> &out,
+    int num_individuals,
+    int num_cities
+) {
+    CROSSOVER_INDIV_LOOP: for (int i = 0; i < num_individuals; i++) {
+        hls::read_lock<Individual> ind(in);
+        hls::write_lock<Individual> new_ind(out);
+        set_fitness(new_ind, get_fitness(ind));
+
+        CROSSOVER_CITY_LOOP: for (int c = 1; c <= num_cities; c++) {
+            #pragma HLS PIPELINE
+            FitnessOrCity city_data = get_city(ind, c);
+            set_city(new_ind, city_data, c);
+        }
+    }
+}
+
+static void consumer(
+    hls::stream_of_blocks<Individual> &in,
+    hls::stream<axi_word_t> &out_stream,
+    int num_individuals,
+    int num_cities
+) {
+    int total_fields = 1 + num_cities;
+    int total_beats = (total_fields + FIELDS_PER_BEAT - 1) / FIELDS_PER_BEAT;
+
+    CONSUMER_INDIV_LOOP: for (int i = 0; i < num_individuals; i++) {
+        hls::read_lock<Individual> ind(in);
+        ENCODE_BEATS: for (int b = 0; b < total_beats; b++) {
+            #pragma HLS PIPELINE II=1
+            ap_uint<AXI_WIDTH> beat_data = 0;
+
+            PACK_FIELDS: for (int f = 0; f < FIELDS_PER_BEAT; f++) {
+                int global_idx = b * FIELDS_PER_BEAT + f;
+                int low = f * FIELD_BITS;
+                int high = low + FIELD_BITS - 1;
+
+                // since fitness is "first" city we can set it like this
+                beat_data.range(high, low) = get_city(ind, global_idx);
+            }
+
+            axi_word_t word;
+            word.data = beat_data;
+            word.keep = -1;
+            word.strb = -1;
+            word.last = (i == num_individuals - 1 && b == total_beats - 1) ? 1 : 0;
+            out_stream.write(word);
+        }
+    }
+}
+
 static void process_stream(
     hls::stream<axi_word_t> &in,
     hls::stream<axi_word_t> &out,
     int num_individuals,
     int num_cities
 ) {
-    INDIVIDUAL_LOOP: for (int i = 0; i < num_individuals; i++) {
-        // DATAFLOW inside this loop automatically creates a Ping-Pong buffer
-        // of depth 2 for the 'ind' struct across loop iterations.
-        #pragma HLS DATAFLOW
+    #pragma HLS DATAFLOW
 
-        Individual ind;
-        #pragma HLS BIND_STORAGE variable=ind.cities type=ram_2p impl=bram
-        #pragma HLS ARRAY_PARTITION variable=ind.cities cyclic factor=FIELDS_PER_BEAT dim=1
+    hls::stream_of_blocks<Individual> A;
+    hls::stream_of_blocks<Individual> B;
 
-        bool is_last = (i == num_individuals - 1);
-
-        decode_individual(in, ind, num_cities);
-        encode_individual(ind, out, num_cities, is_last);
-    }
+    producer(in, A, num_individuals, num_cities);
+    crossover(A, B, num_individuals, num_cities);
+    consumer(B, out, num_individuals, num_cities);
 }
 
 static void drive_debug_probes(
     int num_individuals0, int num_individuals1, int num_cities,
     int *dbg0, int *dbg1, int *dbg_num_cities
 ) {
+    #pragma HLS INLINE
     *dbg0 = num_individuals0;
     *dbg1 = num_individuals1;
     *dbg_num_cities = num_cities;
 }
 
-// Main Top-Level Function[cite: 2]
+// ------------------------------------------------------------------
+// TOP-LEVEL ENTRY POINT
+// ------------------------------------------------------------------
 void processing_node(
     hls::stream<axi_word_t> &in0,
     hls::stream<axi_word_t> &out0,
@@ -147,7 +138,6 @@ void processing_node(
 
     #pragma HLS INTERFACE ap_ctrl_none port=return
 
-    // Both stream channels run concurrently in hardware
     #pragma HLS DATAFLOW
     drive_debug_probes(num_individuals0, num_individuals1, num_cities,
                        dbg_num_individuals0, dbg_num_individuals1, dbg_num_cities);
