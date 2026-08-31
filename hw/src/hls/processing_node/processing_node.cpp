@@ -12,19 +12,12 @@ static void producer(
 
     PRODUCER_INDIV_LOOP: for (int i = 0; i < num_individuals; i++) {
         hls::write_lock<Individual> ind(out);
+
         DECODE_BEATS: for (int b = 0; b < total_beats; b++) {
             #pragma HLS PIPELINE II=1
             axi_word_t word = in_stream.read();
-
-            UNPACK_FIELDS: for (int f = 0; f < FIELDS_PER_BEAT; f++) {
-                int global_idx = b * FIELDS_PER_BEAT + f;
-                int low = f * FIELD_BITS;
-                int high = low + FIELD_BITS - 1;
-
-                // since fitness is "first" city we can set it like this
-                FitnessOrCity city_val = word.data.range(high, low);
-                set_city(ind, city_val, global_idx);
-            }
+            // Store the whole beat as one memory word
+            ind[b] = word.data.range(BEAT_WIDTH - 1, 0);
         }
     }
 }
@@ -35,15 +28,19 @@ static void crossover(
     int num_individuals,
     int num_cities
 ) {
+    int total_fields = 1 + num_cities;
+    int total_beats = (total_fields + FIELDS_PER_BEAT - 1) / FIELDS_PER_BEAT;
+
     CROSSOVER_INDIV_LOOP: for (int i = 0; i < num_individuals; i++) {
         hls::read_lock<Individual> ind(in);
         hls::write_lock<Individual> new_ind(out);
-        set_fitness(new_ind, get_fitness(ind));
 
-        CROSSOVER_CITY_LOOP: for (int c = 1; c <= num_cities; c++) {
-            #pragma HLS PIPELINE
-            FitnessOrCity city_data = get_city(ind, c);
-            set_city(new_ind, city_data, c);
+        // Example: simple pass-through (copy all beats)
+        // If you need to modify individual fields, you can access them via
+        // get_field / set_field, but that would require beat-level processing.
+        CROSSOVER_BEATS: for (int b = 0; b < total_beats; b++) {
+            #pragma HLS PIPELINE II=1
+            new_ind[b] = ind[b];
         }
     }
 }
@@ -59,21 +56,11 @@ static void consumer(
 
     CONSUMER_INDIV_LOOP: for (int i = 0; i < num_individuals; i++) {
         hls::read_lock<Individual> ind(in);
+
         ENCODE_BEATS: for (int b = 0; b < total_beats; b++) {
             #pragma HLS PIPELINE II=1
-            ap_uint<AXI_WIDTH> beat_data = 0;
-
-            PACK_FIELDS: for (int f = 0; f < FIELDS_PER_BEAT; f++) {
-                int global_idx = b * FIELDS_PER_BEAT + f;
-                int low = f * FIELD_BITS;
-                int high = low + FIELD_BITS - 1;
-
-                // since fitness is "first" city we can set it like this
-                beat_data.range(high, low) = get_city(ind, global_idx);
-            }
-
             axi_word_t word;
-            word.data = beat_data;
+            word.data.range(BEAT_WIDTH - 1, 0) = ind[b];
             word.keep = -1;
             word.strb = -1;
             word.last = (i == num_individuals - 1 && b == total_beats - 1) ? 1 : 0;
@@ -108,9 +95,6 @@ static void drive_debug_probes(
     *dbg_num_cities = num_cities;
 }
 
-// ------------------------------------------------------------------
-// TOP-LEVEL ENTRY POINT
-// ------------------------------------------------------------------
 void processing_node(
     hls::stream<axi_word_t> &in0,
     hls::stream<axi_word_t> &out0,
@@ -136,6 +120,7 @@ void processing_node(
     #pragma HLS INTERFACE ap_vld port=dbg_num_individuals1
     #pragma HLS INTERFACE ap_vld port=dbg_num_cities
 
+    // Change to ap_ctrl_hs (or s_axilite) for host control
     #pragma HLS INTERFACE ap_ctrl_none port=return
 
     #pragma HLS DATAFLOW
