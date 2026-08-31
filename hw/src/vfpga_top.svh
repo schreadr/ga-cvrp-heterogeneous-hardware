@@ -36,7 +36,7 @@
 // Software programs the registers with setCSR(...):
 //   setCSR(num_individuals0,     2)  -> byte offset 0x10
 //   setCSR(num_individuals1,     3)  -> byte offset 0x18
-//   setCSR(beats_per_individual, 4)  -> byte offset 0x20 (write last)
+//   setCSR(num_cities, 4)  -> byte offset 0x20 (write last)
 // (Coyote CSRs are 64-bit wide, hence the CSR index equals offset / 8; the
 // offsets 0x00-0x0F are reserved by the AXI4-Lite control block.)
 //
@@ -122,8 +122,8 @@ axil_ctrl_dwidth_64_32 inst_axil_ctrl_dwidth (
 (* mark_debug = "true" *) wire [31:0] dbg_num_ind1;
 (* mark_debug = "true" *) wire        dbg_num_ind1_vld;
 
-(* mark_debug = "true" *) wire [31:0] dbg_beats;
-(* mark_debug = "true" *) wire        dbg_beats_vld;
+(* mark_debug = "true" *) wire [31:0] dbg_num_cit;
+(* mark_debug = "true" *) wire        dbg_num_cit_vld;
 
 /////////////////////////////////////////////////////////
 //               PROCESSING NODE (HLS)                //
@@ -188,8 +188,8 @@ processing_node_hls_ip inst_pn(
     .dbg_num_individuals0_ap_vld(dbg_num_ind0_vld),
     .dbg_num_individuals1     (dbg_num_ind1),
     .dbg_num_individuals1_ap_vld(dbg_num_ind1_vld),
-    .dbg_beats_per_individual (dbg_beats),
-    .dbg_beats_per_individual_ap_vld(dbg_beats_vld)
+    .dbg_num_cities (dbg_num_cit),
+    .dbg_num_cities_ap_vld(dbg_num_cit_vld)
 );
 
 // Tie-off unused signals to avoid synthesis problems
@@ -222,6 +222,6 @@ ila_processing_node inst_ila_processing_node (
     .probe17     (dbg_num_ind0_vld),
     .probe18     (dbg_num_ind1),
     .probe19     (dbg_num_ind1_vld),
-    .probe20     (dbg_beats),
-    .probe21     (dbg_beats_vld)
+    .probe20     (dbg_num_cit),
+    .probe21     (dbg_num_cit_vld)
 );

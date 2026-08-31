@@ -9,27 +9,30 @@
 #define CAPACITY_BITS    6
 
 // User-configurable problem max size constants
-#define MAX_BEATS_PER_INDIVIDUAL 64
+#define MAX_CITIES 1024
 
 // Encoding constants
 #define AXI_WIDTH        512
 #define AXI_BYTES        (AXI_WIDTH / 8)
 #define DEPOT_BITS       1
 #define FIELD_BITS       (2 * COORD_BITS + CAPACITY_BITS + DEPOT_BITS)
-#define FIELDS_PER_BEAT  (AXI_WIDTH / FIELD_BITS)     
+#define FIELDS_PER_BEAT  (AXI_WIDTH / FIELD_BITS)
 
-// Derived maximum cities (64 beats * 24 fields per beat = 1536 cities)
-#define MAX_CITIES       (MAX_BEATS_PER_INDIVIDUAL * FIELDS_PER_BEAT)
-
-// AXI4-Stream payload
+// AXI4-Stream payload[cite: 3]
 typedef ap_axiu<AXI_WIDTH, 0, 0, 0> axi_word_t;
 
-// Represents a single City instance (Total: 21 bits)
+// Represents a single City instance (Total: 21 bits)[cite: 3]
 struct City {
     ap_uint<COORD_BITS> coord_x;
     ap_uint<COORD_BITS> coord_y;
     ap_uint<CAPACITY_BITS> capacity;
     ap_uint<DEPOT_BITS> is_depot;
+};
+
+// Struct representing a complete Individual
+struct Individual {
+    ap_uint<FIELD_BITS> fitness;
+    City cities[MAX_CITIES];
 };
 
 // Top-level function prototype

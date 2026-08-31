@@ -72,7 +72,7 @@ constexpr std::uint32_t kPopulationSeed = 0xC0FFEEu;
 // beats_per_individual reads non-zero, so it must be written last.
 constexpr uint32_t CSR_NUM_INDIVIDUALS_0     = 0x10 / 8;
 constexpr uint32_t CSR_NUM_INDIVIDUALS_1     = 0x18 / 8;
-constexpr uint32_t CSR_BEATS_PER_INDIVIDUAL  = 0x20 / 8;
+constexpr uint32_t CSR_NUM_CITIES  = 0x20 / 8;
 constexpr const char kDefaultProblemFile[] = "../../P-n16-k8.vrp";
 
 std::size_t round_up(std::size_t value, std::size_t alignment) {
@@ -170,14 +170,19 @@ int main(int argc, char *argv[])  {
 
     const uint32_t reg_num_ind0 = static_cast<uint32_t>(pop_0.size());
     const uint32_t reg_num_ind1 = static_cast<uint32_t>(pop_1.size());
-    const uint32_t reg_beats_per_ind = static_cast<uint32_t>(BEATS_PER_INDIVIDUAL);
+    // depot is excluded from the number of cities
+    const uint32_t reg_num_cities = problem.dimension - 1;
 
     // Set the kernel configuration registers; the free-running HLS kernel starts
     // processing as soon as beats_per_individual reads non-zero, so it must be
     // written last (see hw/src/hls/processing_node/processing_node.cpp)
     coyote_thread.setCSR(reg_num_ind0, CSR_NUM_INDIVIDUALS_0);
     coyote_thread.setCSR(reg_num_ind1, CSR_NUM_INDIVIDUALS_1);
-    coyote_thread.setCSR(reg_beats_per_ind, CSR_BEATS_PER_INDIVIDUAL);
+    coyote_thread.setCSR(reg_num_cities, CSR_NUM_CITIES);
+
+    std::cout << coyote_thread.getCSR(CSR_NUM_INDIVIDUALS_0) << " individuals on Stream 0" << std::endl;
+    std::cout << coyote_thread.getCSR(CSR_NUM_INDIVIDUALS_1) << " individuals on Stream 1" << std::endl;
+    std::cout << coyote_thread.getCSR(CSR_NUM_CITIES) << " num cities" << std::endl << std::endl;
 
     HEADER("PERF DUAL STREAM LOCAL");
     std::cout << "Streaming encoded individuals across 2 streams..." << std::endl;
@@ -219,22 +224,13 @@ int main(int argc, char *argv[])  {
     std::vector<Individual> result_pop_0 = decode_population_fixed(problem, dst_mem_0, pop_0.size());
     std::vector<Individual> result_pop_1 = decode_population_fixed(problem, dst_mem_1, pop_1.size());
 
-    for(int i=0; i < static_cast<int>(pop_0.size()); i+=2) {
-        if (result_pop_0[i+1] != pop_0[i]) {
-            std::cerr << "Mismatch in Stream 0 at index " << i << ":\n -" << result_pop_0[i+1] << "\n -" << pop_0[i] << std::endl;
+    for(int i=0; i < static_cast<int>(pop_0.size()); i++) {
+        if (result_pop_0[i] != pop_0[i]) {
+            std::cerr << "Mismatch in Stream 0 at index " << i << ":\n -" << result_pop_0[i] << "\n -" << pop_0[i] << std::endl;
             return EXIT_FAILURE;
         }
-        if (result_pop_0[i] != pop_0[i+1]) {
-            std::cerr << "Mismatch in Stream 0 at index " << i << ":\n -" << result_pop_0[i] << "\n -" << pop_0[i+1] << std::endl;
-            return EXIT_FAILURE;
-        }
-
-        if (result_pop_1[i+1] != pop_1[i]) {
-            std::cerr << "Mismatch in Stream 1 at index " << i << ":\n -" << result_pop_1[i+1] << "\n -" << pop_1[i] << std::endl;
-            return EXIT_FAILURE;
-        }
-        if (result_pop_1[i] != pop_1[i+1]) {
-            std::cerr << "Mismatch in Stream 1 at index " << i << ":\n -" << result_pop_1[i] << "\n -" << pop_1[i+1] << std::endl;
+        if (result_pop_1[i] != pop_1[i]) {
+            std::cerr << "Mismatch in Stream 1 at index " << i << ":\n -" << result_pop_1[i] << "\n -" << pop_1[i] << std::endl;
             return EXIT_FAILURE;
         }
     }
