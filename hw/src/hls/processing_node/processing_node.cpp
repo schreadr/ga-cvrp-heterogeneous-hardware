@@ -1,116 +1,97 @@
 #include "processing_node.hpp"
-#include <hls_print.h>
 
-// Helper to buffer two incoming individuals from AXI-Stream into intermediate FIFOs
-static void read_individuals(
-    hls::stream<axi_word_t> &in_stream,
-    hls::stream<ap_uint<AXI_WIDTH>> &buf_first,
-    hls::stream<ap_uint<AXI_WIDTH>> &buf_second,
-    int num_individuals,
-    int beats_per_individual
-) {
-    for (int i = 0; i < num_individuals; i += 2) {
-        // Handle odd trailing individual directly to output buffer
-        if (i + 1 >= num_individuals) {
-            for (int b = 0; b < beats_per_individual; b++) {
-                #pragma HLS PIPELINE II=1
-                buf_first.write(in_stream.read().data);
+// Helper: Pack a City struct into a 21-bit field
+static ap_uint<FIELD_BITS> pack_city(const City &c) {
+    #pragma HLS INLINE
+    ap_uint<FIELD_BITS> val = 0;
+    val.range(COORD_BITS-1, 0)   = c.coord_x;
+    val.range(2*COORD_BITS-1, COORD_BITS)  = c.coord_y;
+    val.range(2*COORD_BITS+CAPACITY_BITS-1, 2*COORD_BITS) = c.capacity;
+    val.range(2*COORD_BITS+CAPACITY_BITS, 2*COORD_BITS+CAPACITY_BITS) = c.is_depot;
+    return val;
+}
+
+// Helper: Unpack a 21-bit field into a City struct
+static City unpack_city(const ap_uint<FIELD_BITS> &val) {
+    #pragma HLS INLINE
+    City c;
+    c.coord_x  = val.range(COORD_BITS-1, 0);
+    c.coord_y  = val.range(2*COORD_BITS-1, COORD_BITS);
+    c.capacity = val.range(2*COORD_BITS+CAPACITY_BITS-1, 2*COORD_BITS);
+    c.is_depot = val.range(2*COORD_BITS+CAPACITY_BITS, 2*COORD_BITS+CAPACITY_BITS);
+    return c;
+}
+
+// Stage 1: Decode stream into BRAM
+static void decode_to_bram(hls::stream<axi_word_t> &in_stream, City bram[MAX_CITIES], int num_cities) {
+    int total_beats = (num_cities + FIELDS_PER_BEAT - 1) / FIELDS_PER_BEAT;
+
+    DECODE_LOOP: for (int b = 0; b < total_beats; b++) {
+        #pragma HLS PIPELINE II=1
+        axi_word_t word = in_stream.read();
+
+        UNPACK_FIELDS: for (int f = 0; f < FIELDS_PER_BEAT; f++) {
+            int global_idx = b * FIELDS_PER_BEAT + f;
+            int low = f * FIELD_BITS;
+            int high = low + FIELD_BITS - 1;
+
+            if (global_idx < num_cities) {
+                bram[global_idx] = unpack_city(word.data.range(high, low));
             }
-            break;
-        }
-
-        // Buffer first individual
-        for (int b = 0; b < beats_per_individual; b++) {
-            #pragma HLS PIPELINE II=1
-            buf_first.write(in_stream.read().data);
-        }
-
-        // Buffer second individual
-        for (int b = 0; b < beats_per_individual; b++) {
-            #pragma HLS PIPELINE II=1
-            buf_second.write(in_stream.read().data);
         }
     }
 }
 
-// Helper to write buffered individuals in swapped order with TLAST handling
-static void write_swapped_individuals(
-    hls::stream<ap_uint<AXI_WIDTH>> &buf_first,
-    hls::stream<ap_uint<AXI_WIDTH>> &buf_second,
-    hls::stream<axi_word_t> &out_stream,
-    int num_individuals,
-    int beats_per_individual
-) {
-    for (int i = 0; i < num_individuals; i += 2) {
-        // Odd trailing individual pass-through
-        if (i + 1 >= num_individuals) {
-            for (int b = 0; b < beats_per_individual; b++) {
-                #pragma HLS PIPELINE II=1
-                axi_word_t word;
-                word.data = buf_first.read();
-                word.keep = -1;
-                word.strb = -1;
-                word.last = (b == beats_per_individual - 1) ? 1 : 0;
-                out_stream.write(word);
+// Stage 2: Encode from BRAM to stream
+static void encode_from_bram(City bram[MAX_CITIES], hls::stream<axi_word_t> &out_stream, int num_cities, bool is_last_indiv) {
+    int total_beats = (num_cities + FIELDS_PER_BEAT - 1) / FIELDS_PER_BEAT;
+
+    ENCODE_LOOP: for (int b = 0; b < total_beats; b++) {
+        #pragma HLS PIPELINE II=1
+        ap_uint<AXI_WIDTH> beat_data = 0;
+
+        PACK_FIELDS: for (int f = 0; f < FIELDS_PER_BEAT; f++) {
+            int global_idx = b * FIELDS_PER_BEAT + f;
+            int low = f * FIELD_BITS;
+            int high = low + FIELD_BITS - 1;
+
+            if (global_idx < num_cities) {
+                beat_data.range(high, low) = pack_city(bram[global_idx]);
             }
-            break;
         }
 
-        bool last_pair = (i + 2 >= num_individuals);
-
-        // Stream out second individual first (TLAST is forced low)
-        for (int b = 0; b < beats_per_individual; b++) {
-            #pragma HLS PIPELINE II=1
-            axi_word_t word;
-            word.data = buf_second.read();
-            word.keep = -1;
-            word.strb = -1;
-            word.last = 0;
-            out_stream.write(word);
-        }
-
-        // Stream out first individual second (TLAST high on final beat of final pair)
-        for (int b = 0; b < beats_per_individual; b++) {
-            #pragma HLS PIPELINE II=1
-            axi_word_t word;
-            word.data = buf_first.read();
-            word.keep = -1;
-            word.strb = -1;
-            word.last = (last_pair && (b == beats_per_individual - 1)) ? 1 : 0;
-            out_stream.write(word);
-        }
+        axi_word_t word;
+        word.data = beat_data;
+        word.keep = -1; // = 0xFFFFFFFFFFFFFFFF
+        word.strb = -1;
+        word.last = (is_last_indiv && (b == total_beats - 1)) ? 1 : 0;
+        
+        out_stream.write(word);
     }
 }
 
-// Swap stream kernel supporting Task-Level Dataflow pipelining
-void swap_stream(
-    hls::stream<axi_word_t> &in_stream,
-    hls::stream<axi_word_t> &out_stream,
+// Dataflow Pipeline Wrapper for a single stream channel
+static void process_stream(
+    hls::stream<axi_word_t> &in,
+    hls::stream<axi_word_t> &out,
     int num_individuals,
-    int beats_per_individual
+    int num_cities
 ) {
-    // Stream depth sized to hold up to MAX_BEATS_PER_INDIVIDUAL
-    hls::stream<ap_uint<AXI_WIDTH>> buf_first("buf_first");
-    hls::stream<ap_uint<AXI_WIDTH>> buf_second("buf_second");
-    #pragma HLS STREAM variable=buf_first depth=MAX_BEATS_PER_INDIVIDUAL
-    #pragma HLS STREAM variable=buf_second depth=MAX_BEATS_PER_INDIVIDUAL
+    INDIVIDUAL_LOOP: for (int i = 0; i < num_individuals; i++) {
+        // Enforce Macro-Architecture Ping-Pong Buffering
+        #pragma HLS DATAFLOW
 
-    // Internal task-level dataflow: concurrently read and write stream pairs
-    #pragma HLS DATAFLOW
-    read_individuals(in_stream, buf_first, buf_second, num_individuals, beats_per_individual);
-    write_swapped_individuals(buf_first, buf_second, out_stream, num_individuals, beats_per_individual);
+        City bram[MAX_CITIES];
+        #pragma HLS BIND_STORAGE variable=bram type=ram_2p impl=bram
+
+        bool is_last = (i == num_individuals - 1);
+
+        decode_to_bram(in, bram, num_cities);
+        encode_from_bram(bram, out, num_cities, is_last);
+    }
 }
 
-static void drive_debug_probes(
-    int num0, int num1, int beats,
-    int *dbg0, int *dbg1, int *dbg_beats
-) {
-    *dbg0 = num0;
-    *dbg1 = num1;
-    *dbg_beats = beats;
-}
-
-// Top-Level Processing Node
+// Main Top-Level Function
 void processing_node(
     hls::stream<axi_word_t> &in0,
     hls::stream<axi_word_t> &out0,
@@ -118,35 +99,32 @@ void processing_node(
     hls::stream<axi_word_t> &out1,
     int num_individuals0,
     int num_individuals1,
-    int beats_per_individual,
-    // Hardware Debug Probe Ports
+    int num_cities,
     int *dbg_num_individuals0,
     int *dbg_num_individuals1,
-    int *dbg_beats_per_individual
+    int *dbg_num_cities
 ) {
-    // AXI4-Stream interfaces
     #pragma HLS INTERFACE axis port=in0
     #pragma HLS INTERFACE axis port=out0
     #pragma HLS INTERFACE axis port=in1
     #pragma HLS INTERFACE axis port=out1
 
-    // AXI4-Lite control interface registers
     #pragma HLS INTERFACE s_axilite port=num_individuals0 offset=0x10 bundle=control
     #pragma HLS INTERFACE s_axilite port=num_individuals1 offset=0x18 bundle=control
-    #pragma HLS INTERFACE s_axilite port=beats_per_individual offset=0x20 bundle=control
+    #pragma HLS INTERFACE s_axilite port=num_cities offset=0x20 bundle=control
 
-    // Hardware Debug Probes (ap_vld generates dedicated output pins for Vivado ILA)
     #pragma HLS INTERFACE ap_vld port=dbg_num_individuals0
     #pragma HLS INTERFACE ap_vld port=dbg_num_individuals1
-    #pragma HLS INTERFACE ap_vld port=dbg_beats_per_individual
+    #pragma HLS INTERFACE ap_vld port=dbg_num_cities
 
-    // Free-running kernel execution control
     #pragma HLS INTERFACE ap_ctrl_none port=return
 
-    // Run independent streams concurrently using top-level DATAFLOW (required since free running kernel)
+    *dbg_num_individuals0 = num_individuals0;
+    *dbg_num_individuals1 = num_individuals1;
+    *dbg_num_cities = num_cities;
+
+    // Both streams process entirely in parallel (Spatial Parallelism)
     #pragma HLS DATAFLOW
-    drive_debug_probes(num_individuals0, num_individuals1, beats_per_individual,
-                       dbg_num_individuals0, dbg_num_individuals1, dbg_beats_per_individual);
-    swap_stream(in0, out0, num_individuals0, beats_per_individual);
-    swap_stream(in1, out1, num_individuals1, beats_per_individual);
+    process_stream(in0, out0, num_individuals0, num_cities);
+    process_stream(in1, out1, num_individuals1, num_cities);
 }
