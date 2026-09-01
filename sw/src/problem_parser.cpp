@@ -70,8 +70,9 @@ ProblemInstance parse_vrp(const std::string &path) {
     }
 
     ProblemInstance problem;
-    std::vector<ProblemNode> nodes;
+    std::vector<ProblemNode> all_nodes;
     int expected_dimension = -1;
+    int depot_id = -1;
 
     enum class Section {
         Header,
@@ -108,7 +109,7 @@ ProblemInstance parse_vrp(const std::string &path) {
                 problem.name = value_after_colon(line);
             } else if (line.rfind("DIMENSION", 0) == 0) {
                 expected_dimension = std::stoi(value_after_colon(line));
-                nodes.resize(static_cast<std::size_t>(expected_dimension) + 1);
+                all_nodes.resize(static_cast<std::size_t>(expected_dimension) + 1);
             } else if (line.rfind("CAPACITY", 0) == 0) {
                 problem.capacity = std::stoi(value_after_colon(line));
             }
@@ -123,10 +124,10 @@ ProblemInstance parse_vrp(const std::string &path) {
             if (!(iss >> id >> x >> y)) {
                 throw std::runtime_error("Failed to parse NODE_COORD_SECTION line: " + line);
             }
-            if (nodes.empty()) {
+            if (all_nodes.empty()) {
                 throw std::runtime_error("DIMENSION must appear before NODE_COORD_SECTION");
             }
-            nodes.at(static_cast<std::size_t>(id)) = ProblemNode{id, x, y, 0};
+            all_nodes.at(static_cast<std::size_t>(id)) = ProblemNode{id, x, y, 0};
             continue;
         }
 
@@ -137,52 +138,65 @@ ProblemInstance parse_vrp(const std::string &path) {
             if (!(iss >> id >> demand)) {
                 throw std::runtime_error("Failed to parse DEMAND_SECTION line: " + line);
             }
-            if (nodes.empty()) {
+            if (all_nodes.empty()) {
                 throw std::runtime_error("DIMENSION must appear before DEMAND_SECTION");
             }
-            nodes.at(static_cast<std::size_t>(id)).demand = demand;
+            all_nodes.at(static_cast<std::size_t>(id)).demand = demand;
             continue;
         }
 
         if (section == Section::Depot) {
-            int depot_id = 0;
+            int value = 0;
             std::istringstream iss(line);
-            if (!(iss >> depot_id)) {
+            if (!(iss >> value)) {
                 throw std::runtime_error("Failed to parse DEPOT_SECTION line: " + line);
             }
-            if (depot_id == -1) {
+            if (value == -1) {
                 section = Section::Header;
                 continue;
             }
-            problem.depotId = depot_id;
+            depot_id = value;
             continue;
         }
     }
 
-    if (expected_dimension <= 0 || nodes.size() != static_cast<std::size_t>(expected_dimension) + 1) {
+    if (expected_dimension <= 0 || all_nodes.size() != static_cast<std::size_t>(expected_dimension) + 1) {
         throw std::runtime_error("VRP file did not provide a valid DIMENSION");
     }
     if (problem.capacity <= 0) {
         throw std::runtime_error("VRP file did not provide a valid CAPACITY");
     }
+    if (depot_id <= 0 || depot_id > expected_dimension) {
+        throw std::runtime_error("VRP file did not provide a valid depot ID");
+    }
 
     problem.dimension = expected_dimension;
-    problem.nodes = std::move(nodes);
 
+    // Normalize coordinates by subtracting minimum x / y (including depot)
     int min_x = std::numeric_limits<int>::max();
     int min_y = std::numeric_limits<int>::max();
     for (int id = 1; id <= problem.dimension; ++id) {
-        min_x = std::min(min_x, problem.nodes.at(static_cast<std::size_t>(id)).x);
-        min_y = std::min(min_y, problem.nodes.at(static_cast<std::size_t>(id)).y);
+        min_x = std::min(min_x, all_nodes.at(static_cast<std::size_t>(id)).x);
+        min_y = std::min(min_y, all_nodes.at(static_cast<std::size_t>(id)).y);
     }
 
     int max_trans_x = std::numeric_limits<int>::min();
     int max_trans_y = std::numeric_limits<int>::min();
     for (int id = 1; id <= problem.dimension; ++id) {
-        problem.nodes.at(static_cast<std::size_t>(id)).x -= min_x;
-        problem.nodes.at(static_cast<std::size_t>(id)).y -= min_y;
-        max_trans_x = std::max(max_trans_x, problem.nodes.at(static_cast<std::size_t>(id)).x);
-        max_trans_y = std::max(max_trans_y, problem.nodes.at(static_cast<std::size_t>(id)).y);
+        all_nodes.at(static_cast<std::size_t>(id)).x -= min_x;
+        all_nodes.at(static_cast<std::size_t>(id)).y -= min_y;
+        max_trans_x = std::max(max_trans_x, all_nodes.at(static_cast<std::size_t>(id)).x);
+        max_trans_y = std::max(max_trans_y, all_nodes.at(static_cast<std::size_t>(id)).y);
+    }
+
+    // Separate depot from customers: depot is stored separately, customers get 0-based indices
+    problem.depot = all_nodes.at(static_cast<std::size_t>(depot_id));
+    for (int id = 1; id <= problem.dimension; ++id) {
+        if (id != depot_id) {
+            ProblemNode customer = all_nodes.at(static_cast<std::size_t>(id));
+            customer.id = static_cast<int>(problem.nodes.size());
+            problem.nodes.push_back(customer);
+        }
     }
 
     int expected_coord_bits = bit_width(std::max(max_trans_x, max_trans_y));
@@ -196,8 +210,8 @@ ProblemInstance parse_vrp(const std::string &path) {
     }
 
     int max_demand = 0;
-    for (int id = 1; id <= problem.dimension; ++id) {
-        max_demand = std::max(max_demand, problem.nodes.at(static_cast<std::size_t>(id)).demand);
+    for (const auto &node : problem.nodes) {
+        max_demand = std::max(max_demand, node.demand);
     }
     int expected_demand_bits = bit_width(max_demand);
     if (CAPACITY_BITS < expected_demand_bits) {

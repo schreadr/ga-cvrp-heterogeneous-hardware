@@ -41,7 +41,7 @@ std::uint32_t ceil_euclidean_distance(const ProblemNode &lhs, const ProblemNode 
 }
 
 std::uint32_t compute_fitness(const ProblemInstance &problem, const Individual &individual) {
-    const ProblemNode &depot = problem.nodes.at(static_cast<std::size_t>(problem.depotId));
+    const ProblemNode &depot = problem.depot;
     const ProblemNode *previous = &depot;
     std::uint32_t total_distance = 0;
 
@@ -99,11 +99,9 @@ std::vector<Individual> build_initial_population(const ProblemInstance &problem,
     std::mt19937 rng(seed);
 
     std::vector<int> customer_ids;
-    customer_ids.reserve(numCustomers(problem));
-    for (int id = 1; id <= problem.dimension; ++id) {
-        if (id != problem.depotId) {
-            customer_ids.push_back(id);
-        }
+    customer_ids.reserve(problem.nodes.size());
+    for (int id = 0; id < static_cast<int>(problem.nodes.size()); ++id) {
+        customer_ids.push_back(id);
     }
 
     for (std::size_t individual_idx = 0; individual_idx < population_size; ++individual_idx) {
@@ -221,21 +219,21 @@ void run_ga(const ProblemInstance& problem, GAParams& params, std::function<void
     std::uint8_t *pop_buffer = params.buffer_pop;
 
     std::memcpy(pop_buffer, encoded_population.data(), n_bytes);
-    population_from_buffer(pop_buffer, pop_size, population);
+    population_from_buffer(pop_buffer, pop_size, population, problem.dimension);
     
     std::sort(population.get().begin(), population.get().end());
 
     for (int i=0; i< params.n_generations; i++){
         create_parent_pairs(population, parents1, parents2, new_seed());
-        population_to_buffer(parents1, buffer_src_0);
-        population_to_buffer(parents2, buffer_src_1);
+        population_to_buffer(parents1, buffer_src_0, problem.dimension);
+        population_to_buffer(parents2, buffer_src_1, problem.dimension);
 
         create_new_generation();
 
-        population_from_buffer(buffer_dst_0, pop_size, next_generation);
+        population_from_buffer(buffer_dst_0, pop_size, next_generation, problem.dimension);
         update_population(population, next_generation, next_population, 100);
         std::swap(population, next_population);
-        population_to_buffer(population, pop_buffer, true);
+        population_to_buffer(population, pop_buffer,problem.dimension, true);
 
         std::cout << "Best fitness in iteration " << i << ": " << population.get()[0].fitness << std::endl;
     }

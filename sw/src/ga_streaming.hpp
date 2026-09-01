@@ -38,25 +38,11 @@
 #ifndef GA_STREAMING_HPP
 #define GA_STREAMING_HPP
 
-
-// User-configurable constants 
-#define NUM_CITIES       15 // depot is excluded
-#define COORD_BITS       7
-#define CAPACITY_BITS    6
-
-// Derived constants
-#define AXI_WIDTH        512
-#define AXI_BYTES        (AXI_WIDTH / 8)
-#define DEPOT_BITS       1
-#define FIELD_BITS       (2 * COORD_BITS + CAPACITY_BITS + DEPOT_BITS)   // 21 bits
-#define TOTAL_FIELDS     (1 + NUM_CITIES)                                // fitness + city entries
-#define FIELDS_PER_BEAT  (AXI_WIDTH / FIELD_BITS)                              // = 24
-#define BEATS_PER_INDIVIDUAL ((TOTAL_FIELDS + FIELDS_PER_BEAT - 1) / FIELDS_PER_BEAT)
-
 #include <cstddef>
 #include <cstdint>
 #include <vector>
 
+#include "ga_encoding_constants.hpp"
 #include "ga.hpp"
 
 
@@ -79,9 +65,10 @@ std::vector<Individual> decode_population_fixed(
 void population_from_buffer(
     const std::uint8_t *buffer,
     std::size_t num_individuals,
-    std::vector<EncodedIndividual> &generation
+    std::vector<EncodedIndividual> &population,
+    int problem_dimension
 );
 
-void population_to_buffer(std::vector<EncodedIndividual> &population, std::uint8_t* bytes, bool reversedOrder=false);
+void population_to_buffer(std::vector<EncodedIndividual> &population, std::uint8_t* bytes, int problem_dimension, bool reversedOrder=false);
 
 #endif

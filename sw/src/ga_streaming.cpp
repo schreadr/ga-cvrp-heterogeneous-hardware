@@ -18,36 +18,39 @@ std::vector<std::array<uint64_t, 8>> encode_individual_fixed(
     const Individual &individual
 ) {
     std::vector<uint32_t> fields;
-    fields.reserve(TOTAL_FIELDS);
+    fields.reserve(problem.dimension);
 
     // 1. Fitness field: LSB placed at bit 0 of field 0
     fields.push_back(individual.fitness & ((1u << FIELD_BITS) - 1u));
 
     // 2. City fields: each integer LSB-aligned to its starting offset L
     for (const auto &gene : individual.tour) {
-        const ProblemNode &node = problem.nodes.at(gene.node_id);
+        const ProblemNode &node = problem.nodes.at(static_cast<std::size_t>(gene.node_id));
 
+        uint32_t id_val    = static_cast<uint32_t>(gene.node_id) & ((1u << NODE_ID_BITS) - 1u);
         uint32_t x_val     = static_cast<uint32_t>(node.x) & ((1u << COORD_BITS) - 1u);
         uint32_t y_val     = static_cast<uint32_t>(node.y) & ((1u << COORD_BITS) - 1u);
         uint32_t cap_val   = static_cast<uint32_t>(node.demand) & ((1u << CAPACITY_BITS) - 1u);
         uint32_t depot_val = gene.depot_after ? 1u : 0u;
 
         uint32_t city = 0;
-        city |= (x_val << 0);                                       // Interval [COORD_BITS-1 : 0]
-        city |= (y_val << COORD_BITS);                              // Interval [2*COORD_BITS-1 : COORD_BITS]
-        city |= (cap_val << (2 * COORD_BITS));                      // Interval [2*COORD_BITS+CAPACITY_BITS-1 : 2*COORD_BITS]
-        city |= (depot_val << (2 * COORD_BITS + CAPACITY_BITS));    // Interval [2*COORD_BITS+CAPACITY_BITS]
+        city |= (x_val << 0);                                              // Interval [COORD_BITS-1 : 0]
+        city |= (y_val << COORD_BITS);                                     // Interval [2*COORD_BITS-1 : COORD_BITS]
+        city |= (cap_val << (2 * COORD_BITS));                             // Interval [2*COORD_BITS+CAPACITY_BITS-1 : 2*COORD_BITS]
+        city |= (depot_val << (2 * COORD_BITS + CAPACITY_BITS));           // Interval [2*COORD_BITS+CAPACITY_BITS]
+        city |= (id_val << (2 * COORD_BITS + CAPACITY_BITS + DEPOT_BITS)); // Interval [FIELD_BITS-1 : FIELD_BITS-NODE_ID_BITS]
 
         fields.push_back(city);
     }
 
-    while (fields.size() < BEATS_PER_INDIVIDUAL * FIELDS_PER_BEAT) {
+    const int beats_per_individual = get_total_beats(static_cast<int>(problem.nodes.size()));
+    while (fields.size() < beats_per_individual * FIELDS_PER_BEAT) {
         fields.push_back(0);
     }
 
     // Write fields LSB-first directly into 512-bit beat buffer
-    std::vector<std::array<uint64_t, 8>> beats(BEATS_PER_INDIVIDUAL);
-    for (size_t beat_idx = 0; beat_idx < BEATS_PER_INDIVIDUAL; ++beat_idx) {
+    std::vector<std::array<uint64_t, 8>> beats(beats_per_individual);
+    for (size_t beat_idx = 0; beat_idx < beats_per_individual; ++beat_idx) {
         std::array<uint64_t, 8> &beat = beats[beat_idx];
         beat.fill(0);
 
@@ -71,8 +74,10 @@ std::vector<uint8_t> encode_population_fixed(
     const ProblemInstance &problem,
     const std::vector<Individual> &population
 ) {
+    const int beats_per_individual = get_total_beats(static_cast<int>(problem.nodes.size()));
+
     std::vector<uint8_t> buffer;
-    buffer.reserve(population.size() * BEATS_PER_INDIVIDUAL * AXI_BYTES);
+    buffer.reserve(population.size() * beats_per_individual * AXI_BYTES);
     for (const auto &ind : population) {
         auto beats = encode_individual_fixed(problem, ind);
         for (const auto &beat : beats) {
@@ -87,11 +92,13 @@ Individual decode_individual_fixed(
     const ProblemInstance &problem,
     const std::uint8_t *beat_bytes
 ) {
+    const int beats_per_individual = get_total_beats(static_cast<int>(problem.nodes.size()));
+
     Individual individual;
     std::vector<std::uint32_t> fields;
-    fields.reserve(BEATS_PER_INDIVIDUAL * FIELDS_PER_BEAT);
+    fields.reserve(beats_per_individual * FIELDS_PER_BEAT);
 
-    for (std::size_t beat_idx = 0; beat_idx < BEATS_PER_INDIVIDUAL; ++beat_idx) {
+    for (std::size_t beat_idx = 0; beat_idx < beats_per_individual; ++beat_idx) {
         const std::uint64_t *words = reinterpret_cast<const std::uint64_t *>(
             beat_bytes + (beat_idx * AXI_BYTES)
         );
@@ -114,7 +121,8 @@ Individual decode_individual_fixed(
 
     const std::uint32_t coord_mask    = (1u << COORD_BITS) - 1u;
     const std::uint32_t capacity_mask = (1u << CAPACITY_BITS) - 1u;
-    const std::size_t num_cities       = static_cast<std::size_t>(problem.dimension - 1);
+    const std::uint32_t id_mask       = (1u << NODE_ID_BITS) - 1u;
+    const std::size_t num_cities       = problem.nodes.size();
 
     individual.tour.reserve(num_cities);
     for (std::size_t i = 1; i <= num_cities; ++i) {
@@ -125,20 +133,21 @@ Individual decode_individual_fixed(
         std::uint32_t y      = (city >> COORD_BITS) & coord_mask;
         std::uint32_t demand = (city >> (2 * COORD_BITS)) & capacity_mask;
         bool depot_after     = ((city >> (2 * COORD_BITS + CAPACITY_BITS)) & 1u) != 0u;
+        std::uint32_t node_id_enc = (city >> (2 * COORD_BITS + CAPACITY_BITS + DEPOT_BITS)) & id_mask;
 
-        int node_id = -1;
-        for (int id = 1; id <= problem.dimension; ++id) {
-            const auto &node = problem.nodes.at(static_cast<std::size_t>(id));
-            // unique points assumed
-            if (node.x == static_cast<int>(x) && 
-                node.y == static_cast<int>(y)) {
-                node_id = id;
-                break;
+        // Validate the encoded node_id matches the problem node
+        int node_id = static_cast<int>(node_id_enc);
+        if (node_id >= 0 && node_id < static_cast<int>(problem.nodes.size())) {
+            const auto &node = problem.nodes.at(static_cast<std::size_t>(node_id));
+            if (node.x != static_cast<int>(x) || node.y != static_cast<int>(y)) {
+                std::cout << "Decoded node_id: " << node_id << ", x: " << x << ", y: " << y
+                          << ", demand: " << demand << ", depot_after: " << depot_after
+                          << " but ProblemInstance has x: " << node.x << ", y: " << node.y
+                          << std::endl;
+                throw std::runtime_error("Decoded node_id does not match coordinates in ProblemInstance. ");
             }
-        }
-
-        if (node_id == -1) {
-            throw std::runtime_error("Failed to decode gene: no matching node found in ProblemInstance.");
+        } else {
+            throw std::runtime_error("Decoded node_id is out of range.");
         }
 
         individual.tour.push_back(TourGene{node_id, depot_after});
@@ -152,10 +161,12 @@ std::vector<Individual> decode_population_fixed(
     const std::uint8_t *buffer,
     std::size_t num_individuals
 ) {
+    const int beats_per_individual = get_total_beats(static_cast<int>(problem.nodes.size()));
+
     std::vector<Individual> population;
     population.reserve(num_individuals);
 
-    const std::size_t bytes_per_individual = BEATS_PER_INDIVIDUAL * AXI_BYTES;
+    const std::size_t bytes_per_individual = beats_per_individual * AXI_BYTES;
 
     for (std::size_t i = 0; i < num_individuals; ++i) {
         const std::uint8_t *ind_bytes = buffer + (i * bytes_per_individual);
@@ -168,10 +179,12 @@ std::vector<Individual> decode_population_fixed(
 void population_from_buffer(
     const std::uint8_t *buffer,
     std::size_t num_individuals,
-    std::vector<EncodedIndividual> &population
+    std::vector<EncodedIndividual> &population,
+    int problem_dimension
 ) {
+    const int beats_per_individual = get_total_beats(problem_dimension - 1);
     // return a the population of ecoded individuals, each with a pointer to its bytes, read the fitness from the offset, see constants. make it as efficent as possible
-    const std::size_t bytes_per_individual = BEATS_PER_INDIVIDUAL * AXI_BYTES;
+    const std::size_t bytes_per_individual = beats_per_individual * AXI_BYTES;
     for (std::size_t i = 0; i < num_individuals; ++i) {
         const std::uint8_t *ind_bytes = buffer + (i * bytes_per_individual);
         std::uint32_t fitness;
@@ -182,20 +195,21 @@ void population_from_buffer(
     }
 }
 
-void population_to_buffer(std::vector<EncodedIndividual> &population, std::uint8_t* bytes, bool reversedOrder) {
+void population_to_buffer(std::vector<EncodedIndividual> &population, std::uint8_t* bytes, int problem_dimension, bool reversedOrder) {
+    const int beats_per_individual = get_total_beats(problem_dimension - 1);
     if (reversedOrder) {
         for (int i=population.size()-1; i>=0; --i) {
             // Serialize each individual and write to bytes
-            std::memcpy(bytes, population[i].bytes, BEATS_PER_INDIVIDUAL * AXI_BYTES);
+            std::memcpy(bytes, population[i].bytes, beats_per_individual * AXI_BYTES);
             population[i] = EncodedIndividual{bytes, population[i].fitness};
-            bytes += BEATS_PER_INDIVIDUAL * AXI_BYTES;
+            bytes += beats_per_individual * AXI_BYTES;
         }
     } else {
         for (int i=0; i<population.size(); ++i) {
             // Serialize each individual and write to bytes
-            std::memcpy(bytes, population[i].bytes, BEATS_PER_INDIVIDUAL * AXI_BYTES);
+            std::memcpy(bytes, population[i].bytes, beats_per_individual * AXI_BYTES);
             population[i] = EncodedIndividual{bytes, population[i].fitness};
-            bytes += BEATS_PER_INDIVIDUAL * AXI_BYTES;
+            bytes += beats_per_individual * AXI_BYTES;
         }
     }
 }

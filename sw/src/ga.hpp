@@ -50,7 +50,7 @@ struct ProblemInstance {
     std::string name;
     int capacity = 0;
     int dimension = 0;
-    int depotId = 1;
+    ProblemNode depot;
     std::vector<ProblemNode> nodes;
 };
 

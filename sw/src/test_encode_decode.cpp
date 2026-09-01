@@ -94,7 +94,8 @@ void print_beat_markers(const std::string &label, const std::uint8_t *beat_bytes
             else if (field_idx > 0) {
                 if (bit_in_field == COORD_BITS - 1 || 
                     bit_in_field == (2 * COORD_BITS) - 1 || 
-                    bit_in_field == (2 * COORD_BITS + CAPACITY_BITS) - 1) {
+                    bit_in_field == (2 * COORD_BITS + CAPACITY_BITS) - 1 ||
+                    bit_in_field == (2 * COORD_BITS + CAPACITY_BITS + DEPOT_BITS) - 1) {
                     std::printf("-");
                 }
             }
@@ -143,7 +144,7 @@ int main(int argc, char *argv[]) {
 
         const std::vector<std::uint8_t> encoded = encode_population_fixed(problem, population);
         std::vector<Individual> decoded = decode_population_fixed(problem, encoded.data(), population.size());
-        const std::size_t bytes_per_individual = BEATS_PER_INDIVIDUAL * AXI_BYTES;
+        const std::size_t bytes_per_individual = get_total_beats(problem.dimension - 1) * AXI_BYTES;
 
         for (std::size_t i = 0; i < population.size(); ++i) {
             const std::uint8_t *bytes = encoded.data() + i * bytes_per_individual;
