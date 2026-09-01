@@ -23,8 +23,10 @@ static void producer(
 }
 
 static void crossover(
-    hls::stream_of_blocks<Individual> &in,
-    hls::stream_of_blocks<Individual> &out,
+    hls::stream_of_blocks<Individual> &in0,
+    hls::stream_of_blocks<Individual> &in1,
+    hls::stream_of_blocks<Individual> &out0,
+    hls::stream_of_blocks<Individual> &out1,
     int num_individuals,
     int num_cities
 ) {
@@ -32,16 +34,12 @@ static void crossover(
     int total_beats = (total_fields + FIELDS_PER_BEAT - 1) / FIELDS_PER_BEAT;
 
     CROSSOVER_INDIV_LOOP: for (int i = 0; i < num_individuals; i++) {
-        hls::read_lock<Individual> ind(in);
-        hls::write_lock<Individual> new_ind(out);
+        hls::read_lock<Individual> ind(in0);
+        hls::write_lock<Individual> new_ind(out0);
+        hls::read_lock<Individual> ind(in1);
+        hls::write_lock<Individual> new_ind(out1);
 
-        // Example: simple pass-through (copy all beats)
-        // If you need to modify individual fields, you can access them via
-        // get_field / set_field, but that would require beat-level processing.
-        CROSSOVER_BEATS: for (int b = 0; b < total_beats; b++) {
-            #pragma HLS PIPELINE II=1
-            new_ind[b] = ind[b];
-        }
+        // TODO OX crossover
     }
 }
 
@@ -70,19 +68,26 @@ static void consumer(
 }
 
 static void process_stream(
-    hls::stream<axi_word_t> &in,
-    hls::stream<axi_word_t> &out,
+    hls::stream<axi_word_t> &in0,
+    hls::stream<axi_word_t> &out0,
+    hls::stream<axi_word_t> &in1,
+    hls::stream<axi_word_t> &out1,
     int num_individuals,
     int num_cities
 ) {
     #pragma HLS DATAFLOW
 
-    hls::stream_of_blocks<Individual> A;
-    hls::stream_of_blocks<Individual> B;
+    hls::stream_of_blocks<Individual> stream_0;
+    hls::stream_of_blocks<Individual> stream_1;
+    hls::stream_of_blocks<Individual> stream_cx_0;
+    hls::stream_of_blocks<Individual> stream_cx_1;
 
-    producer(in, A, num_individuals, num_cities);
-    crossover(A, B, num_individuals, num_cities);
+    producer(in0, stream_0, num_individuals, num_cities);
+    producer(in1, stream_1, num_individuals, num_cities);
+    crossover(stream_0, stream_1, stream_cx_0, stream_cx_1, num_individuals, num_cities);
     consumer(B, out, num_individuals, num_cities);
+    consumer(B, out, num_individuals, num_cities);
+
 }
 
 static void drive_debug_probes(
@@ -124,6 +129,5 @@ void processing_node(
     #pragma HLS DATAFLOW
     drive_debug_probes(num_individuals0, num_individuals1, num_cities,
                        dbg_num_individuals0, dbg_num_individuals1, dbg_num_cities);
-    process_stream(in0, out0, num_individuals0, num_cities);
-    process_stream(in1, out1, num_individuals1, num_cities);
+    process_stream(in0, out0, in1, out1, num_individuals0, num_cities);
 }
