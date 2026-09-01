@@ -70,6 +70,8 @@ constexpr std::uint32_t kPopulationSeed = 0xC0FFEEu;
 // control block. Coyote CSRs are 64-bit wide, so the setCSR index equals
 // byte offset / 8. The kernel is free-running and starts processing once
 // beats_per_individual reads non-zero, so it must be written last.
+constexpr uint32_t CSR_CONTROL     = 0x00;
+constexpr uint32_t CSR_CONTROL_AUTORESTART     = 0x81;
 constexpr uint32_t CSR_NUM_INDIVIDUALS_0     = 0x10 / 8;
 constexpr uint32_t CSR_NUM_INDIVIDUALS_1     = 0x18 / 8;
 constexpr uint32_t CSR_NUM_CITIES  = 0x20 / 8;
@@ -179,6 +181,7 @@ int main(int argc, char *argv[])  {
     coyote_thread.setCSR(reg_num_ind0, CSR_NUM_INDIVIDUALS_0);
     coyote_thread.setCSR(reg_num_ind1, CSR_NUM_INDIVIDUALS_1);
     coyote_thread.setCSR(reg_num_cities, CSR_NUM_CITIES);
+    coyote_thread.setCSR(CSR_CONTROL_AUTORESTART, CSR_CONTROL);
 
     std::cout << coyote_thread.getCSR(CSR_NUM_INDIVIDUALS_0) << " individuals on Stream 0" << std::endl;
     std::cout << coyote_thread.getCSR(CSR_NUM_INDIVIDUALS_1) << " individuals on Stream 1" << std::endl;

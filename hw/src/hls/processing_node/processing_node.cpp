@@ -89,7 +89,6 @@ static void drive_debug_probes(
     int num_individuals0, int num_individuals1, int num_cities,
     int *dbg0, int *dbg1, int *dbg_num_cities
 ) {
-    #pragma HLS INLINE
     *dbg0 = num_individuals0;
     *dbg1 = num_individuals1;
     *dbg_num_cities = num_cities;
@@ -120,8 +119,7 @@ void processing_node(
     #pragma HLS INTERFACE ap_vld port=dbg_num_individuals1
     #pragma HLS INTERFACE ap_vld port=dbg_num_cities
 
-    // Change to ap_ctrl_hs (or s_axilite) for host control
-    #pragma HLS INTERFACE ap_ctrl_none port=return
+    #pragma HLS INTERFACE s_axilite port=return bundle=control
 
     #pragma HLS DATAFLOW
     drive_debug_probes(num_individuals0, num_individuals1, num_cities,
