@@ -60,11 +60,11 @@ static void crossover(
         int end_beat, end_field;
         get_beat_field(OX_END, end_beat, end_field);
 
-        std::cout << "--- Individual " << i << " ---\n";
+        /*std::cout << "--- Individual " << i << " ---\n";
         std::cout << "OX_START=" << OX_START << " -> beat " << start_beat
                   << " field " << start_field << "\n";
         std::cout << "OX_END=" << OX_END << " -> beat " << end_beat
-                  << " field " << end_field << "\n";
+                  << " field " << end_field << "\n";*/
 
         int itrs = end_beat - start_beat + 1;
         assert(itrs <= MAX_BEATS);
@@ -84,22 +84,22 @@ static void crossover(
                 set_field(c0, b, f, f0);
                 NodeId id0 = get_node_id(f0);
                 taken0[id0] = 1;
-                std::cout << "Copy slice: b=" << b << " f=" << f
+                /*std::cout << "Copy slice: b=" << b << " f=" << f
                           << " p0 val=" << get_coord_x(f0).to_string(10) << "-" << get_coord_y(f0).to_string(10) << "-" << get_capacity(f0).to_string(10) << "-" << get_is_depot(f0) << "-" << get_node_id(f0).to_string(10) << " "
-                          << " id0=" << id0 << " -> c0\n";
+                          << " id0=" << id0 << " -> c0\n";*/
 
                 FitnessOrCity f1 = get_field(p1, b, f);
                 set_field(c1, b, f, f1);
                 NodeId id1 = get_node_id(f1);
                 taken1[id1] = 1;
-                std::cout << "Copy slice: b=" << b << " f=" << f
+                /*std::cout << "Copy slice: b=" << b << " f=" << f
                           << " p1 val=" << get_coord_x(f1).to_string(10) << "-" << get_coord_y(f1).to_string(10) << "-" << get_capacity(f1).to_string(10) << "-" << get_is_depot(f1) << "-" << get_node_id(f1).to_string(10) << " "
-                          << " id1=" << id1 << " -> c1\n";
+                          << " id1=" << id1 << " -> c1\n";*/
             }
         }
 
-        std::cout << "taken0 after slice: " << taken0.to_string(2) << "\n";
-        std::cout << "taken1 after slice: " << taken1.to_string(2) << "\n";
+       /* std::cout << "taken0 after slice: " << taken0.to_string(2) << "\n";
+        std::cout << "taken1 after slice: " << taken1.to_string(2) << "\n";*/
 
         int total_beats = get_total_beats(num_cities);
 
@@ -133,8 +133,8 @@ static void crossover(
 
             int inner_itrs = f_end - f_start + 1;
 
-            std::cout << "Fill step " << step << ": read_b=" << read_b
-                      << " f_start=" << f_start << " f_end=" << f_end << "\n";
+            /*std::cout << "Fill step " << step << ": read_b=" << read_b
+                      << " f_start=" << f_start << " f_end=" << f_end << "\n";*/
 
             assert(inner_itrs <= FIELDS_PER_BEAT);
             OX_FILL_CHECK_LOOP: for (int i = 0; i < inner_itrs; i++) {
@@ -143,30 +143,30 @@ static void crossover(
 
                 FitnessOrCity f1 = get_field(p1, read_b, f);
                 NodeId id1 = get_node_id(f1);
-                std::cout << "  Check f=" << f << " p1 id=" << id1
-                          << " taken0[id]=" << taken0[id1] << "\n";
+                /*std::cout << "  Check f=" << f << " p1 id=" << id1
+                          << " taken0[id]=" << taken0[id1] << "\n";*/
                 if (taken0[id1] == 0) {
                     valid_cities0[v0++] = f1;
                 }
 
                 FitnessOrCity f0 = get_field(p0, read_b, f);
                 NodeId id0 = get_node_id(f0);
-                std::cout << "  Check f=" << f << " p0 id=" << id0
-                          << " taken1[id]=" << taken1[id0] << "\n";
+                /*std::cout << "  Check f=" << f << " p0 id=" << id0
+                          << " taken1[id]=" << taken1[id0] << "\n";*/
                 if (taken1[id0] == 0) {
                     valid_cities1[v1++] = f0;
                 }
             }
 
-            std::cout << "  v0=" << v0 << " v1=" << v1 << "\n";
+            //std::cout << "  v0=" << v0 << " v1=" << v1 << "\n";
 
             assert(v0 <= FIELDS_PER_BEAT);
             OX_FILL_WRITE_LOOP0: for (int k = 0; k < v0; k++) {
                 #pragma HLS UNROLL
                 set_field(c0, w0, valid_cities0[k]);
-                std::cout << "  Write c0 at global idx " << w0
+                /*std::cout << "  Write c0 at global idx " << w0
                           << " val=" << get_coord_x(valid_cities0[k]).to_string(10) << "-" << get_coord_y(valid_cities0[k]).to_string(10) << "-" << get_capacity(valid_cities0[k]).to_string(10) << "-" << get_is_depot(valid_cities0[k]) << "-" << get_node_id(valid_cities0[k]).to_string(10) << " "
-                          << " node_id=" << get_node_id(valid_cities0[k]) << "\n";
+                          << " node_id=" << get_node_id(valid_cities0[k]) << "\n";*/
                 w0++;
                 if (w0 > num_cities) w0 -= num_cities;
             }
@@ -176,14 +176,14 @@ static void crossover(
                 #pragma HLS UNROLL
                 
                 set_field(c1, w1, valid_cities1[k]);
-                std::cout << "  Write c1 at global idx " << w1
+               /* std::cout << "  Write c1 at global idx " << w1
                           << " val=" << get_coord_x(valid_cities1[k]).to_string(10) << "-" << get_coord_y(valid_cities1[k]).to_string(10) << "-" << get_capacity(valid_cities1[k]).to_string(10) << "-" << get_is_depot(valid_cities1[k]) << "-" << get_node_id(valid_cities1[k]).to_string(10) << " "
-                          << " node_id=" << get_node_id(valid_cities1[k]) << "\n";
+                          << " node_id=" << get_node_id(valid_cities1[k]) << "\n";*/
                 w1++;
                 if (w1 > num_cities) w1 -= num_cities;
             }
         }
-        std::cout << "--- End individual " << i << " ---\n";
+        //std::cout << "--- End individual " << i << " ---\n";
     }
 }
 
@@ -208,7 +208,7 @@ static void consumer(
             word.last = (i == num_individuals - 1 && b == total_beats - 1) ? 1 : 0;
             out_stream.write(word);
         }
-        std::cout << "Consumed for individual " << i << " completed." << std::endl;
+        //std::cout << "Consumed for individual " << i << " completed." << std::endl;
     }
 }
 
