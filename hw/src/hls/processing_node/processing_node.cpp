@@ -126,10 +126,16 @@ static void crossover(
             ap_uint<FIELDS_PER_BEAT> valid_cities_f0 = 0;
             FitnessOrCity valid_cities0[FIELDS_PER_BEAT];
             #pragma HLS ARRAY_PARTITION variable=valid_cities0 complete
+            int offset0[FIELDS_PER_BEAT];
+            #pragma HLS ARRAY_PARTITION variable=offset0 complete
+            int total_v0 = 0;
 
             ap_uint<FIELDS_PER_BEAT> valid_cities_f1 = 0;
             FitnessOrCity valid_cities1[FIELDS_PER_BEAT];
             #pragma HLS ARRAY_PARTITION variable=valid_cities1 complete
+            int offset1[FIELDS_PER_BEAT];
+            #pragma HLS ARRAY_PARTITION variable=offset1 complete
+            int total_v1 = 0;
 
             int inner_itrs = f_end - f_start + 1;
 
@@ -139,6 +145,10 @@ static void crossover(
 
             OX_FILL_CHECK_LOOP: for (int i = 0; i < FIELDS_PER_BEAT; i++) {
                 #pragma HLS UNROLL
+
+                offset0[i] = total_v0;
+                offset1[i] = total_v1;
+
                 if (i < inner_itrs) {
                     int f = i + f_start;
                     FitnessOrCity f1 = get_field(p1, read_b, f);
@@ -146,6 +156,7 @@ static void crossover(
                     /*std::cout << "  Check f=" << f << " p1 id=" << id1
                               << " taken0[id]=" << taken0[id1] << "\n";*/
                     if (taken0[id1] == 0) {
+                        total_v0++;
                         valid_cities_f0[i] = 1;
                         valid_cities0[i] = f1;
                     }
@@ -155,6 +166,7 @@ static void crossover(
                     /*std::cout << "  Check f=" << f << " p0 id=" << id0
                               << " taken1[id]=" << taken1[id0] << "\n";*/
                     if (taken1[id0] == 0) {
+                        total_v1++;
                         valid_cities_f1[i] = 1;
                         valid_cities1[i] = f0;
                     }
@@ -168,11 +180,13 @@ static void crossover(
                     /*std::cout << "  Write c0 at global idx " << w0
                           << " val=" << get_coord_x(valid_cities0[k]).to_string(10) << "-" << get_coord_y(valid_cities0[k]).to_string(10) << "-" << get_capacity(valid_cities0[k]).to_string(10) << "-" << get_is_depot(valid_cities0[k]) << "-" << get_node_id(valid_cities0[k]).to_string(10) << " "
                           << " node_id=" << get_node_id(valid_cities0[k]) << "\n";*/
-                    set_field(c0, w0, valid_cities0[k]);
-                    w0++;
-                    if (w0 > num_cities) w0 -= num_cities;
+                    int raw_idx = w0 + offset0[k];
+                    int wrapped_idx = (raw_idx > num_cities) ? (raw_idx - num_cities) : raw_idx;
+                    set_field(c0, wrapped_idx, valid_cities0[k]);
                 }
             }
+            int next_w0 = w0 + total_v0;
+            w0 = (next_w0 > num_cities) ? (next_w0 - num_cities) : next_w0;
 
             OX_FILL_WRITE_LOOP1: for (int k = 0; k < FIELDS_PER_BEAT; k++) {
                 #pragma HLS UNROLL
@@ -180,11 +194,13 @@ static void crossover(
                     /* std::cout << "  Write c1 at global idx " << w1
                           << " val=" << get_coord_x(valid_cities1[k]).to_string(10) << "-" << get_coord_y(valid_cities1[k]).to_string(10) << "-" << get_capacity(valid_cities1[k]).to_string(10) << "-" << get_is_depot(valid_cities1[k]) << "-" << get_node_id(valid_cities1[k]).to_string(10) << " "
                           << " node_id=" << get_node_id(valid_cities1[k]) << "\n";*/
-                    set_field(c1, w1, valid_cities1[k]);
-                    w1++;
-                    if (w1 > num_cities) w1 -= num_cities;
+                    int raw_idx = w1 + offset1[k];
+                    int wrapped_idx = (raw_idx > num_cities) ? (raw_idx - num_cities) : raw_idx;
+                    set_field(c1, wrapped_idx, valid_cities1[k]);
                 }
             }
+            int next_w1 = w1 + total_v1;
+            w1 = (next_w1 > num_cities) ? (next_w1 - num_cities) : next_w1;
         }
         //std::cout << "--- End individual " << i << " ---\n";
     }
