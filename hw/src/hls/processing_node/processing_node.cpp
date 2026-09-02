@@ -74,27 +74,32 @@ static void crossover(
             int low_field = (b == start_beat) ? start_field : get_first_city_index(b);
             int high_field = (b == end_beat) ? end_field : get_last_field_index(num_cities, b);
 
+            Beat p0b = p0[b];
+            Beat p1b = p1[b];
+
             int inner_itrs = high_field - low_field + 1;
-            assert(inner_itrs <= FIELDS_PER_BEAT);
-            OX_COPY_FIELD_LOOP: for (int j = 0; j < inner_itrs; j++) {
+            OX_COPY_FIELD_LOOP: for (int j = 0; j < FIELDS_PER_BEAT; j++) {
                 #pragma HLS UNROLL
-                int f = low_field + j;
 
-                FitnessOrCity f0 = get_field(p0, b, f);
-                set_field(c0, b, f, f0);
-                NodeId id0 = get_node_id(f0);
-                taken0[id0] = 1;
-                /*std::cout << "Copy slice: b=" << b << " f=" << f
-                          << " p0 val=" << get_coord_x(f0).to_string(10) << "-" << get_coord_y(f0).to_string(10) << "-" << get_capacity(f0).to_string(10) << "-" << get_is_depot(f0) << "-" << get_node_id(f0).to_string(10) << " "
-                          << " id0=" << id0 << " -> c0\n";*/
+                if(j < inner_itrs){
+                    int f = low_field + j;
 
-                FitnessOrCity f1 = get_field(p1, b, f);
-                set_field(c1, b, f, f1);
-                NodeId id1 = get_node_id(f1);
-                taken1[id1] = 1;
-                /*std::cout << "Copy slice: b=" << b << " f=" << f
-                          << " p1 val=" << get_coord_x(f1).to_string(10) << "-" << get_coord_y(f1).to_string(10) << "-" << get_capacity(f1).to_string(10) << "-" << get_is_depot(f1) << "-" << get_node_id(f1).to_string(10) << " "
-                          << " id1=" << id1 << " -> c1\n";*/
+                    FitnessOrCity f0 = get_field(p0b, f);
+                    set_field(c0, b, f, f0);
+                    NodeId id0 = get_node_id(f0);
+                    taken0[id0] = 1;
+                    /*std::cout << "Copy slice: b=" << b << " f=" << f
+                              << " p0 val=" << get_coord_x(f0).to_string(10) << "-" << get_coord_y(f0).to_string(10) << "-" << get_capacity(f0).to_string(10) << "-" << get_is_depot(f0) << "-" << get_node_id(f0).to_string(10) << " "
+                              << " id0=" << id0 << " -> c0\n";*/
+
+                    FitnessOrCity f1 = get_field(p1b, f);
+                    set_field(c1, b, f, f1);
+                    NodeId id1 = get_node_id(f1);
+                    taken1[id1] = 1;
+                    /*std::cout << "Copy slice: b=" << b << " f=" << f
+                              << " p1 val=" << get_coord_x(f1).to_string(10) << "-" << get_coord_y(f1).to_string(10) << "-" << get_capacity(f1).to_string(10) << "-" << get_is_depot(f1) << "-" << get_node_id(f1).to_string(10) << " "
+                              << " id1=" << id1 << " -> c1\n";*/
+                }
             }
         }
 
