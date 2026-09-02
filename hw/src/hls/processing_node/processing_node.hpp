@@ -116,7 +116,7 @@ static inline NodeId get_node_id(IndividualAsBeats &ind, int beat_idx, int node_
 }
 
 static inline NodeId get_node_id(FitnessOrCity val) {
-    return val.range(FIELD_BITS-1, FIELD_BITS - NODE_ID_BITS);
+    return val.range(2*COORD_BITS+CAPACITY_BITS+DEPOT_BITS + NODE_ID_BITS - 1, 2*COORD_BITS+CAPACITY_BITS+DEPOT_BITS);
 }
 
 static inline void set_coord_x(FitnessOrCity &val, Coord x) {
@@ -132,7 +132,7 @@ static inline void set_is_depot(FitnessOrCity &val, bool depot) {
     val[2*COORD_BITS+CAPACITY_BITS] = depot;
 }
 static inline void set_node_id(FitnessOrCity &val, NodeId id) {
-    val.range(FIELD_BITS-1, FIELD_BITS - NODE_ID_BITS) = id;
+    val.range(2*COORD_BITS+CAPACITY_BITS+DEPOT_BITS + NODE_ID_BITS - 1, 2*COORD_BITS+CAPACITY_BITS+DEPOT_BITS) = id;
 }
 
 // Copy only the geometry/capacity bits from src to dst, preserving node_id

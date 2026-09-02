@@ -21,12 +21,13 @@ std::vector<std::array<uint64_t, 8>> encode_individual_fixed(
     fields.reserve(problem.dimension);
 
     // 1. Fitness field: LSB placed at bit 0 of field 0
-    fields.push_back(individual.fitness & ((1u << FIELD_BITS) - 1u));
+    fields.push_back(individual.fitness);
 
     // 2. City fields: each integer LSB-aligned to its starting offset L
     for (const auto &gene : individual.tour) {
         const ProblemNode &node = problem.nodes.at(static_cast<std::size_t>(gene.node_id));
 
+        // TODO add proper validation and may use long for fitness
         uint32_t id_val    = static_cast<uint32_t>(gene.node_id) & ((1u << NODE_ID_BITS) - 1u);
         uint32_t x_val     = static_cast<uint32_t>(node.x) & ((1u << COORD_BITS) - 1u);
         uint32_t y_val     = static_cast<uint32_t>(node.y) & ((1u << COORD_BITS) - 1u);
@@ -38,7 +39,7 @@ std::vector<std::array<uint64_t, 8>> encode_individual_fixed(
         city |= (y_val << COORD_BITS);                                     // Interval [2*COORD_BITS-1 : COORD_BITS]
         city |= (cap_val << (2 * COORD_BITS));                             // Interval [2*COORD_BITS+CAPACITY_BITS-1 : 2*COORD_BITS]
         city |= (depot_val << (2 * COORD_BITS + CAPACITY_BITS));           // Interval [2*COORD_BITS+CAPACITY_BITS]
-        city |= (id_val << (2 * COORD_BITS + CAPACITY_BITS + DEPOT_BITS)); // Interval [FIELD_BITS-1 : FIELD_BITS-NODE_ID_BITS]
+        city |= (id_val << (2 * COORD_BITS + CAPACITY_BITS + DEPOT_BITS)); // Interval [2 * COORD_BITS + CAPACITY_BITS + DEPOT_BITS + NODE_ID_BITS - 1 : 2 * COORD_BITS + CAPACITY_BITS + DEPOT_BITS]
 
         fields.push_back(city);
     }
@@ -117,7 +118,7 @@ Individual decode_individual_fixed(
         }
     }
 
-    individual.fitness = fields[0] & ((1u << FIELD_BITS) - 1u);
+    individual.fitness = fields[0] & ((1ul << FIELD_BITS) - 1ul);
 
     const std::uint32_t coord_mask    = (1u << COORD_BITS) - 1u;
     const std::uint32_t capacity_mask = (1u << CAPACITY_BITS) - 1u;
@@ -189,7 +190,7 @@ void population_from_buffer(
         const std::uint8_t *ind_bytes = buffer + (i * bytes_per_individual);
         std::uint32_t fitness;
         std::memcpy(&fitness, ind_bytes, sizeof(fitness));
-        fitness = fitness & ((1u << FIELD_BITS) - 1u);
+        fitness = fitness & ((1ul << FIELD_BITS) - 1u);
         population[i].fitness=fitness;
         population[i].bytes=ind_bytes;
     }

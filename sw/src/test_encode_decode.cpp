@@ -95,7 +95,8 @@ void print_beat_markers(const std::string &label, const std::uint8_t *beat_bytes
                 if (bit_in_field == COORD_BITS - 1 || 
                     bit_in_field == (2 * COORD_BITS) - 1 || 
                     bit_in_field == (2 * COORD_BITS + CAPACITY_BITS) - 1 ||
-                    bit_in_field == (2 * COORD_BITS + CAPACITY_BITS + DEPOT_BITS) - 1) {
+                    bit_in_field == (2 * COORD_BITS + CAPACITY_BITS + DEPOT_BITS) - 1 ||
+                    bit_in_field == (2 * COORD_BITS + CAPACITY_BITS + DEPOT_BITS + NODE_ID_BITS) - 1) {
                     std::printf("-");
                 }
             }
