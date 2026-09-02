@@ -123,6 +123,9 @@ static void crossover(
             int f_start = (step == 0) ? fill_start_field : get_first_city_index(read_b);
             int f_end = (step == total_beats) ? end_field : get_last_field_index(num_cities, read_b);
 
+            Beat p0b = p0[read_b];
+            Beat p1b = p1[read_b];
+
             ap_uint<FIELDS_PER_BEAT> valid_cities_f0 = 0;
             FitnessOrCity valid_cities0[FIELDS_PER_BEAT];
             #pragma HLS ARRAY_PARTITION variable=valid_cities0 complete
@@ -151,7 +154,7 @@ static void crossover(
 
                 if (i < inner_itrs) {
                     int f = i + f_start;
-                    FitnessOrCity f1 = get_field(p1, read_b, f);
+                    FitnessOrCity f1 = get_field(p1b, f);
                     NodeId id1 = get_node_id(f1);
                     /*std::cout << "  Check f=" << f << " p1 id=" << id1
                               << " taken0[id]=" << taken0[id1] << "\n";*/
@@ -160,7 +163,7 @@ static void crossover(
                     valid_cities_f0[i] = is_valid0;
                     valid_cities0[i] = f1;
 
-                    FitnessOrCity f0 = get_field(p0, read_b, f);
+                    FitnessOrCity f0 = get_field(p0b, f);
                     NodeId id0 = get_node_id(f0);
                     /*std::cout << "  Check f=" << f << " p0 id=" << id0
                               << " taken1[id]=" << taken1[id0] << "\n";*/
@@ -172,6 +175,25 @@ static void crossover(
             }
             //std::cout << "  v0=" << v0 << " v1=" << v1 << "\n";
 
+            int write_start_beat_c0, write_start_field_c0;
+            get_beat_field(w0, write_start_beat_c0, write_start_field_c0);
+            int write_last_field_c0 = w0 + total_v0 - 1;
+            write_last_field_c0 = (write_last_field_c0 > num_cities) ? (write_last_field_c0 - num_cities) : write_last_field_c0;
+            int last_beat_idx_c0 = get_beat_idx(write_last_field_c0);
+            int second_beat_idx_c0 = write_start_beat_c0 + 1;
+            second_beat_idx_c0 = second_beat_idx_c0 < total_beats ? second_beat_idx_c0 : 0;
+
+            Beat c0b[3];
+            #pragma HLS ARRAY_PARTITION variable=c0b complete
+            c0b[0] = c0[write_start_beat_c0];
+            if(last_beat_idx_c0 != write_start_beat_c0) {
+                c0b[1] = c0[second_beat_idx_c0];
+
+                if(last_beat_idx_c0 != second_beat_idx_c0) {
+                    c0b[2] = c0[last_beat_idx_c0];
+                }
+            }
+
             OX_FILL_WRITE_LOOP0: for (int k = 0; k < FIELDS_PER_BEAT; k++) {
                 #pragma HLS UNROLL
                 if(valid_cities_f0[k] == 1){
@@ -180,11 +202,46 @@ static void crossover(
                           << " node_id=" << get_node_id(valid_cities0[k]) << "\n";*/
                     int raw_idx = w0 + offset0[k];
                     int wrapped_idx = (raw_idx > num_cities) ? (raw_idx - num_cities) : raw_idx;
-                    set_field(c0, wrapped_idx, valid_cities0[k]);
+
+                    int write_curr_beat, write_curr_field;
+                    get_beat_field(wrapped_idx, write_curr_beat, write_curr_field);
+
+                    Beat &b= write_start_beat_c0 == write_curr_beat ? c0b[0] : (second_beat_idx_c0 == write_curr_beat ? c0b[1] : c0b[2]);
+                    set_field(b, write_curr_field, valid_cities0[k]);
                 }
             }
             int next_w0 = w0 + total_v0;
             w0 = (next_w0 > num_cities) ? (next_w0 - num_cities) : next_w0;
+
+            c0[write_start_beat_c0] = c0b[0];
+            if(last_beat_idx_c0 != write_start_beat_c0) {
+                c0[second_beat_idx_c0] = c0b[1];
+
+                if(last_beat_idx_c0 != second_beat_idx_c0) {
+                    c0[last_beat_idx_c0] = c0b[2];
+                }
+            }
+
+
+
+            int write_start_beat_c1, write_start_field_c1;
+            get_beat_field(w1, write_start_beat_c1, write_start_field_c1);
+            int write_last_field_c1 = w1 + total_v1 - 1;
+            write_last_field_c1 = (write_last_field_c1 > num_cities) ? (write_last_field_c1 - num_cities) : write_last_field_c1;
+            int last_beat_idx_c1 = get_beat_idx(write_last_field_c1);
+            int second_beat_idx_c1 = write_start_beat_c1 + 1;
+            second_beat_idx_c1 = second_beat_idx_c1 < total_beats ? second_beat_idx_c1 : 0;
+
+            Beat c1b[3];
+            #pragma HLS ARRAY_PARTITION variable=c1b complete
+            c1b[0] = c1[write_start_beat_c1];
+            if(last_beat_idx_c1 != write_start_beat_c1) {
+                c1b[1] = c1[second_beat_idx_c1];
+
+                if(last_beat_idx_c1 != second_beat_idx_c1) {
+                    c1b[2] = c1[last_beat_idx_c1];
+                }
+            }
 
             OX_FILL_WRITE_LOOP1: for (int k = 0; k < FIELDS_PER_BEAT; k++) {
                 #pragma HLS UNROLL
@@ -194,11 +251,25 @@ static void crossover(
                           << " node_id=" << get_node_id(valid_cities1[k]) << "\n";*/
                     int raw_idx = w1 + offset1[k];
                     int wrapped_idx = (raw_idx > num_cities) ? (raw_idx - num_cities) : raw_idx;
-                    set_field(c1, wrapped_idx, valid_cities1[k]);
+
+                    int write_curr_beat, write_curr_field;
+                    get_beat_field(wrapped_idx, write_curr_beat, write_curr_field);
+
+                    Beat &b= write_start_beat_c1 == write_curr_beat ? c1b[0] : (second_beat_idx_c1 == write_curr_beat ? c1b[1] : c1b[2]);
+                    set_field(b, write_curr_field, valid_cities1[k]);
                 }
             }
             int next_w1 = w1 + total_v1;
             w1 = (next_w1 > num_cities) ? (next_w1 - num_cities) : next_w1;
+            
+            c1[write_start_beat_c1] = c1b[0];
+            if(last_beat_idx_c1 != write_start_beat_c1) {
+                c1[second_beat_idx_c1] = c1b[1];
+
+                if(last_beat_idx_c1 != second_beat_idx_c1) {
+                    c1[last_beat_idx_c1] = c1b[2];
+                }
+            }
         }
         //std::cout << "--- End individual " << i << " ---\n";
     }

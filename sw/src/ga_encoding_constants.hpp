@@ -48,7 +48,7 @@ static_block {
 // inlined for hw side
 static inline int get_total_beats(int num_cities) {
     int total_fields = 1 + num_cities;
-    return (total_fields + FIELDS_PER_BEAT - 1) / FIELDS_PER_BEAT;
+    return (total_fields + FIELDS_PER_BEAT - 1) >> FIELDS_PER_BEAT_LOG2; // ... / FIELDS_PER_BEAT
 }
 
 #endif

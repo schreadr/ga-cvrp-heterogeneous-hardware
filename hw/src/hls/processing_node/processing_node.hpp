@@ -28,11 +28,24 @@ static inline void get_beat_field(int global_idx, int &beat_idx, int &field_idx)
     field_idx = global_idx & (FIELDS_PER_BEAT - 1); // global_idx % FIELDS_PER_BEAT
 }
 
+static inline int get_beat_idx(int global_idx) {
+    #pragma HLS INLINE
+    return global_idx >> FIELDS_PER_BEAT_LOG2; // global_idx / FIELDS_PER_BEAT
+}
+
 static inline FitnessOrCity get_field_o(const IndividualAsBeats &ind, int beat_idx, int field_offset) {
     #pragma HLS INLINE
 
     int high = field_offset + FIELD_BITS - 1;
     return ind[beat_idx].range(high, field_offset);
+}
+
+static inline FitnessOrCity get_field(const Beat &beat, int field_idx) {
+    #pragma HLS INLINE
+    
+    int low = field_idx << FIELD_BITS_LOG2;
+    int high = low + FIELD_BITS - 1;
+    return beat.range(high, low);
 }
 
 static inline FitnessOrCity get_field(const IndividualAsBeats &ind, int beat_idx, int field_idx) {
@@ -65,6 +78,13 @@ static inline void set_field(IndividualAsBeats &ind, int beat_idx, int field_idx
     set_field_o(ind, beat_idx, low, val);
 }
 
+static inline void set_field(Beat &beat, int field_idx, FitnessOrCity val) {
+    #pragma HLS INLINE
+
+    int low = field_idx << FIELD_BITS_LOG2; // field_idx * FIELD_BITS
+    int high = low + FIELD_BITS - 1;
+    beat.range(high, low) = val;
+}
 
 // Write a field (fitness or city) to the individual
 static inline void set_field(IndividualAsBeats &ind, int global_idx, FitnessOrCity val) {
