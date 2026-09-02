@@ -123,64 +123,67 @@ static void crossover(
             int f_start = (step == 0) ? fill_start_field : get_first_city_index(read_b);
             int f_end = (step == total_beats) ? end_field : get_last_field_index(num_cities, read_b);
 
+            ap_uint<FIELDS_PER_BEAT> valid_cities_f0 = 0;
             FitnessOrCity valid_cities0[FIELDS_PER_BEAT];
             #pragma HLS ARRAY_PARTITION variable=valid_cities0 complete
-            int v0 = 0;
 
+            ap_uint<FIELDS_PER_BEAT> valid_cities_f1 = 0;
             FitnessOrCity valid_cities1[FIELDS_PER_BEAT];
             #pragma HLS ARRAY_PARTITION variable=valid_cities1 complete
-            int v1 = 0;
 
             int inner_itrs = f_end - f_start + 1;
 
             /*std::cout << "Fill step " << step << ": read_b=" << read_b
                       << " f_start=" << f_start << " f_end=" << f_end << "\n";*/
 
-            assert(inner_itrs <= FIELDS_PER_BEAT);
-            OX_FILL_CHECK_LOOP: for (int i = 0; i < inner_itrs; i++) {
+
+            OX_FILL_CHECK_LOOP: for (int i = 0; i < FIELDS_PER_BEAT; i++) {
                 #pragma HLS UNROLL
-                int f = i + f_start;
+                if (i < inner_itrs) {
+                    int f = i + f_start;
+                    FitnessOrCity f1 = get_field(p1, read_b, f);
+                    NodeId id1 = get_node_id(f1);
+                    /*std::cout << "  Check f=" << f << " p1 id=" << id1
+                              << " taken0[id]=" << taken0[id1] << "\n";*/
+                    if (taken0[id1] == 0) {
+                        valid_cities_f0[i] = 1;
+                        valid_cities0[i] = f1;
+                    }
 
-                FitnessOrCity f1 = get_field(p1, read_b, f);
-                NodeId id1 = get_node_id(f1);
-                /*std::cout << "  Check f=" << f << " p1 id=" << id1
-                          << " taken0[id]=" << taken0[id1] << "\n";*/
-                if (taken0[id1] == 0) {
-                    valid_cities0[v0++] = f1;
-                }
-
-                FitnessOrCity f0 = get_field(p0, read_b, f);
-                NodeId id0 = get_node_id(f0);
-                /*std::cout << "  Check f=" << f << " p0 id=" << id0
-                          << " taken1[id]=" << taken1[id0] << "\n";*/
-                if (taken1[id0] == 0) {
-                    valid_cities1[v1++] = f0;
+                    FitnessOrCity f0 = get_field(p0, read_b, f);
+                    NodeId id0 = get_node_id(f0);
+                    /*std::cout << "  Check f=" << f << " p0 id=" << id0
+                              << " taken1[id]=" << taken1[id0] << "\n";*/
+                    if (taken1[id0] == 0) {
+                        valid_cities_f1[i] = 1;
+                        valid_cities1[i] = f0;
+                    }
                 }
             }
-
             //std::cout << "  v0=" << v0 << " v1=" << v1 << "\n";
 
-            assert(v0 <= FIELDS_PER_BEAT);
-            OX_FILL_WRITE_LOOP0: for (int k = 0; k < v0; k++) {
+            OX_FILL_WRITE_LOOP0: for (int k = 0; k < FIELDS_PER_BEAT; k++) {
                 #pragma HLS UNROLL
-                set_field(c0, w0, valid_cities0[k]);
-                /*std::cout << "  Write c0 at global idx " << w0
+                if(valid_cities_f0[k] == 1){
+                    /*std::cout << "  Write c0 at global idx " << w0
                           << " val=" << get_coord_x(valid_cities0[k]).to_string(10) << "-" << get_coord_y(valid_cities0[k]).to_string(10) << "-" << get_capacity(valid_cities0[k]).to_string(10) << "-" << get_is_depot(valid_cities0[k]) << "-" << get_node_id(valid_cities0[k]).to_string(10) << " "
                           << " node_id=" << get_node_id(valid_cities0[k]) << "\n";*/
-                w0++;
-                if (w0 > num_cities) w0 -= num_cities;
+                    set_field(c0, w0, valid_cities0[k]);
+                    w0++;
+                    if (w0 > num_cities) w0 -= num_cities;
+                }
             }
 
-            assert(v1 <= FIELDS_PER_BEAT);
-            OX_FILL_WRITE_LOOP1: for (int k = 0; k < v1; k++) {
+            OX_FILL_WRITE_LOOP1: for (int k = 0; k < FIELDS_PER_BEAT; k++) {
                 #pragma HLS UNROLL
-                
-                set_field(c1, w1, valid_cities1[k]);
-               /* std::cout << "  Write c1 at global idx " << w1
+                if(valid_cities_f1[k] == 1){
+                    /* std::cout << "  Write c1 at global idx " << w1
                           << " val=" << get_coord_x(valid_cities1[k]).to_string(10) << "-" << get_coord_y(valid_cities1[k]).to_string(10) << "-" << get_capacity(valid_cities1[k]).to_string(10) << "-" << get_is_depot(valid_cities1[k]) << "-" << get_node_id(valid_cities1[k]).to_string(10) << " "
                           << " node_id=" << get_node_id(valid_cities1[k]) << "\n";*/
-                w1++;
-                if (w1 > num_cities) w1 -= num_cities;
+                    set_field(c1, w1, valid_cities1[k]);
+                    w1++;
+                    if (w1 > num_cities) w1 -= num_cities;
+                }
             }
         }
         //std::cout << "--- End individual " << i << " ---\n";
