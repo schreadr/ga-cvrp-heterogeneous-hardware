@@ -155,21 +155,19 @@ static void crossover(
                     NodeId id1 = get_node_id(f1);
                     /*std::cout << "  Check f=" << f << " p1 id=" << id1
                               << " taken0[id]=" << taken0[id1] << "\n";*/
-                    if (taken0[id1] == 0) {
-                        total_v0++;
-                        valid_cities_f0[i] = 1;
-                        valid_cities0[i] = f1;
-                    }
+                    ap_uint<1> is_valid0 = !taken0[id1];
+                    total_v0 += is_valid0;
+                    valid_cities_f0[i] = is_valid0;
+                    valid_cities0[i] = f1;
 
                     FitnessOrCity f0 = get_field(p0, read_b, f);
                     NodeId id0 = get_node_id(f0);
                     /*std::cout << "  Check f=" << f << " p0 id=" << id0
                               << " taken1[id]=" << taken1[id0] << "\n";*/
-                    if (taken1[id0] == 0) {
-                        total_v1++;
-                        valid_cities_f1[i] = 1;
-                        valid_cities1[i] = f0;
-                    }
+                    ap_uint<1> is_valid1 = !taken1[id0];
+                    total_v1 += is_valid1;
+                    valid_cities_f1[i] = is_valid1;
+                    valid_cities1[i] = f0;
                 }
             }
             //std::cout << "  v0=" << v0 << " v1=" << v1 << "\n";
