@@ -17,7 +17,7 @@ static void producer(
         DECODE_BEATS: for (int b = 0; b < total_beats; b++) {
             #pragma HLS PIPELINE II=1
             axi_word_t word = in_stream.read();
-            ind[b] = word.data.range(BEAT_WIDTH - 1, 0);
+            ind[b] = word.data;
         }
     }
 }
@@ -36,7 +36,7 @@ static void consumer(
         ENCODE_BEATS: for (int b = 0; b < total_beats; b++) {
             #pragma HLS PIPELINE II=1
             axi_word_t word;
-            word.data.range(BEAT_WIDTH - 1, 0) = ind[b];
+            word.data = ind[b];
             word.keep = -1;
             word.strb = -1;
             word.last = (i == num_individuals - 1 && b == total_beats - 1) ? 1 : 0;
