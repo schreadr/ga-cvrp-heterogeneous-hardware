@@ -57,7 +57,7 @@ static void write(IndividualAsBeats &c, hls::stream<BeatPacket> &reverse_buffer,
     int end_beat = get_beat_idx(end_city);
     BeatConsumerState state(n_cities_to_copy, start_city);
 
-    for(int i=0; i < total_beats; i++){
+    WRITE_BACK_LOOP: for(int i=0; i < total_beats; i++){
         #pragma HLS PIPELINE II=1
         if(i < start_beat || i > end_beat){
             c[i] = buffer.read();
