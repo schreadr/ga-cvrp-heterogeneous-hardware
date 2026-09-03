@@ -9,6 +9,17 @@ struct BeatPacket {
     int n;
 };
 
+struct BeatConsumerState {
+    int current_valid_fields;
+    int cities_left;
+    int curr_dst_idx;
+    ap_uint<BEAT_WIDTH << 1> window;
+
+    BeatConsumerState(int n_cities_to_copy, int dst_start_idx) : current_valid_fields(0), cities_left(n_cities_to_copy), curr_dst_idx(dst_start_idx), window(0) {}
+};
+
+inline void capture_and_propage(BeatConsumerState &state, hls::stream<BeatPacket> &in_stream, IndividualAsBeats &dst_ind, int num_cities);
+
 void stream_beats_to_individual(
     hls::stream<BeatPacket> &in_stream,
     IndividualAsBeats &dst_ind,

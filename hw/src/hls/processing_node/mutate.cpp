@@ -55,18 +55,19 @@ static void copyAndStream(IndividualAsBeats &p0, IndividualAsBeats &p1, hls::str
 static void write(IndividualAsBeats &c, hls::stream<BeatPacket> &reverse_buffer, hls::stream<Beat> &buffer, int start_city, int end_city, int n_cities_to_copy, int total_beats, int num_cities) {
     int start_beat = get_beat_idx(start_city);
     int end_beat = get_beat_idx(end_city);
+    BeatConsumerState state(n_cities_to_copy, start_city);
 
-    for(int i=0; i < start_beat; i++){
+    for(int i=0; i < total_beats; i++){
         #pragma HLS PIPELINE II=1
-        c[i] = buffer.read();
+        if(i < start_beat || i > end_beat){
+            c[i] = buffer.read();
+        }else{
+            capture_and_propage(state, reverse_buffer, c, num_cities);
+        }
     }
 
-    stream_beats_to_individual(reverse_buffer, c, start_city, n_cities_to_copy, total_beats, num_cities);
-
-    for(int i=end_beat + 1; i < total_beats; i++){
-        #pragma HLS PIPELINE II=1
-        c[i] = buffer.read();
-    }
+    // since in the first iteration we only pack a beat we need to flush the remaining fields in the state.window)
+    capture_and_propage(state, reverse_buffer, c, num_cities);
 }
 
 static void reverse_order(IndividualAsBeats &p0, IndividualAsBeats &p1, IndividualAsBeats &c0, IndividualAsBeats &c1, int num_cities, int start_city, int end_city, int n_cities_to_copy, int total_beats) {
