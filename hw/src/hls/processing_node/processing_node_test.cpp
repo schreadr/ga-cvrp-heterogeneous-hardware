@@ -1,6 +1,7 @@
 #include "processing_node.hpp"
 #include "test_helper.hpp"
 #include "crossover_test.hpp"
+#include "util_test.hpp"
 
 #include <cstring>
 #include <iostream>
@@ -133,7 +134,14 @@ int run_integration_test(){
 int main() {
     int errors=0;
     #ifndef __RTL_SIMULATION__
-        std::cout << "Running Crossover Unit Test..." << std::endl;
+        std::cout << "\nRunning Util Unit Test..." << std::endl;
+        errors = test_stream_beats_to_individual();
+        if (errors != 0) {
+            std::cout << "Util Unit Test failed with " << errors << " errors." << std::endl;
+            return errors;
+        }
+
+        std::cout << "\nRunning Crossover Unit Test..." << std::endl;
         errors = run_crossover_test();
         if (errors != 0) {
             std::cout << "Crossover Unit Test failed with " << errors << " errors." << std::endl;

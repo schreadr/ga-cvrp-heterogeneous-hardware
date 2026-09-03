@@ -1,5 +1,6 @@
 #include "processing_node.hpp"
 #include "crossover.hpp"
+#include "mutate.hpp"
 #include <hls_streamofblocks.h>
 
 static void producer(
@@ -41,7 +42,6 @@ static void consumer(
             word.last = (i == num_individuals - 1 && b == total_beats - 1) ? 1 : 0;
             out_stream.write(word);
         }
-        //std::cout << "Consumed for individual " << i << " completed." << std::endl;
     }
 }
 
@@ -62,7 +62,7 @@ static void process_stream(
 
     producer(in0, stream_0, num_individuals, num_cities);
     producer(in1, stream_1, num_individuals, num_cities);
-    crossover(stream_0, stream_1, stream_cx_0, stream_cx_1, num_individuals, num_cities);
+    mutate(stream_0, stream_1, stream_cx_0, stream_cx_1, num_individuals, num_cities);
     consumer(stream_cx_0, out0, num_individuals, num_cities);
     consumer(stream_cx_1, out1, num_individuals, num_cities);
 }

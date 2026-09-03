@@ -90,7 +90,6 @@ void tb_push_individuals(hls::stream_of_blocks<IndividualAsBeats> &stream, const
     for (const auto &individual : individuals) {
         hls::write_lock<IndividualAsBeats> ind(stream);
         make_individual_beats(problem, individual, ind);
-        std::cout << "Pushed individual with fitness: " << individual.fitness << std::endl;
     }
 }
 
@@ -99,7 +98,6 @@ std::vector<Individual> tb_pull_individuals(hls::stream_of_blocks<IndividualAsBe
     for (int i = 0; i < population_size; ++i) {
         hls::read_lock<IndividualAsBeats> ind(stream);
         individuals.push_back(decode_individual(problem, ind, problem.nodes.size()));
-        std::cout << "Pulled individual " << i << " with fitness: " << individuals.back().fitness << std::endl;
     }
     return individuals;
 }
