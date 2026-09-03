@@ -15,54 +15,44 @@ void stream_beats_to_individual(
     int cities_left = n_cities_to_copy;
     int curr_dst_idx = dst_start_idx;
 
-    // 1. Initial refill to prime the shift window
-    while (current_valid_fields < FIELDS_PER_BEAT && cities_left > 0) {
-        #pragma HLS PIPELINE II=1
-        BeatPacket pkt = in_stream.read();
-        window |= ((ap_uint<BEAT_WIDTH << 1>)pkt.beat) << (current_valid_fields << FIELD_BITS_LOG2);
-        current_valid_fields += pkt.n;
-        cities_left -= pkt.n;
-    }
-
     // 2. Pipelined write loop with wrap-around filling (II=1)
-    while (current_valid_fields > 0) {
+    WRITE_BEATS_LOOP: do {
         #pragma HLS PIPELINE II=1
 
-        int dst_beat = get_beat_idx(curr_dst_idx);
-        int dst_offset = curr_dst_idx & (FIELDS_PER_BEAT - 1);
+        if(current_valid_fields < FIELDS_PER_BEAT && cities_left > 0){
+            BeatPacket pkt = in_stream.read();
+            window |= ((ap_uint<BEAT_WIDTH << 1>)pkt.beat) << (current_valid_fields << FIELD_BITS_LOG2);
+            current_valid_fields += pkt.n;
+            cities_left -= pkt.n;
+        }else{
+            int dst_beat = get_beat_idx(curr_dst_idx);
+            int dst_offset = curr_dst_idx & (FIELDS_PER_BEAT - 1);
 
-        int space_in_beat = FIELDS_PER_BEAT - dst_offset;
-        int cities_until_wrap = num_cities - curr_dst_idx + 1;
+            int space_in_beat = FIELDS_PER_BEAT - dst_offset;
+            int cities_until_wrap = num_cities - curr_dst_idx + 1;
 
-        // Determine how many fields to write in this clock cycle
-        int fields_this_beat = space_in_beat;
-        if (fields_this_beat > cities_until_wrap) fields_this_beat = cities_until_wrap;
-        if (fields_this_beat > current_valid_fields) fields_this_beat = current_valid_fields;
+            // Determine how many fields to write in this clock cycle
+            int fields_this_beat = space_in_beat;
+            if (fields_this_beat > cities_until_wrap) fields_this_beat = cities_until_wrap;
+            if (fields_this_beat > current_valid_fields) fields_this_beat = current_valid_fields;
 
-        // Extract valid fields from window bottom and align to dst_offset
-        ap_uint<BEAT_WIDTH << 1> raw_chunk = window.range((fields_this_beat << FIELD_BITS_LOG2) - 1, 0);
-        Beat out_beat = (Beat)(raw_chunk << (dst_offset << FIELD_BITS_LOG2));
+            // Extract valid fields from window bottom and align to dst_offset
+            ap_uint<BEAT_WIDTH << 1> raw_chunk = window.range((fields_this_beat << FIELD_BITS_LOG2) - 1, 0);
+            Beat out_beat = (Beat)(raw_chunk << (dst_offset << FIELD_BITS_LOG2));
 
-        int low_bit = dst_offset << FIELD_BITS_LOG2;
-        int high_bit = ((dst_offset + fields_this_beat) << FIELD_BITS_LOG2) - 1;
-        dst_ind[dst_beat].range(high_bit, low_bit) = out_beat.range(high_bit, low_bit);
+            int low_bit = dst_offset << FIELD_BITS_LOG2;
+            int high_bit = ((dst_offset + fields_this_beat) << FIELD_BITS_LOG2) - 1;
+            dst_ind[dst_beat].range(high_bit, low_bit) = out_beat.range(high_bit, low_bit);
 
-        // Advance destination index and handle wrap-around
-        curr_dst_idx += fields_this_beat;
-        if (curr_dst_idx > num_cities) {
-            curr_dst_idx = get_first_city_index(0); // Wraps to first city field (global index 1)
+            // Advance destination index and handle wrap-around
+            curr_dst_idx += fields_this_beat;
+            if (curr_dst_idx > num_cities) {
+                curr_dst_idx = get_first_city_index(0); // Wraps to first city field (global index 1)
+            }
+
+            // Consume fields from window
+            window >>= (fields_this_beat << FIELD_BITS_LOG2);
+            current_valid_fields -= fields_this_beat;
         }
-
-        // Consume fields from window
-        window >>= (fields_this_beat << FIELD_BITS_LOG2);
-        current_valid_fields -= fields_this_beat;
-
-        // Top up window from stream if more incoming fields exist
-        if (current_valid_fields < FIELDS_PER_BEAT && cities_left > 0) {
-            BeatPacket next_pkt = in_stream.read();
-            window |= ((ap_uint<BEAT_WIDTH << 1>)next_pkt.beat) << (current_valid_fields << FIELD_BITS_LOG2);
-            current_valid_fields += next_pkt.n;
-            cities_left -= next_pkt.n;
-        }
-    }
+    } while(current_valid_fields > 0);
 }
