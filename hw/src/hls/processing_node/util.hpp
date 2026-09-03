@@ -9,16 +9,20 @@ struct BeatPacket {
     int n;
 };
 
+// TODO improve performance using smaller data types
 struct BeatConsumerState {
     int current_valid_fields;
     int cities_left;
     int curr_dst_idx;
+    int current_beat_idx;
+
+    Beat accum_beat;
     ap_uint<BEAT_WIDTH << 1> window;
 
-    BeatConsumerState(int n_cities_to_copy, int dst_start_idx) : current_valid_fields(0), cities_left(n_cities_to_copy), curr_dst_idx(dst_start_idx), window(0) {}
+    BeatConsumerState(int n_cities_to_copy, int dst_start_idx) : current_valid_fields(0), cities_left(n_cities_to_copy), curr_dst_idx(dst_start_idx), current_beat_idx(-1), accum_beat(0), window(0) {}
 };
 
-inline void capture_and_propage(BeatConsumerState &state, hls::stream<BeatPacket> &in_stream, IndividualAsBeats &dst_ind, int num_cities);
+void capture_and_propagate(BeatConsumerState &state, hls::stream<BeatPacket> &in_stream, IndividualAsBeats &dst_ind, int num_cities);
 
 void stream_beats_to_individual(
     hls::stream<BeatPacket> &in_stream,

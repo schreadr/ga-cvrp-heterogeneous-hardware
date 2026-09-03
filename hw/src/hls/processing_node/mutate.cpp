@@ -62,12 +62,12 @@ static void write(IndividualAsBeats &c, hls::stream<BeatPacket> &reverse_buffer,
         if(i < start_beat || i > end_beat){
             c[i] = buffer.read();
         }else{
-            capture_and_propage(state, reverse_buffer, c, num_cities);
+            capture_and_propagate(state, reverse_buffer, c, num_cities);
         }
     }
 
     // since in the first iteration we only pack a beat we need to flush the remaining fields in the state.window)
-    capture_and_propage(state, reverse_buffer, c, num_cities);
+    capture_and_propagate(state, reverse_buffer, c, num_cities);
 }
 
 static void reverse_order(IndividualAsBeats &p0, IndividualAsBeats &p1, IndividualAsBeats &c0, IndividualAsBeats &c1, int num_cities, int start_city, int end_city, int n_cities_to_copy, int total_beats) {
