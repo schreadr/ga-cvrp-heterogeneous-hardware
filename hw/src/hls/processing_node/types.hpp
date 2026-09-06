@@ -171,4 +171,14 @@ static inline void set_node_id(FitnessOrCity &val, NodeId id) {
     val.range(2*COORD_BITS+CAPACITY_BITS+DEPOT_BITS + NODE_ID_BITS - 1, 2*COORD_BITS+CAPACITY_BITS+DEPOT_BITS) = id;
 }
 
+// DEBUG Helper functions
+//static void print_beat_node_ids(const Beat &b, int from_field, int to_field) {
+//    std::cout << "Cities from " << from_field << " to " << to_field << ": ";
+//    for (int i = from_field; i <= to_field; ++i) {
+//        NodeId id = get_node_id(get_field(b, i));
+//        std::cout << id.to_string(10) << ", ";
+//    }
+//    std::cout << std::endl;
+//}
+
 #endif // TYPES_HPP

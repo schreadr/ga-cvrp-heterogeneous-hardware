@@ -2,6 +2,7 @@
 #include "test_helper.hpp"
 #include "crossover_test.hpp"
 #include "util_test.hpp"
+#include "mutate_test.hpp"
 
 #include <cstring>
 #include <iostream>
@@ -138,6 +139,13 @@ int main() {
         errors = test_stream_beats_to_individual();
         if (errors != 0) {
             std::cout << "Util Unit Test failed with " << errors << " errors." << std::endl;
+            return errors;
+        }
+
+        std::cout << "\nRunning Mutate Unit Test..." << std::endl;
+        errors = run_mutate_test();
+        if (errors != 0) {
+            std::cout << "Mutate Unit Test failed with " << errors << " errors." << std::endl;
             return errors;
         }
 

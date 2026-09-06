@@ -8,11 +8,12 @@
 // Valid range: 0 < OX_START <= OX_END <= MAX_CITIES (both inclusive). cities are index from 1 to num_cities.
 // -----------------------------------------------------------------------------
 #define MUTATE_START 2
-#define MUTATE_END   4
+#define MUTATE_END   2 + FIELDS_PER_BEAT*2
 
 
 static void inline swap(Beat& b, int i, int j){
     FitnessOrCity tmp = get_field(b, i);
+    //std::cout << "Swapping fields " << i << " and " << j << ", values: " << get_node_id(tmp).to_string(10) << " <-> " << get_node_id(get_field(b, j)).to_string(10) << std::endl;
     set_field(b, i, get_field(b, j));
     set_field(b, j, tmp);
 }
@@ -23,6 +24,8 @@ static void copyAndStream(IndividualAsBeats &p0, IndividualAsBeats &p1, hls::str
     int end_beat, end_field;
     get_beat_field(end_city, end_beat, end_field);
     
+    //std::cout << "Copying and streaming from city " << start_city << " to " << end_city << std::endl;
+
     OX_COPY_UNCHANGED_AND_STREAM_REVERSED_LOOP: for (int i = total_beats-1; i >= 0; i--) {
         #pragma HLS PIPELINE II=1
         Beat p0b = p0[i]; 
@@ -35,8 +38,20 @@ static void copyAndStream(IndividualAsBeats &p0, IndividualAsBeats &p1, hls::str
             int low_field = (i == start_beat) ? start_field : get_first_city_index(i);
             int high_field = (i == end_beat) ? end_field : get_last_field_index(num_cities, i);
 
-            p0b >>= (FIELDS_PER_BEAT - 1 - high_field) << FIELD_BITS_LOG2;
-            p1b >>= (FIELDS_PER_BEAT - 1 - high_field) << FIELD_BITS_LOG2;
+            //std::cout << "Value of p0b before swapping: ";
+            //print_beat_node_ids(p0b, low_field, high_field);
+            //std::cout << "Value of p1b before swapping: ";
+            //print_beat_node_ids(p1b, low_field, high_field);
+            //std::cout << std::endl;
+
+            // shift relevant bits to the right s.t. they are on left after swapping
+            int shift_amount = (FIELDS_PER_BEAT - 1 - high_field) << FIELD_BITS_LOG2;
+            //std::cout << "Shift amount: " << shift_amount << std::endl;
+            p0b <<= shift_amount;
+            p1b <<= shift_amount;
+
+            //std::cout << "Value of p0b after shifting: " << p0b.to_string(2) << std::endl;
+            //std::cout << "Value of p1b after shifting: " << p1b.to_string(2) << std::endl;
 
             INVERT_LOOP: for (int i = 0; i < FIELDS_PER_BEAT/2; i++) {
                 #pragma HLS UNROLL
@@ -46,6 +61,13 @@ static void copyAndStream(IndividualAsBeats &p0, IndividualAsBeats &p1, hls::str
             }
 
             int n_fields = high_field - low_field + 1;
+
+            //std::cout << "Value of p0b after swapping: ";
+            //print_beat_node_ids(p0b, 0, n_fields-1);
+            //std::cout << "Value of p1b after swapping: ";
+            //print_beat_node_ids(p1b, 0, n_fields-1);
+            //std::cout << std::endl;
+
             reverse_buffer_0.write(BeatPacket{p0b, n_fields});
             reverse_buffer_1.write(BeatPacket{p1b, n_fields});
         }
@@ -57,7 +79,7 @@ static void write(IndividualAsBeats &c, hls::stream<BeatPacket> &reverse_buffer,
     int end_beat = get_beat_idx(end_city);
     BeatConsumerState state(n_cities_to_copy, start_city);
 
-    WRITE_BACK_LOOP: for(int i=0; i < total_beats; i++){
+    WRITE_BACK_LOOP: for(int i=total_beats-1; i >= 0; i--){
         #pragma HLS PIPELINE II=1
         if(i < start_beat || i > end_beat){
             c[i] = buffer.read();
@@ -66,8 +88,10 @@ static void write(IndividualAsBeats &c, hls::stream<BeatPacket> &reverse_buffer,
         }
     }
 
-    // since in the first iteration we only pack a beat we need to flush the remaining fields in the state.window)
+    // clear window and flush any remaining accumulated beat to the destination individual
     capture_and_propagate(state, reverse_buffer, c, num_cities);
+    capture_and_propagate(state, reverse_buffer, c, num_cities);
+    flush_accumulated_beat(state, c);
 }
 
 static void reverse_order(IndividualAsBeats &p0, IndividualAsBeats &p1, IndividualAsBeats &c0, IndividualAsBeats &c1, int num_cities, int start_city, int end_city, int n_cities_to_copy, int total_beats) {
@@ -78,7 +102,9 @@ static void reverse_order(IndividualAsBeats &p0, IndividualAsBeats &p1, Individu
         hls::stream<Beat> buffer_1;
 
         copyAndStream(p0, p1, reverse_buffer_0, reverse_buffer_1, buffer_0, buffer_1, num_cities, start_city, end_city, total_beats);
+        //std::cout << "\nstream 0: " << std::endl;
         write(c0, reverse_buffer_0, buffer_0, start_city, end_city, n_cities_to_copy, total_beats, num_cities);
+       //std::cout << "\nstream 1: " << std::endl;
         write(c1, reverse_buffer_1, buffer_1, start_city, end_city, n_cities_to_copy, total_beats, num_cities);
 }
 
@@ -104,6 +130,8 @@ void mutate(
         get_fitness(c0) = get_fitness(p0);
         get_fitness(c1) = get_fitness(p1);
         c0[start_beat] = p0[start_beat];
+        c0[end_beat] = p0[end_beat];
+        c1[start_beat] = p1[start_beat];
         c1[end_beat] = p1[end_beat];
 
         int n_cities_to_copy = end_idx - start_idx + 1;

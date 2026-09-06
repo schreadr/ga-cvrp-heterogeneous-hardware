@@ -31,6 +31,8 @@ void inline process_next_packet(
     // Commit current beat and pre-load target beat from RAM on beat changes
     if (state.current_beat_idx != dst_beat) {
         if (state.current_beat_idx != -1) {
+            //std::cout << "Writing accum_beat to dst_ind at index " << state.current_beat_idx << ": ";
+            //print_beat_node_ids(state.accum_beat, get_first_city_index(state.current_beat_idx), FIELDS_PER_BEAT - 1);
             dst_ind[state.current_beat_idx] = state.accum_beat;
         }
         state.current_beat_idx = dst_beat;
@@ -67,6 +69,21 @@ void capture_and_propagate(BeatConsumerState &state, hls::stream<BeatPacket> &in
     if(state.current_valid_fields < FIELDS_PER_BEAT && state.cities_left > 0){
         capture_next_packet(state, in_stream);
     }
+
+    //std::cout << "State after capture_and_propagate: "
+    //          << "current_valid_fields=" << state.current_valid_fields
+    //          << ", cities_left=" << state.cities_left
+    //          << ", curr_dst_idx=" << state.curr_dst_idx
+    //          << ", current_beat_idx=" << state.current_beat_idx
+    //          << std::endl;
+}
+
+void flush_accumulated_beat(BeatConsumerState &state, IndividualAsBeats &dst_ind) {
+    if (state.current_beat_idx != -1) {
+        //std::cout << "Flushing accum_beat to dst_ind at index " << state.current_beat_idx << ": ";
+        //print_beat_node_ids(state.accum_beat, get_first_city_index(state.current_beat_idx), FIELDS_PER_BEAT - 1);
+        dst_ind[state.current_beat_idx] = state.accum_beat;
+    }
 }
 
 void stream_beats_to_individual(
@@ -82,19 +99,9 @@ void stream_beats_to_individual(
     WRITE_BEATS_LOOP: do {
         #pragma HLS PIPELINE II=1
         // Instruct HLS that state dependency across iterations can be pipelined
-        #pragma HLS DEPENDENCE variable=dst_ind inter false
-
-        if (state.current_valid_fields > 0) {
-            process_next_packet(state, dst_ind, num_cities);
-        }
-
-        if (state.current_valid_fields < FIELDS_PER_BEAT && state.cities_left > 0) {
-            capture_next_packet(state, in_stream);
-        }
+        capture_and_propagate(state, in_stream, dst_ind, num_cities);
     } while (state.current_valid_fields > 0);
 
     // Flush final accumulated beat to RAM after loop ends
-    if (state.current_beat_idx != -1) {
-        dst_ind[state.current_beat_idx] = state.accum_beat;
-    }
+    flush_accumulated_beat(state, dst_ind);
 }

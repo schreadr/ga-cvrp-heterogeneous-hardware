@@ -24,6 +24,8 @@ struct BeatConsumerState {
 
 void capture_and_propagate(BeatConsumerState &state, hls::stream<BeatPacket> &in_stream, IndividualAsBeats &dst_ind, int num_cities);
 
+void flush_accumulated_beat(BeatConsumerState &state, IndividualAsBeats &dst_ind);
+
 void stream_beats_to_individual(
     hls::stream<BeatPacket> &in_stream,
     IndividualAsBeats &dst_ind,
