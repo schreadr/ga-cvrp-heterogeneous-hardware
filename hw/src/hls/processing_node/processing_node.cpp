@@ -7,14 +7,14 @@ static void producer(
     hls::stream<axi_word_t> &in_stream,
     hls::stream_of_blocks<IndividualAsBeats> &out,
     int num_individuals,
-    int num_cities
+    FieldIndex num_cities
 ) {
-    int total_beats = get_total_beats(num_cities);
+    BeatIndex total_beats = get_total_beats(num_cities);
 
     PRODUCER_INDIV_LOOP: for (int i = 0; i < num_individuals; i++) {
         hls::write_lock<IndividualAsBeats> ind(out);
 
-        DECODE_BEATS: for (int b = 0; b < total_beats; b++) {
+        DECODE_BEATS: for (BeatIndex b = 0; b < total_beats; b++) {
             #pragma HLS PIPELINE II=1
             axi_word_t word = in_stream.read();
             ind[b] = word.data;
@@ -26,14 +26,14 @@ static void consumer(
     hls::stream_of_blocks<IndividualAsBeats> &in,
     hls::stream<axi_word_t> &out_stream,
     int num_individuals,
-    int num_cities
+    FieldIndex num_cities
 ) {
-    int total_beats = get_total_beats(num_cities);
+    BeatIndex total_beats = get_total_beats(num_cities);
 
     CONSUMER_INDIV_LOOP: for (int i = 0; i < num_individuals; i++) {
         hls::read_lock<IndividualAsBeats> ind(in);
 
-        ENCODE_BEATS: for (int b = 0; b < total_beats; b++) {
+        ENCODE_BEATS: for (BeatIndex b = 0; b < total_beats; b++) {
             #pragma HLS PIPELINE II=1
             axi_word_t word;
             word.data = ind[b];
@@ -51,7 +51,7 @@ static void process_stream(
     hls::stream<axi_word_t> &in1,
     hls::stream<axi_word_t> &out1,
     int num_individuals,
-    int num_cities
+    FieldIndex num_cities
 ) {
     #pragma HLS DATAFLOW
 
@@ -106,5 +106,5 @@ void processing_node(
     #pragma HLS DATAFLOW
     drive_debug_probes(num_individuals0, num_individuals1, num_cities,
                        dbg_num_individuals0, dbg_num_individuals1, dbg_num_cities);
-    process_stream(in0, out0, in1, out1, num_individuals0, num_cities);
+    process_stream(in0, out0, in1, out1, num_individuals0, FieldIndex(num_cities));
 }
