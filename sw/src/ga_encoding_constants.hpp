@@ -21,9 +21,11 @@
 #define AXI_BYTES         64 // AXI_WIDTH / 8
 #define FIELDS_PER_BEAT   16 // AXI_WIDTH / FIELD_BITS
 #define FIELDS_PER_BEAT_LOG2  4 // log2(FIELDS_PER_BEAT)
-#define MAX_FIELDS       (MAX_CITIES + 1)
-#define MAX_BEATS        ((MAX_FIELDS + FIELDS_PER_BEAT - 1) / FIELDS_PER_BEAT)
-#define BEAT_WIDTH       (FIELDS_PER_BEAT * FIELD_BITS)
+#define MAX_FIELDS       1024 // MAX_CITIES + 1
+#define MAX_FIELDS_LOG2  10 // log2(MAX_FIELDS)
+#define MAX_BEATS        64 // MAX_FIELDS + FIELDS_PER_BEAT - 1) / FIELDS_PER_BEAT
+#define MAX_BEATS_LOG2   6 // log2(MAX_BEATS)
+#define BEAT_WIDTH       512 // FIELDS_PER_BEAT * FIELD_BITS
 
 static void assert_power_of_two(int x) {
     assert(x && !(x & (x - 1)));
@@ -43,6 +45,12 @@ static_block {
 
     assert(std::log2(FIELD_BITS) == FIELD_BITS_LOG2);
     assert(std::log2(FIELDS_PER_BEAT) == FIELDS_PER_BEAT_LOG2);
+
+    assert(MAX_FIELDS == MAX_CITIES + 1);
+    assert(MAX_FIELDS_LOG2 == std::ceil(std::log2(MAX_FIELDS)));
+
+    assert(MAX_BEATS == (MAX_FIELDS + FIELDS_PER_BEAT - 1) / FIELDS_PER_BEAT);
+    assert(BEAT_WIDTH == FIELDS_PER_BEAT * FIELD_BITS);
 }
 
 // inlined for hw side

@@ -17,6 +17,9 @@ typedef ap_uint<NODE_ID_BITS> NodeId;
 typedef ap_uint<FIELD_BITS> FitnessOrCity;
 typedef ap_uint<BEAT_WIDTH> Beat;
 
+typedef ap_uint<MAX_FIELDS_LOG2 + 1> FieldIndex;
+typedef ap_uint<MAX_BEATS_LOG2 + 1> BeatIndex;
+
 // Individual as an array of beats
 typedef Beat IndividualAsBeats[MAX_BEATS];
 

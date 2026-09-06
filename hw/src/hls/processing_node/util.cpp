@@ -15,22 +15,22 @@ void inline capture_next_packet(BeatConsumerState &state, hls::stream<BeatPacket
 void inline process_next_packet(
     BeatConsumerState &state,
     IndividualAsBeats &dst_ind,
-    int num_cities
+    FieldIndex num_cities
 ) {
     #pragma HLS INLINE
-    int dst_beat = get_beat_idx(state.curr_dst_idx);
-    int dst_offset = state.curr_dst_idx & (FIELDS_PER_BEAT - 1);
+    BeatIndex dst_beat = get_beat_idx(state.curr_dst_idx);
+    FieldIndex dst_offset = state.curr_dst_idx & (FIELDS_PER_BEAT - 1);
 
-    int space_in_beat = FIELDS_PER_BEAT - dst_offset;
-    int cities_until_wrap = num_cities - state.curr_dst_idx + 1;
+    FieldIndex space_in_beat = FIELDS_PER_BEAT - dst_offset;
+    FieldIndex cities_until_wrap = num_cities - state.curr_dst_idx + 1;
 
-    int fields_this_beat = space_in_beat;
+    FieldIndex fields_this_beat = space_in_beat;
     if (fields_this_beat > cities_until_wrap) fields_this_beat = cities_until_wrap;
     if (fields_this_beat > state.current_valid_fields) fields_this_beat = state.current_valid_fields;   
 
     // Commit current beat and pre-load target beat from RAM on beat changes
     if (state.current_beat_idx != dst_beat) {
-        if (state.current_beat_idx != -1) {
+        if (state.current_beat_idx != MAX_BEATS) {
             //std::cout << "Writing accum_beat to dst_ind at index " << state.current_beat_idx << ": ";
             //print_beat_node_ids(state.accum_beat, get_first_city_index(state.current_beat_idx), FIELDS_PER_BEAT - 1);
             dst_ind[state.current_beat_idx] = state.accum_beat;
@@ -40,6 +40,7 @@ void inline process_next_packet(
             }
         }
         state.current_beat_idx = dst_beat;
+        // For the case where start_beat == end_beat we want to use the end_beat value since it is updated
         if (dst_beat == state.data.start_end_data.end_beat) {
             state.accum_beat = state.data.end_beat;
         } else if (dst_beat == state.data.start_end_data.start_beat) {
@@ -69,7 +70,7 @@ void inline process_next_packet(
     state.current_valid_fields -= fields_this_beat;
 }
 
-void capture_and_propagate(BeatConsumerState &state, hls::stream<BeatPacket> &in_stream, IndividualAsBeats &dst_ind, int num_cities){
+void capture_and_propagate(BeatConsumerState &state, hls::stream<BeatPacket> &in_stream, IndividualAsBeats &dst_ind, FieldIndex num_cities){
     #pragma HLS INLINE
 
     if(state.current_valid_fields > 0){
@@ -89,7 +90,7 @@ void capture_and_propagate(BeatConsumerState &state, hls::stream<BeatPacket> &in
 }
 
 void flush_accumulated_beat(BeatConsumerState &state, IndividualAsBeats &dst_ind) {
-    if (state.current_beat_idx != -1) {
+    if (state.current_beat_idx != MAX_BEATS) {
         //std::cout << "Flushing accum_beat to dst_ind at index " << state.current_beat_idx << ": ";
         //print_beat_node_ids(state.accum_beat, get_first_city_index(state.current_beat_idx), FIELDS_PER_BEAT - 1);
         dst_ind[state.current_beat_idx] = state.accum_beat;
@@ -99,11 +100,11 @@ void flush_accumulated_beat(BeatConsumerState &state, IndividualAsBeats &dst_ind
 void stream_beats_to_individual(
     hls::stream<BeatPacket> &in_stream,
     IndividualAsBeats &dst_ind,
-    int dst_start_idx,
-    int n_cities_to_copy,
+    FieldIndex dst_start_idx,
+    FieldIndex n_cities_to_copy,
     const StartEndDataWithBeats &start_end_data,
-    int n_beats,
-    int num_cities
+    BeatIndex n_beats,
+    FieldIndex num_cities
 ) {
     BeatConsumerState state(
         n_cities_to_copy,
