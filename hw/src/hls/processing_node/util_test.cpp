@@ -54,6 +54,7 @@ static int test1(){
 
     int dst_start_idx = 2; 
     int n_cities_to_copy = 5;
+    int dst_end_idx = dst_start_idx + n_cities_to_copy - 1;
 
     // Ensure we don't exceed the number of fields in a beat
     assert(dst_start_idx + n_cities_to_copy <= num_cities); 
@@ -76,7 +77,7 @@ static int test1(){
     in_stream.write(pkt2);
 
     // Execute the HLS component
-    stream_beats_to_individual(in_stream, dst_ind, dst_start_idx, n_cities_to_copy, n_beats, num_cities);
+    stream_beats_to_individual(in_stream, dst_ind, dst_start_idx, n_cities_to_copy, StartEndDataWithBeats(get_start_end_data(dst_start_idx, dst_end_idx), 0, 0), n_beats, num_cities);
 
     std::vector<int> indices = {dst_start_idx, dst_start_idx + 1, dst_start_idx + 2, dst_start_idx + 3, dst_start_idx + 4};
     std::vector<int> expected_values = {0x111, 0x222, 0x333, 0x444, 0x555};
@@ -104,6 +105,7 @@ static int test2(){
     // Define test parameters with an unaligned start index
     int dst_start_idx = FIELDS_PER_BEAT - 2; // Start at the second last field of the first beat
     int n_cities_to_copy = 5; // This will require reading from two packets
+    int dst_end_idx = dst_start_idx + n_cities_to_copy - 1;
 
     // Populate mock stream packets using field-setting utilities
     BeatPacket pkt1;
@@ -123,7 +125,7 @@ static int test2(){
     in_stream.write(pkt2);
 
     // Execute the HLS component
-    stream_beats_to_individual(in_stream, dst_ind, dst_start_idx, n_cities_to_copy, n_beats, num_cities);
+    stream_beats_to_individual(in_stream, dst_ind, dst_start_idx, n_cities_to_copy, StartEndDataWithBeats(get_start_end_data(dst_start_idx, dst_end_idx), 0, 0), n_beats, num_cities);
 
     std::vector<int> indices = {dst_start_idx, dst_start_idx + 1, dst_start_idx + 2, dst_start_idx + 3, dst_start_idx + 4};
     std::vector<int> expected_values = {0x111, 0x222, 0x333, 0x444, 0x555};
@@ -151,6 +153,7 @@ static int test3(){
     // Define test parameters with an unaligned start index
     int dst_start_idx = FIELDS_PER_BEAT - 1; // Start at the second last field of the first beat
     int n_cities_to_copy = 5; // This will require reading from two packets
+    int dst_end_idx = 3;
 
     // Populate mock stream packets using field-setting utilities
     BeatPacket pkt1;
@@ -170,7 +173,7 @@ static int test3(){
     in_stream.write(pkt2);
 
     // Execute the HLS component
-    stream_beats_to_individual(in_stream, dst_ind, dst_start_idx, n_cities_to_copy, n_beats, num_cities);
+    stream_beats_to_individual(in_stream, dst_ind, dst_start_idx, n_cities_to_copy, StartEndDataWithBeats(get_start_end_data(dst_start_idx, dst_end_idx), 0, 0), n_beats, num_cities);
 
     std::vector<int> indices = {dst_start_idx, dst_start_idx + 1, 1, 2, 3};
     std::vector<int> expected_values = {0x111, 0x222, 0x333, 0x444, 0x555};

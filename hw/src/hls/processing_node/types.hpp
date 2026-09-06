@@ -20,6 +20,16 @@ typedef ap_uint<BEAT_WIDTH> Beat;
 // Individual as an array of beats
 typedef Beat IndividualAsBeats[MAX_BEATS];
 
+struct StartEndData {
+    const int start_beat;
+    const int start_field;
+    const int end_beat;
+    const int end_field;
+
+    StartEndData(int s_beat, int s_field, int e_beat, int e_field)
+        : start_beat(s_beat), start_field(s_field), end_beat(e_beat), end_field(e_field) {}
+};
+
 // Get the beat and field indices for a global field index (0 = fitness)
 static inline void get_beat_field(int global_idx, int &beat_idx, int &field_idx) {
     #pragma HLS INLINE
@@ -31,6 +41,20 @@ static inline void get_beat_field(int global_idx, int &beat_idx, int &field_idx)
 static inline int get_beat_idx(int global_idx) {
     #pragma HLS INLINE
     return global_idx >> FIELDS_PER_BEAT_LOG2; // global_idx / FIELDS_PER_BEAT
+}
+
+static inline StartEndData get_start_end_data(int start_idx, int end_idx) {
+    #pragma HLS INLINE
+    
+    int start_beat;
+    int start_field;
+    int end_beat;
+    int end_field;
+
+    get_beat_field(start_idx, start_beat, start_field);
+    get_beat_field(end_idx, end_beat, end_field);
+
+    return StartEndData(start_beat, start_field, end_beat, end_field);
 }
 
 static inline FitnessOrCity get_field_o(const IndividualAsBeats &ind, int beat_idx, int field_offset) {

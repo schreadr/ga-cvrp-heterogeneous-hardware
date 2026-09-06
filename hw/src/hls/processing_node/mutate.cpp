@@ -18,12 +18,7 @@ static void inline swap(Beat& b, int i, int j){
     set_field(b, j, tmp);
 }
 
-static void copyAndStream(IndividualAsBeats &p0, IndividualAsBeats &p1, hls::stream<BeatPacket> &reverse_buffer_0, hls::stream<BeatPacket> &reverse_buffer_1, hls::stream<Beat> &buffer_0, hls::stream<Beat> &buffer_1, int num_cities, int start_city, int end_city, int total_beats) {
-    int start_beat, start_field;
-    get_beat_field(start_city, start_beat, start_field);
-    int end_beat, end_field;
-    get_beat_field(end_city, end_beat, end_field);
-    
+static void copyAndStream(IndividualAsBeats &p0, IndividualAsBeats &p1, hls::stream<BeatPacket> &reverse_buffer_0, hls::stream<BeatPacket> &reverse_buffer_1, hls::stream<Beat> &buffer_0, hls::stream<Beat> &buffer_1, int num_cities, int total_beats, const StartEndData &start_end_data) {
     //std::cout << "Copying and streaming from city " << start_city << " to " << end_city << std::endl;
 
     OX_COPY_UNCHANGED_AND_STREAM_REVERSED_LOOP: for (int i = total_beats-1; i >= 0; i--) {
@@ -31,12 +26,12 @@ static void copyAndStream(IndividualAsBeats &p0, IndividualAsBeats &p1, hls::str
         Beat p0b = p0[i]; 
         Beat p1b = p1[i];
 
-        if (i < start_beat || i > end_beat) {
+        if (i < start_end_data.start_beat || i > start_end_data.end_beat) {
             buffer_0.write(p0b);
             buffer_1.write(p1b);
         } else {
-            int low_field = (i == start_beat) ? start_field : get_first_city_index(i);
-            int high_field = (i == end_beat) ? end_field : get_last_field_index(num_cities, i);
+            int low_field = (i == start_end_data.start_beat) ? start_end_data.start_field : get_first_city_index(i);
+            int high_field = (i == start_end_data.end_beat) ? start_end_data.end_field : get_last_field_index(num_cities, i);
 
             //std::cout << "Value of p0b before swapping: ";
             //print_beat_node_ids(p0b, low_field, high_field);
@@ -74,38 +69,39 @@ static void copyAndStream(IndividualAsBeats &p0, IndividualAsBeats &p1, hls::str
     }
 }
 
-static void write(IndividualAsBeats &c, hls::stream<BeatPacket> &reverse_buffer, hls::stream<Beat> &buffer, int start_city, int end_city, int n_cities_to_copy, int total_beats, int num_cities) {
-    int start_beat = get_beat_idx(start_city);
-    int end_beat = get_beat_idx(end_city);
-    BeatConsumerState state(n_cities_to_copy, start_city);
+static void write(IndividualAsBeats &c, hls::stream<BeatPacket> &reverse_buffer, hls::stream<Beat> &buffer,int num_cities, int total_beats, int n_cities_to_copy, StartEndDataWithBeats &data) {
+    BeatConsumerState state(
+        n_cities_to_copy,
+        data.start_end_data.start_field + (data.start_end_data.start_beat << FIELDS_PER_BEAT_LOG2),
+        data
+    );
 
-    WRITE_BACK_LOOP: for(int i=total_beats-1; i >= 0; i--){
+    WRITE_BACK_LOOP: for (int i = total_beats - 1; i >= 0; i--) {
         #pragma HLS PIPELINE II=1
-        if(i < start_beat || i > end_beat){
+        if (i < data.start_end_data.start_beat || i > data.start_end_data.end_beat) {
             c[i] = buffer.read();
-        }else{
+        } else {
             capture_and_propagate(state, reverse_buffer, c, num_cities);
         }
     }
 
-    // clear window and flush any remaining accumulated beat to the destination individual
     capture_and_propagate(state, reverse_buffer, c, num_cities);
     capture_and_propagate(state, reverse_buffer, c, num_cities);
     flush_accumulated_beat(state, c);
 }
 
-static void reverse_order(IndividualAsBeats &p0, IndividualAsBeats &p1, IndividualAsBeats &c0, IndividualAsBeats &c1, int num_cities, int start_city, int end_city, int n_cities_to_copy, int total_beats) {
+static void reverse_order(IndividualAsBeats &p0, IndividualAsBeats &p1, IndividualAsBeats &c0, IndividualAsBeats &c1, int num_cities, int total_beats, int n_cities_to_copy, StartEndDataWithBeats &start_end_data0, StartEndDataWithBeats &start_end_data1) {
         #pragma HLS DATAFLOW
         hls::stream<BeatPacket> reverse_buffer_0;
         hls::stream<BeatPacket> reverse_buffer_1;
         hls::stream<Beat> buffer_0;
         hls::stream<Beat> buffer_1;
 
-        copyAndStream(p0, p1, reverse_buffer_0, reverse_buffer_1, buffer_0, buffer_1, num_cities, start_city, end_city, total_beats);
+        copyAndStream(p0, p1, reverse_buffer_0, reverse_buffer_1, buffer_0, buffer_1, num_cities, total_beats, start_end_data0.start_end_data);
         //std::cout << "\nstream 0: " << std::endl;
-        write(c0, reverse_buffer_0, buffer_0, start_city, end_city, n_cities_to_copy, total_beats, num_cities);
+        write(c0, reverse_buffer_0, buffer_0, num_cities, total_beats, n_cities_to_copy, start_end_data0);
        //std::cout << "\nstream 1: " << std::endl;
-        write(c1, reverse_buffer_1, buffer_1, start_city, end_city, n_cities_to_copy, total_beats, num_cities);
+        write(c1, reverse_buffer_1, buffer_1, num_cities, total_beats, n_cities_to_copy, start_end_data1);
 }
 
 
@@ -124,18 +120,15 @@ void mutate(
         hls::write_lock<IndividualAsBeats> c1(out1);
 
         int start_idx = MUTATE_START, end_idx = MUTATE_END;
-        int start_beat = get_beat_idx(start_idx);
-        int end_beat = get_beat_idx(end_idx);
+        const StartEndData &start_end_data = get_start_end_data(start_idx, end_idx);
+        StartEndDataWithBeats start_end_data_with_beats0(start_end_data, p0[start_end_data.start_beat], p0[start_end_data.end_beat]);
+        StartEndDataWithBeats start_end_data_with_beats1(start_end_data, p1[start_end_data.start_beat], p1[start_end_data.end_beat]);
 
-        get_fitness(c0) = get_fitness(p0);
-        get_fitness(c1) = get_fitness(p1);
-        c0[start_beat] = p0[start_beat];
-        c0[end_beat] = p0[end_beat];
-        c1[start_beat] = p1[start_beat];
-        c1[end_beat] = p1[end_beat];
+        set_fitness(c0, get_fitness(p0));
+        set_fitness(c1, get_fitness(p1));
 
         int n_cities_to_copy = end_idx - start_idx + 1;
         int total_beats = get_total_beats(num_cities);
-        reverse_order(p0, p1, c0, c1, num_cities, start_idx, end_idx, n_cities_to_copy, total_beats);
+        reverse_order(p0, p1, c0, c1, num_cities, total_beats, n_cities_to_copy, start_end_data_with_beats0, start_end_data_with_beats1);
     }
 }

@@ -34,9 +34,19 @@ void inline process_next_packet(
             //std::cout << "Writing accum_beat to dst_ind at index " << state.current_beat_idx << ": ";
             //print_beat_node_ids(state.accum_beat, get_first_city_index(state.current_beat_idx), FIELDS_PER_BEAT - 1);
             dst_ind[state.current_beat_idx] = state.accum_beat;
+            if (state.current_beat_idx == state.data.start_end_data.start_beat &&
+                state.data.start_end_data.start_beat == state.data.start_end_data.end_beat) {
+                state.data.end_beat = state.accum_beat;
+            }
         }
         state.current_beat_idx = dst_beat;
-        state.accum_beat = dst_ind[dst_beat]; // Pre-load existing word to preserve previously written fields
+        if (dst_beat == state.data.start_end_data.end_beat) {
+            state.accum_beat = state.data.end_beat;
+        } else if (dst_beat == state.data.start_end_data.start_beat) {
+            state.accum_beat = state.data.initial_start_beat;
+        } else {
+            state.accum_beat = 0;
+        }
     }
 
     // Extract valid fields and write into local register
@@ -91,10 +101,15 @@ void stream_beats_to_individual(
     IndividualAsBeats &dst_ind,
     int dst_start_idx,
     int n_cities_to_copy,
+    const StartEndDataWithBeats &start_end_data,
     int n_beats,
     int num_cities
 ) {
-    BeatConsumerState state(n_cities_to_copy, dst_start_idx);
+    BeatConsumerState state(
+        n_cities_to_copy,
+        dst_start_idx,
+        start_end_data
+    );
 
     WRITE_BEATS_LOOP: do {
         #pragma HLS PIPELINE II=1
