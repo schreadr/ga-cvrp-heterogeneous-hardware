@@ -11,6 +11,10 @@
 #define OX_START 2
 #define OX_END   2 + FIELDS_PER_BEAT*2
 
+#define TAKEN_FIELD_SIZE 32
+#define TAKEN_FIELD_SIZE_LOG_2 5
+#define TAKEN_ARRAY_SIZE ((MAX_CITIES + TAKEN_FIELD_SIZE - 1) / TAKEN_FIELD_SIZE)
+
 struct UnusedCitiesBeat {
     ap_uint<FIELDS_PER_BEAT> valid_cities_f = 0;
     FitnessOrCity valid_cities[FIELDS_PER_BEAT];
@@ -18,7 +22,17 @@ struct UnusedCitiesBeat {
     BeatIndex n = 0;
 };
 
-void find_unsued_cities(IndividualAsBeats &p, hls::stream<UnusedCitiesBeat> &out, StartEndData &start_end_data_unused_city_search, FieldIndex num_cities, BeatIndex total_beats, FieldIndex n_cities_to_find, ap_uint<MAX_CITIES> &taken){
+void inline set_taken(ap_uint<TAKEN_FIELD_SIZE> taken[], NodeId id) {
+    #pragma HLS INLINE
+    taken[id >> TAKEN_FIELD_SIZE_LOG_2][(id & (TAKEN_FIELD_SIZE - 1))] = 1;
+}
+
+bool inline is_free(ap_uint<TAKEN_FIELD_SIZE> taken[], NodeId id) {
+    #pragma HLS INLINE
+    return (taken[id >> TAKEN_FIELD_SIZE_LOG_2][(id & (TAKEN_FIELD_SIZE - 1))]) == 0;
+}
+
+void find_unsued_cities(IndividualAsBeats &p, hls::stream<UnusedCitiesBeat> &out, StartEndData &start_end_data_unused_city_search, FieldIndex num_cities, BeatIndex total_beats, FieldIndex n_cities_to_find, ap_uint<TAKEN_FIELD_SIZE> taken[]){
     BeatIndex fill_beats_to_go = start_end_data_unused_city_search.start_beat == start_end_data_unused_city_search.end_beat ? BeatIndex(total_beats + BeatIndex(1)) : BeatIndex(total_beats);
 
     assert(fill_beats_to_go <= MAX_BEATS+1);
@@ -53,7 +67,7 @@ void find_unsued_cities(IndividualAsBeats &p, hls::stream<UnusedCitiesBeat> &out
                 NodeId id = get_node_id(f);
                 /*std::cout << "  Check f=" << f << " p1 id=" << id1
                           << " taken0[id]=" << taken0[id1] << "\n";*/
-                ap_uint<1> is_valid = !taken[id];
+                ap_uint<1> is_valid = is_free(taken, id);
                 unused_cities_beat.n += is_valid;
                 unused_cities_beat.valid_cities_f[i] = is_valid;
                 unused_cities_beat.valid_cities[i] = f;
@@ -93,7 +107,7 @@ void compact_unused_cities(hls::stream<UnusedCitiesBeat> &in, hls::stream<BeatPa
     }
 }
 
-void fill_up_in_circle(StartEndData &start_end_data_unused_city_search, StartEndDataWithBeats &start_end_data_with_beats0, StartEndDataWithBeats &start_end_data_with_beats1, IndividualAsBeats &p0, IndividualAsBeats &p1, IndividualAsBeats &c0, IndividualAsBeats &c1, BeatIndex total_beats, FieldIndex num_cities, FieldIndex start_idx, FieldIndex n_cities_to_insert, ap_uint<MAX_CITIES> &taken0, ap_uint<MAX_CITIES> &taken1){
+void fill_up_in_circle(StartEndData &start_end_data_unused_city_search, StartEndDataWithBeats &start_end_data_with_beats0, StartEndDataWithBeats &start_end_data_with_beats1, IndividualAsBeats &p0, IndividualAsBeats &p1, IndividualAsBeats &c0, IndividualAsBeats &c1, BeatIndex total_beats, FieldIndex num_cities, FieldIndex start_idx, FieldIndex n_cities_to_insert, ap_uint<TAKEN_FIELD_SIZE> taken0[], ap_uint<TAKEN_FIELD_SIZE> taken1[]){
     #pragma HLS DATAFLOW
     hls::stream<UnusedCitiesBeat> unused_cities_stream0;
     hls::stream<UnusedCitiesBeat> unused_cities_stream1;
@@ -131,8 +145,16 @@ void crossover(
         set_fitness(c1, get_fitness(p1));
 
         // Mark nodes already present in the slice
-        ap_uint<MAX_CITIES> taken0 = 0;
-        ap_uint<MAX_CITIES> taken1 = 0;
+        ap_uint<TAKEN_FIELD_SIZE> taken0[TAKEN_ARRAY_SIZE];
+        #pragma HLS ARRAY_PARTITION variable=taken0 complete
+        ap_uint<TAKEN_FIELD_SIZE> taken1[TAKEN_ARRAY_SIZE];
+        #pragma HLS ARRAY_PARTITION variable=taken1 complete
+
+        INIT_TAKEN_LOOP: for (int j = 0; j < TAKEN_ARRAY_SIZE; j++) {
+            #pragma HLS UNROLL
+            taken0[j] = 0;
+            taken1[j] = 0;
+        }
 
         FieldIndex start_idx = OX_START;
         FieldIndex end_idx = OX_END;
@@ -166,14 +188,14 @@ void crossover(
 
                     FitnessOrCity f0 = get_field(p0b, f);
                     NodeId id0 = get_node_id(f0);
-                    taken0[id0] = 1;
+                    set_taken(taken0, id0);
                     /*std::cout << "Copy slice: b=" << b << " f=" << f
                               << " p0 val=" << get_coord_x(f0).to_string(10) << "-" << get_coord_y(f0).to_string(10) << "-" << get_capacity(f0).to_string(10) << "-" << get_is_depot(f0) << "-" << get_node_id(f0).to_string(10) << " "
                               << " id0=" << id0 << " -> c0\n";*/
 
                     FitnessOrCity f1 = get_field(p1b, f);
                     NodeId id1 = get_node_id(f1);
-                    taken1[id1] = 1;
+                    set_taken(taken1, id1);
                     /*std::cout << "Copy slice: b=" << b << " f=" << f
                               << " p1 val=" << get_coord_x(f1).to_string(10) << "-" << get_coord_y(f1).to_string(10) << "-" << get_capacity(f1).to_string(10) << "-" << get_is_depot(f1) << "-" << get_node_id(f1).to_string(10) << " "
                               << " id1=" << id1 << " -> c1\n";*/
