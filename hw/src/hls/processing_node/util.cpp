@@ -116,7 +116,7 @@ void stream_beats_to_individual(
         #pragma HLS PIPELINE II=1
         // Instruct HLS that state dependency across iterations can be pipelined
         capture_and_propagate(state, in_stream, dst_ind, num_cities);
-    } while (state.current_valid_fields > 0);
+    } while (state.current_valid_fields > 0 || state.cities_left > 0);
 
     // Flush final accumulated beat to RAM after loop ends
     flush_accumulated_beat(state, dst_ind);

@@ -1,12 +1,115 @@
 #include "crossover.hpp"
+#include "util.hpp"
+
 #include <cassert>
+#include <hls_stream.h>
 
 // -----------------------------------------------------------------------------
 // OX crossover cut points (hard-coded for now).
 // Valid range: 0 < OX_START <= OX_END <= MAX_CITIES (both inclusive). cities are index from 1 to num_cities.
 // -----------------------------------------------------------------------------
 #define OX_START 2
-#define OX_END   5
+#define OX_END   2 + FIELDS_PER_BEAT*2
+
+struct UnusedCitiesBeat {
+    ap_uint<FIELDS_PER_BEAT> valid_cities_f = 0;
+    FitnessOrCity valid_cities[FIELDS_PER_BEAT];
+    FieldIndex offset[FIELDS_PER_BEAT];
+    BeatIndex n = 0;
+};
+
+void find_unsued_cities(IndividualAsBeats &p, hls::stream<UnusedCitiesBeat> &out, StartEndData &start_end_data_unused_city_search, FieldIndex num_cities, BeatIndex total_beats, FieldIndex n_cities_to_find, ap_uint<MAX_CITIES> &taken){
+    BeatIndex fill_beats_to_go = start_end_data_unused_city_search.start_beat == start_end_data_unused_city_search.end_beat ? BeatIndex(total_beats + BeatIndex(1)) : BeatIndex(total_beats);
+
+    assert(fill_beats_to_go <= MAX_BEATS+1);
+    FieldIndex found = 0;
+    FIND_UNSED_CITIES_LOOP: for (BeatIndex step = 0; step < fill_beats_to_go && found < n_cities_to_find; step++) {
+        #pragma HLS PIPELINE II=1
+        BeatIndex read_b = (start_end_data_unused_city_search.start_beat + step);
+        if (read_b >= total_beats) read_b -= total_beats;
+
+        FieldIndex f_start = (step == 0) ? start_end_data_unused_city_search.start_field : get_first_city_index(read_b);
+        FieldIndex f_end = (step == fill_beats_to_go - 1) ? start_end_data_unused_city_search.end_field : get_last_field_index(num_cities, read_b);
+
+        Beat b = p[read_b];
+
+        UnusedCitiesBeat unused_cities_beat;
+        #pragma HLS ARRAY_PARTITION variable=unused_cities_beat.valid_cities complete
+        #pragma HLS ARRAY_PARTITION variable=unused_cities_beat.offset complete
+
+        FieldIndex inner_itrs = f_end - f_start + 1;
+
+        /*std::cout << "Fill step " << step << ": read_b=" << read_b
+                  << " f_start=" << f_start << " f_end=" << f_end << "\n";*/
+
+        FIND_UNSED_CITIES_LOOP_INNER: for (FieldIndex i = 0; i < FIELDS_PER_BEAT; i++) {
+            #pragma HLS UNROLL
+
+            unused_cities_beat.offset[i] = unused_cities_beat.n;
+
+            if (i < inner_itrs) {
+                FieldIndex f_idx = i + f_start;
+                FitnessOrCity f = get_field(b, f_idx);
+                NodeId id = get_node_id(f);
+                /*std::cout << "  Check f=" << f << " p1 id=" << id1
+                          << " taken0[id]=" << taken0[id1] << "\n";*/
+                ap_uint<1> is_valid = !taken[id];
+                unused_cities_beat.n += is_valid;
+                unused_cities_beat.valid_cities_f[i] = is_valid;
+                unused_cities_beat.valid_cities[i] = f;
+            }
+        }
+
+        found += unused_cities_beat.n;
+        out.write(unused_cities_beat);
+    }
+}
+
+
+void compact_unused_cities(hls::stream<UnusedCitiesBeat> &in, hls::stream<BeatPacket> &out, StartEndData &start_end_data_unused_city_search, BeatIndex total_beats, FieldIndex n_cities_to_find){
+    BeatIndex num_iters = start_end_data_unused_city_search.start_beat == start_end_data_unused_city_search.end_beat ? BeatIndex(total_beats + BeatIndex(1)) : BeatIndex(total_beats);
+    
+    FieldIndex found = 0;
+    COMPACT_CITIES_LOOP: for(BeatIndex i = 0; i < num_iters && found < n_cities_to_find; i++){
+        #pragma HLS PIPELINE II=1
+        UnusedCitiesBeat unused_cities_beat = in.read();
+        #pragma HLS ARRAY_PARTITION variable=unused_cities_beat.valid_cities complete
+        #pragma HLS ARRAY_PARTITION variable=unused_cities_beat.offset complete
+
+        BeatPacket bp{};
+        bp.n = unused_cities_beat.n;
+        found += bp.n;
+        
+        COMPACT_CITIES_LOOP_INNER: for (FieldIndex k = 0; k < FIELDS_PER_BEAT; k++) {
+            #pragma HLS UNROLL
+            if(unused_cities_beat.valid_cities_f[k] == 1){
+                /*std::cout << "  Write c0 at global idx " << w0
+                      << " val=" << get_coord_x(unused_cities_beat.valid_cities[k]).to_string(10) << "-" << get_coord_y(unused_cities_beat.valid_cities[k]).to_string(10) << "-" << get_capacity(unused_cities_beat.valid_cities[k]).to_string(10) << "-" << get_is_depot(unused_cities_beat.valid_cities[k]) << "-" << get_node_id(unused_cities_beat.valid_cities[k]).to_string(10) << " "
+                      << " node_id=" << get_node_id(unused_cities_beat.valid_cities[k]) << "\n";*/
+                set_field(bp.beat, unused_cities_beat.offset[k], unused_cities_beat.valid_cities[k]);
+            }
+        }
+        out.write(bp);
+    }
+}
+
+void fill_up_in_circle(StartEndData &start_end_data_unused_city_search, StartEndDataWithBeats &start_end_data_with_beats0, StartEndDataWithBeats &start_end_data_with_beats1, IndividualAsBeats &p0, IndividualAsBeats &p1, IndividualAsBeats &c0, IndividualAsBeats &c1, BeatIndex total_beats, FieldIndex num_cities, FieldIndex start_idx, FieldIndex n_cities_to_insert, ap_uint<MAX_CITIES> &taken0, ap_uint<MAX_CITIES> &taken1){
+    #pragma HLS DATAFLOW
+    hls::stream<UnusedCitiesBeat> unused_cities_stream0;
+    hls::stream<UnusedCitiesBeat> unused_cities_stream1;
+    hls::stream<BeatPacket> beat_stream_0;
+    hls::stream<BeatPacket> beat_stream_1;
+
+    find_unsued_cities(p1, unused_cities_stream0, start_end_data_unused_city_search, num_cities, total_beats, n_cities_to_insert, taken0);
+    find_unsued_cities(p0, unused_cities_stream1, start_end_data_unused_city_search, num_cities, total_beats, n_cities_to_insert, taken1);
+
+    compact_unused_cities(unused_cities_stream0, beat_stream_0, start_end_data_unused_city_search, total_beats, n_cities_to_insert);
+    compact_unused_cities(unused_cities_stream1, beat_stream_1, start_end_data_unused_city_search, total_beats, n_cities_to_insert);
+
+    stream_beats_to_individual(beat_stream_0, c0, start_idx, n_cities_to_insert, start_end_data_with_beats0, total_beats, num_cities);
+    stream_beats_to_individual(beat_stream_1, c1, start_idx, n_cities_to_insert, start_end_data_with_beats1, total_beats, num_cities);
+}
+
 
 void crossover(
     hls::stream_of_blocks<IndividualAsBeats> &in0,
@@ -31,26 +134,23 @@ void crossover(
         ap_uint<MAX_CITIES> taken0 = 0;
         ap_uint<MAX_CITIES> taken1 = 0;
 
-        BeatIndex start_beat;
-        FieldIndex start_field;
-        get_beat_field(OX_START, start_beat, start_field);
-        BeatIndex end_beat;
-        FieldIndex end_field;
-        get_beat_field(OX_END, end_beat, end_field);
+        FieldIndex start_idx = OX_START;
+        FieldIndex end_idx = OX_END;
+        StartEndData start_end_data = get_start_end_data(start_idx, end_idx);
 
         /*std::cout << "--- Individual " << i << " ---\n";
         std::cout << "OX_START=" << OX_START << " -> beat " << start_beat
                   << " field " << start_field << "\n";
         std::cout << "OX_END=" << OX_END << " -> beat " << end_beat
-                  << " field " << end_field << "\n";*/
+                  << " field " << start_end_data.end_field << "\n";*/
 
-        BeatIndex itrs = end_beat - start_beat + 1;
+        BeatIndex itrs = start_end_data.end_beat - start_end_data.start_beat + 1;
         assert(itrs <= MAX_BEATS);
-        OX_COPY_BEAT_LOOP: for (BeatIndex i = 0; i < itrs; i++) {
+        COPY_BEAT_LOOP: for (BeatIndex i = 0; i < itrs; i++) {
             #pragma HLS PIPELINE II=1
-            BeatIndex b = i + start_beat;
-            FieldIndex low_field = (b == start_beat) ? start_field : get_first_city_index(b);
-            FieldIndex high_field = (b == end_beat) ? end_field : get_last_field_index(num_cities, b);
+            BeatIndex b = i + start_end_data.start_beat;
+            FieldIndex low_field = (b == start_end_data.start_beat) ? start_end_data.start_field : get_first_city_index(b);
+            FieldIndex high_field = (b == start_end_data.end_beat) ? start_end_data.end_field : get_last_field_index(num_cities, b);
 
             Beat p0b = p0[b];
             Beat p1b = p1[b];
@@ -81,184 +181,12 @@ void crossover(
             }
         }
 
-       /* std::cout << "taken0 after slice: " << taken0.to_string(2) << "\n";
-        std::cout << "taken1 after slice: " << taken1.to_string(2) << "\n";*/
+        StartEndData start_end_data_unused_city_search = get_start_end_data(end_idx+1, end_idx);
+        StartEndData start_end_data_circle = get_start_end_data(end_idx+1, start_idx-1);
+        StartEndDataWithBeats start_end_data_with_beats0(start_end_data_circle, p0[start_end_data_circle.start_beat], p0[start_end_data_circle.end_beat]);
+        StartEndDataWithBeats start_end_data_with_beats1(start_end_data_circle, p1[start_end_data_circle.start_beat], p1[start_end_data_circle.end_beat]);
 
         BeatIndex total_beats = get_total_beats(num_cities);
-
-        FieldIndex fill_start_idx = OX_END+1;
-        if (fill_start_idx > num_cities) fill_start_idx -= num_cities;
-
-        BeatIndex fill_start_beat;
-        FieldIndex fill_start_field;
-        get_beat_field(fill_start_idx, fill_start_beat, fill_start_field);
-
-        FieldIndex w0 = fill_start_idx;
-        FieldIndex w1 = fill_start_idx;
-
-        BeatIndex fill_beats_to_go = fill_start_beat == end_beat ? BeatIndex(total_beats + BeatIndex(1)) : BeatIndex(total_beats);
-
-        assert(fill_beats_to_go <= MAX_BEATS+1);
-        OX_FILL_BEAT_LOOP: for (BeatIndex step = 0; step < fill_beats_to_go; step++) {
-            #pragma HLS PIPELINE II=1
-            BeatIndex read_b = (fill_start_beat + step);
-            if (read_b >= total_beats) read_b -= total_beats;
-
-            FieldIndex f_start = (step == 0) ? fill_start_field : get_first_city_index(read_b);
-            FieldIndex f_end = (step == total_beats) ? end_field : get_last_field_index(num_cities, read_b);
-
-            Beat p0b = p0[read_b];
-            Beat p1b = p1[read_b];
-
-            ap_uint<FIELDS_PER_BEAT> valid_cities_f0 = 0;
-            FitnessOrCity valid_cities0[FIELDS_PER_BEAT];
-            #pragma HLS ARRAY_PARTITION variable=valid_cities0 complete
-            FieldIndex offset0[FIELDS_PER_BEAT];
-            #pragma HLS ARRAY_PARTITION variable=offset0 complete
-            FieldIndex total_v0 = 0;
-
-            ap_uint<FIELDS_PER_BEAT> valid_cities_f1 = 0;
-            FitnessOrCity valid_cities1[FIELDS_PER_BEAT];
-            #pragma HLS ARRAY_PARTITION variable=valid_cities1 complete
-            FieldIndex offset1[FIELDS_PER_BEAT];
-            #pragma HLS ARRAY_PARTITION variable=offset1 complete
-            FieldIndex total_v1 = 0;
-
-            FieldIndex inner_itrs = f_end - f_start + 1;
-
-            /*std::cout << "Fill step " << step << ": read_b=" << read_b
-                      << " f_start=" << f_start << " f_end=" << f_end << "\n";*/
-
-
-            OX_FILL_CHECK_LOOP: for (FieldIndex i = 0; i < FIELDS_PER_BEAT; i++) {
-                #pragma HLS UNROLL
-
-                offset0[i] = total_v0;
-                offset1[i] = total_v1;
-
-                if (i < inner_itrs) {
-                    FieldIndex f = i + f_start;
-                    FitnessOrCity f1 = get_field(p1b, f);
-                    NodeId id1 = get_node_id(f1);
-                    /*std::cout << "  Check f=" << f << " p1 id=" << id1
-                              << " taken0[id]=" << taken0[id1] << "\n";*/
-                    ap_uint<1> is_valid0 = !taken0[id1];
-                    total_v0 += is_valid0;
-                    valid_cities_f0[i] = is_valid0;
-                    valid_cities0[i] = f1;
-
-                    FitnessOrCity f0 = get_field(p0b, f);
-                    NodeId id0 = get_node_id(f0);
-                    /*std::cout << "  Check f=" << f << " p0 id=" << id0
-                              << " taken1[id]=" << taken1[id0] << "\n";*/
-                    ap_uint<1> is_valid1 = !taken1[id0];
-                    total_v1 += is_valid1;
-                    valid_cities_f1[i] = is_valid1;
-                    valid_cities1[i] = f0;
-                }
-            }
-            //std::cout << "  v0=" << v0 << " v1=" << v1 << "\n";
-
-            BeatIndex write_start_beat_c0;
-            FieldIndex write_start_field_c0;
-            get_beat_field(w0, write_start_beat_c0, write_start_field_c0);
-            FieldIndex write_last_field_c0 = w0 + total_v0 - 1;
-            write_last_field_c0 = (write_last_field_c0 > num_cities) ? FieldIndex(write_last_field_c0 - num_cities) : FieldIndex(write_last_field_c0);
-            BeatIndex last_beat_idx_c0 = get_beat_idx(write_last_field_c0);
-            BeatIndex second_beat_idx_c0 = write_start_beat_c0 + 1;
-            second_beat_idx_c0 = second_beat_idx_c0 < total_beats ? BeatIndex(second_beat_idx_c0) : BeatIndex(0);
-
-            Beat c0b[3];
-            #pragma HLS ARRAY_PARTITION variable=c0b complete
-            c0b[0] = c0[write_start_beat_c0];
-            if(last_beat_idx_c0 != write_start_beat_c0) {
-                c0b[1] = c0[second_beat_idx_c0];
-
-                if(last_beat_idx_c0 != second_beat_idx_c0) {
-                    c0b[2] = c0[last_beat_idx_c0];
-                }
-            }
-
-            OX_FILL_WRITE_LOOP0: for (FieldIndex k = 0; k < FIELDS_PER_BEAT; k++) {
-                #pragma HLS UNROLL
-                if(valid_cities_f0[k] == 1){
-                    /*std::cout << "  Write c0 at global idx " << w0
-                          << " val=" << get_coord_x(valid_cities0[k]).to_string(10) << "-" << get_coord_y(valid_cities0[k]).to_string(10) << "-" << get_capacity(valid_cities0[k]).to_string(10) << "-" << get_is_depot(valid_cities0[k]) << "-" << get_node_id(valid_cities0[k]).to_string(10) << " "
-                          << " node_id=" << get_node_id(valid_cities0[k]) << "\n";*/
-                    FieldIndex raw_idx = w0 + offset0[k];
-                    FieldIndex wrapped_idx = (raw_idx > num_cities) ? FieldIndex(raw_idx - num_cities) : FieldIndex(raw_idx);
-
-                    BeatIndex write_curr_beat;
-                    FieldIndex write_curr_field;
-                    get_beat_field(wrapped_idx, write_curr_beat, write_curr_field);
-
-                    Beat &b= write_start_beat_c0 == write_curr_beat ? c0b[0] : (second_beat_idx_c0 == write_curr_beat ? c0b[1] : c0b[2]);
-                    set_field(b, write_curr_field, valid_cities0[k]);
-                }
-            }
-            FieldIndex next_w0 = w0 + total_v0;
-            w0 = (next_w0 > num_cities) ? FieldIndex(next_w0 - num_cities) : FieldIndex(next_w0);
-
-            c0[write_start_beat_c0] = c0b[0];
-            if(last_beat_idx_c0 != write_start_beat_c0) {
-                c0[second_beat_idx_c0] = c0b[1];
-
-                if(last_beat_idx_c0 != second_beat_idx_c0) {
-                    c0[last_beat_idx_c0] = c0b[2];
-                }
-            }
-
-
-
-            BeatIndex write_start_beat_c1;
-            FieldIndex write_start_field_c1;
-            get_beat_field(w1, write_start_beat_c1, write_start_field_c1);
-            FieldIndex write_last_field_c1 = w1 + total_v1 - 1;
-            write_last_field_c1 = (write_last_field_c1 > num_cities) ? FieldIndex(write_last_field_c1 - num_cities) : FieldIndex(write_last_field_c1);
-            BeatIndex last_beat_idx_c1 = get_beat_idx(write_last_field_c1);
-            BeatIndex second_beat_idx_c1 = write_start_beat_c1 + 1;
-            second_beat_idx_c1 = second_beat_idx_c1 < total_beats ? BeatIndex(second_beat_idx_c1) : BeatIndex(0);
-
-            Beat c1b[3];
-            #pragma HLS ARRAY_PARTITION variable=c1b complete
-            c1b[0] = c1[write_start_beat_c1];
-            if(last_beat_idx_c1 != write_start_beat_c1) {
-                c1b[1] = c1[second_beat_idx_c1];
-
-                if(last_beat_idx_c1 != second_beat_idx_c1) {
-                    c1b[2] = c1[last_beat_idx_c1];
-                }
-            }
-
-            OX_FILL_WRITE_LOOP1: for (FieldIndex k = 0; k < FIELDS_PER_BEAT; k++) {
-                #pragma HLS UNROLL
-                if(valid_cities_f1[k] == 1){
-                    /* std::cout << "  Write c1 at global idx " << w1
-                          << " val=" << get_coord_x(valid_cities1[k]).to_string(10) << "-" << get_coord_y(valid_cities1[k]).to_string(10) << "-" << get_capacity(valid_cities1[k]).to_string(10) << "-" << get_is_depot(valid_cities1[k]) << "-" << get_node_id(valid_cities1[k]).to_string(10) << " "
-                          << " node_id=" << get_node_id(valid_cities1[k]) << "\n";*/
-                    FieldIndex raw_idx = w1 + offset1[k];
-                    FieldIndex wrapped_idx = (raw_idx > num_cities) ? FieldIndex(raw_idx - num_cities) : FieldIndex(raw_idx);
-
-                    BeatIndex write_curr_beat;
-                    FieldIndex write_curr_field;
-                    get_beat_field(wrapped_idx, write_curr_beat, write_curr_field);
-
-                    Beat &b= write_start_beat_c1 == write_curr_beat ? c1b[0] : (second_beat_idx_c1 == write_curr_beat ? c1b[1] : c1b[2]);
-                    set_field(b, write_curr_field, valid_cities1[k]);
-                }
-            }
-            FieldIndex next_w1 = w1 + total_v1;
-            w1 = (next_w1 > num_cities) ? FieldIndex(next_w1 - num_cities) : FieldIndex(next_w1);
-            
-            c1[write_start_beat_c1] = c1b[0];
-            if(last_beat_idx_c1 != write_start_beat_c1) {
-                c1[second_beat_idx_c1] = c1b[1];
-
-                if(last_beat_idx_c1 != second_beat_idx_c1) {
-                    c1[last_beat_idx_c1] = c1b[2];
-                }
-            }
-        }
-        //std::cout << "--- End individual " << i << " ---" << std::endl;
+        fill_up_in_circle(start_end_data_unused_city_search, start_end_data_with_beats0, start_end_data_with_beats1, p0, p1,c0, c1, total_beats, num_cities, end_idx+1, num_cities - (end_idx - start_idx + 1), taken0, taken1);
     }
 }

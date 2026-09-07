@@ -62,7 +62,7 @@ static void process_stream(
 
     producer(in0, stream_0, num_individuals, num_cities);
     producer(in1, stream_1, num_individuals, num_cities);
-    mutate(stream_0, stream_1, stream_cx_0, stream_cx_1, num_individuals, num_cities);
+    crossover(stream_0, stream_1, stream_cx_0, stream_cx_1, num_individuals, num_cities);
     consumer(stream_cx_0, out0, num_individuals, num_cities);
     consumer(stream_cx_1, out1, num_individuals, num_cities);
 }
