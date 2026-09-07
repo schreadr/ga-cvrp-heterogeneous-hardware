@@ -71,7 +71,7 @@ void compact_unused_cities(hls::stream<UnusedCitiesBeat> &in, hls::stream<BeatPa
     
     FieldIndex found = 0;
     COMPACT_CITIES_LOOP: for(BeatIndex i = 0; i < num_iters && found < n_cities_to_find; i++){
-        #pragma HLS PIPELINE II=1
+        #pragma HLS PIPELINE II=FIELDS_PER_BEAT/2
         UnusedCitiesBeat unused_cities_beat = in.read();
         #pragma HLS ARRAY_PARTITION variable=unused_cities_beat.valid_cities complete
         #pragma HLS ARRAY_PARTITION variable=unused_cities_beat.offset complete
@@ -81,7 +81,7 @@ void compact_unused_cities(hls::stream<UnusedCitiesBeat> &in, hls::stream<BeatPa
         found += bp.n;
         
         COMPACT_CITIES_LOOP_INNER: for (FieldIndex k = 0; k < FIELDS_PER_BEAT; k++) {
-            #pragma HLS UNROLL
+            #pragma HLS UNROLL FACTOR=2
             if(unused_cities_beat.valid_cities_f[k] == 1){
                 /*std::cout << "  Write c0 at global idx " << w0
                       << " val=" << get_coord_x(unused_cities_beat.valid_cities[k]).to_string(10) << "-" << get_coord_y(unused_cities_beat.valid_cities[k]).to_string(10) << "-" << get_capacity(unused_cities_beat.valid_cities[k]).to_string(10) << "-" << get_is_depot(unused_cities_beat.valid_cities[k]) << "-" << get_node_id(unused_cities_beat.valid_cities[k]).to_string(10) << " "
