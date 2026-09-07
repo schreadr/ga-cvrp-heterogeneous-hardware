@@ -24,7 +24,7 @@ void find_unsued_cities(IndividualAsBeats &p, hls::stream<UnusedCitiesBeat> &out
     assert(fill_beats_to_go <= MAX_BEATS+1);
     FieldIndex found = 0;
     FIND_UNSED_CITIES_LOOP: for (BeatIndex step = 0; step < fill_beats_to_go && found < n_cities_to_find; step++) {
-        #pragma HLS PIPELINE II=1
+        #pragma HLS PIPELINE II=FIELDS_PER_BEAT/2
         BeatIndex read_b = (start_end_data_unused_city_search.start_beat + step);
         if (read_b >= total_beats) read_b -= total_beats;
 
@@ -43,7 +43,7 @@ void find_unsued_cities(IndividualAsBeats &p, hls::stream<UnusedCitiesBeat> &out
                   << " f_start=" << f_start << " f_end=" << f_end << "\n";*/
 
         FIND_UNSED_CITIES_LOOP_INNER: for (FieldIndex i = 0; i < FIELDS_PER_BEAT; i++) {
-            #pragma HLS UNROLL
+            #pragma HLS UNROLL FACTOR=2
 
             unused_cities_beat.offset[i] = unused_cities_beat.n;
 
@@ -154,6 +154,8 @@ void crossover(
 
             Beat p0b = p0[b];
             Beat p1b = p1[b];
+            c0[b] = p0b;
+            c1[b] = p1b;
 
             FieldIndex inner_itrs = high_field - low_field + 1;
             OX_COPY_FIELD_LOOP: for (FieldIndex j = 0; j < FIELDS_PER_BEAT; j++) {
@@ -163,7 +165,6 @@ void crossover(
                     FieldIndex f = low_field + j;
 
                     FitnessOrCity f0 = get_field(p0b, f);
-                    set_field(c0, b, f, f0);
                     NodeId id0 = get_node_id(f0);
                     taken0[id0] = 1;
                     /*std::cout << "Copy slice: b=" << b << " f=" << f
@@ -171,7 +172,6 @@ void crossover(
                               << " id0=" << id0 << " -> c0\n";*/
 
                     FitnessOrCity f1 = get_field(p1b, f);
-                    set_field(c1, b, f, f1);
                     NodeId id1 = get_node_id(f1);
                     taken1[id1] = 1;
                     /*std::cout << "Copy slice: b=" << b << " f=" << f
