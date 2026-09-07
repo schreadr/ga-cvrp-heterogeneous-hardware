@@ -5,7 +5,7 @@
 #include <ap_axi_sdata.h>
 #include <hls_stream.h>
 
-#include "../../../../sw/src/ga_encoding_constants.hpp"
+#include "ga_encoding_constants.hpp"
 
 // AXI4-Stream payload
 typedef ap_axiu<AXI_WIDTH, 0, 0, 0> axi_word_t;

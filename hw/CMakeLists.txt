@@ -58,5 +58,12 @@ load_apps (
     VFPGA_C0_0 "src"
 )
 
+set(HLS_SW_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../sw/src")
+file(COPY
+    "${HLS_SW_INCLUDE_DIR}/ga_encoding_constants.hpp"
+    "${HLS_SW_INCLUDE_DIR}/static_block.hpp"
+    DESTINATION "${CMAKE_CURRENT_SOURCE_DIR}/src/hls/processing_node"
+)
+
 # Create the hardware project
 create_hw()

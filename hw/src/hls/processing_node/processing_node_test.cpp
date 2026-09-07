@@ -8,9 +8,9 @@
 #include <iostream>
 #include <vector>
 
-#include "../../../../sw/src/ga_encoding_constants.hpp"
-#include "../../../../sw/src/ga.hpp"
-#include "../../../../sw/src/ga_streaming.hpp"
+#include "ga_encoding_constants.hpp"
+#include "ga.hpp"
+#include "ga_streaming.hpp"
 
 static int kNumCities = 40;
 static std::size_t kNumIndividuals = 3;

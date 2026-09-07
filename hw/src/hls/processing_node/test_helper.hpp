@@ -2,7 +2,7 @@
 #define TEST_HELPER_HPP
 
 #include "types.hpp"
-#include "../../../../sw/src/ga.hpp"
+#include "ga.hpp"
 
 #include <cstddef>
 #include <cstdint>

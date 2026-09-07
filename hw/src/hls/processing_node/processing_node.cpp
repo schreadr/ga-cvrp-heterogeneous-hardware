@@ -3,6 +3,15 @@
 #include "mutate.hpp"
 #include <hls_streamofblocks.h>
 
+// added these for compilation with coyote
+#ifndef CSIM_BUILD
+
+#include "util.cpp"
+#include "crossover.cpp"
+#include "mutate.cpp"
+
+#endif
+
 static void producer(
     hls::stream<axi_word_t> &in_stream,
     hls::stream_of_blocks<IndividualAsBeats> &out,
