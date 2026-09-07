@@ -11,20 +11,14 @@
 #define OX_START 2
 #define OX_END   2 + FIELDS_PER_BEAT*2
 
-struct UnusedCitiesBeat {
-    ap_uint<FIELDS_PER_BEAT> valid_cities_f = 0;
-    FitnessOrCity valid_cities[FIELDS_PER_BEAT];
-    FieldIndex offset[FIELDS_PER_BEAT];
-    BeatIndex n = 0;
-};
-
-void find_unsued_cities(IndividualAsBeats &p, hls::stream<UnusedCitiesBeat> &out, StartEndData &start_end_data_unused_city_search, FieldIndex num_cities, BeatIndex total_beats, FieldIndex n_cities_to_find, ap_uint<MAX_CITIES> &taken){
+// TODO how can resources be optimized?
+void find_unsued_cities(IndividualAsBeats &p, hls::stream<BeatPacket> &out, StartEndData &start_end_data_unused_city_search, FieldIndex num_cities, BeatIndex total_beats, FieldIndex n_cities_to_find, ap_uint<MAX_CITIES> &taken){
     BeatIndex fill_beats_to_go = start_end_data_unused_city_search.start_beat == start_end_data_unused_city_search.end_beat ? BeatIndex(total_beats + BeatIndex(1)) : BeatIndex(total_beats);
 
     assert(fill_beats_to_go <= MAX_BEATS+1);
     FieldIndex found = 0;
     FIND_UNSED_CITIES_LOOP: for (BeatIndex step = 0; step < fill_beats_to_go && found < n_cities_to_find; step++) {
-        #pragma HLS PIPELINE II=FIELDS_PER_BEAT/2
+        #pragma HLS PIPELINE II=11
         BeatIndex read_b = (start_end_data_unused_city_search.start_beat + step);
         if (read_b >= total_beats) read_b -= total_beats;
 
@@ -32,10 +26,7 @@ void find_unsued_cities(IndividualAsBeats &p, hls::stream<UnusedCitiesBeat> &out
         FieldIndex f_end = (step == fill_beats_to_go - 1) ? start_end_data_unused_city_search.end_field : get_last_field_index(num_cities, read_b);
 
         Beat b = p[read_b];
-
-        UnusedCitiesBeat unused_cities_beat;
-        #pragma HLS ARRAY_PARTITION variable=unused_cities_beat.valid_cities complete
-        #pragma HLS ARRAY_PARTITION variable=unused_cities_beat.offset complete
+        BeatPacket bp{};
 
         FieldIndex inner_itrs = f_end - f_start + 1;
 
@@ -43,9 +34,7 @@ void find_unsued_cities(IndividualAsBeats &p, hls::stream<UnusedCitiesBeat> &out
                   << " f_start=" << f_start << " f_end=" << f_end << "\n";*/
 
         FIND_UNSED_CITIES_LOOP_INNER: for (FieldIndex i = 0; i < FIELDS_PER_BEAT; i++) {
-            #pragma HLS UNROLL FACTOR=2
-
-            unused_cities_beat.offset[i] = unused_cities_beat.n;
+            //#pragma HLS UNROLL FACTOR=2
 
             if (i < inner_itrs) {
                 FieldIndex f_idx = i + f_start;
@@ -54,57 +43,26 @@ void find_unsued_cities(IndividualAsBeats &p, hls::stream<UnusedCitiesBeat> &out
                 /*std::cout << "  Check f=" << f << " p1 id=" << id1
                           << " taken0[id]=" << taken0[id1] << "\n";*/
                 ap_uint<1> is_valid = !taken[id];
-                unused_cities_beat.n += is_valid;
-                unused_cities_beat.valid_cities_f[i] = is_valid;
-                unused_cities_beat.valid_cities[i] = f;
+                if (is_valid) {
+                    set_field(bp.beat, bp.n, f);
+                    bp.n++;
+                }
             }
         }
 
-        found += unused_cities_beat.n;
-        out.write(unused_cities_beat);
-    }
-}
-
-
-void compact_unused_cities(hls::stream<UnusedCitiesBeat> &in, hls::stream<BeatPacket> &out, StartEndData &start_end_data_unused_city_search, BeatIndex total_beats, FieldIndex n_cities_to_find){
-    BeatIndex num_iters = start_end_data_unused_city_search.start_beat == start_end_data_unused_city_search.end_beat ? BeatIndex(total_beats + BeatIndex(1)) : BeatIndex(total_beats);
-    
-    FieldIndex found = 0;
-    COMPACT_CITIES_LOOP: for(BeatIndex i = 0; i < num_iters && found < n_cities_to_find; i++){
-        #pragma HLS PIPELINE II=FIELDS_PER_BEAT/2
-        UnusedCitiesBeat unused_cities_beat = in.read();
-        #pragma HLS ARRAY_PARTITION variable=unused_cities_beat.valid_cities complete
-        #pragma HLS ARRAY_PARTITION variable=unused_cities_beat.offset complete
-
-        BeatPacket bp{};
-        bp.n = unused_cities_beat.n;
         found += bp.n;
-        
-        COMPACT_CITIES_LOOP_INNER: for (FieldIndex k = 0; k < FIELDS_PER_BEAT; k++) {
-            #pragma HLS UNROLL FACTOR=2
-            if(unused_cities_beat.valid_cities_f[k] == 1){
-                /*std::cout << "  Write c0 at global idx " << w0
-                      << " val=" << get_coord_x(unused_cities_beat.valid_cities[k]).to_string(10) << "-" << get_coord_y(unused_cities_beat.valid_cities[k]).to_string(10) << "-" << get_capacity(unused_cities_beat.valid_cities[k]).to_string(10) << "-" << get_is_depot(unused_cities_beat.valid_cities[k]) << "-" << get_node_id(unused_cities_beat.valid_cities[k]).to_string(10) << " "
-                      << " node_id=" << get_node_id(unused_cities_beat.valid_cities[k]) << "\n";*/
-                set_field(bp.beat, unused_cities_beat.offset[k], unused_cities_beat.valid_cities[k]);
-            }
-        }
         out.write(bp);
     }
 }
 
+// TODO if resources are required consider processing individuals sequentially.
 void fill_up_in_circle(StartEndData &start_end_data_unused_city_search, StartEndDataWithBeats &start_end_data_with_beats0, StartEndDataWithBeats &start_end_data_with_beats1, IndividualAsBeats &p0, IndividualAsBeats &p1, IndividualAsBeats &c0, IndividualAsBeats &c1, BeatIndex total_beats, FieldIndex num_cities, FieldIndex start_idx, FieldIndex n_cities_to_insert, ap_uint<MAX_CITIES> &taken0, ap_uint<MAX_CITIES> &taken1){
     #pragma HLS DATAFLOW
-    hls::stream<UnusedCitiesBeat> unused_cities_stream0;
-    hls::stream<UnusedCitiesBeat> unused_cities_stream1;
     hls::stream<BeatPacket> beat_stream_0;
     hls::stream<BeatPacket> beat_stream_1;
 
-    find_unsued_cities(p1, unused_cities_stream0, start_end_data_unused_city_search, num_cities, total_beats, n_cities_to_insert, taken0);
-    find_unsued_cities(p0, unused_cities_stream1, start_end_data_unused_city_search, num_cities, total_beats, n_cities_to_insert, taken1);
-
-    compact_unused_cities(unused_cities_stream0, beat_stream_0, start_end_data_unused_city_search, total_beats, n_cities_to_insert);
-    compact_unused_cities(unused_cities_stream1, beat_stream_1, start_end_data_unused_city_search, total_beats, n_cities_to_insert);
+    find_unsued_cities(p1, beat_stream_0, start_end_data_unused_city_search, num_cities, total_beats, n_cities_to_insert, taken0);
+    find_unsued_cities(p0, beat_stream_1, start_end_data_unused_city_search, num_cities, total_beats, n_cities_to_insert, taken1);
 
     stream_beats_to_individual(beat_stream_0, c0, start_idx, n_cities_to_insert, start_end_data_with_beats0, total_beats, num_cities);
     stream_beats_to_individual(beat_stream_1, c1, start_idx, n_cities_to_insert, start_end_data_with_beats1, total_beats, num_cities);
@@ -147,7 +105,7 @@ void crossover(
         BeatIndex itrs = start_end_data.end_beat - start_end_data.start_beat + 1;
         assert(itrs <= MAX_BEATS);
         COPY_BEAT_LOOP: for (BeatIndex i = 0; i < itrs; i++) {
-            #pragma HLS PIPELINE II=1
+            #pragma HLS PIPELINE II=FIELDS_PER_BEAT/2
             BeatIndex b = i + start_end_data.start_beat;
             FieldIndex low_field = (b == start_end_data.start_beat) ? start_end_data.start_field : get_first_city_index(b);
             FieldIndex high_field = (b == start_end_data.end_beat) ? start_end_data.end_field : get_last_field_index(num_cities, b);
@@ -159,7 +117,7 @@ void crossover(
 
             FieldIndex inner_itrs = high_field - low_field + 1;
             OX_COPY_FIELD_LOOP: for (FieldIndex j = 0; j < FIELDS_PER_BEAT; j++) {
-                #pragma HLS UNROLL
+                //#pragma HLS UNROLL FACTOR=4
 
                 if(j < inner_itrs){
                     FieldIndex f = low_field + j;
