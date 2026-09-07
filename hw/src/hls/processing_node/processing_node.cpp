@@ -59,12 +59,15 @@ static void process_stream(
     hls::stream_of_blocks<IndividualAsBeats> stream_1;
     hls::stream_of_blocks<IndividualAsBeats> stream_cx_0;
     hls::stream_of_blocks<IndividualAsBeats> stream_cx_1;
+    hls::stream_of_blocks<IndividualAsBeats> stream_mut_0;
+    hls::stream_of_blocks<IndividualAsBeats> stream_mut_1;
 
     producer(in0, stream_0, num_individuals, num_cities);
     producer(in1, stream_1, num_individuals, num_cities);
     crossover(stream_0, stream_1, stream_cx_0, stream_cx_1, num_individuals, num_cities);
-    consumer(stream_cx_0, out0, num_individuals, num_cities);
-    consumer(stream_cx_1, out1, num_individuals, num_cities);
+    mutate(stream_cx_0, stream_cx_1, stream_mut_0, stream_mut_1, num_individuals, num_cities);
+    consumer(stream_mut_0, out0, num_individuals, num_cities);
+    consumer(stream_mut_1, out1, num_individuals, num_cities);
 }
 
 static void drive_debug_probes(

@@ -78,7 +78,7 @@ static void write(IndividualAsBeats &c, hls::stream<BeatPacket> &reverse_buffer,
 
     WRITE_BACK_LOOP: for (int i = total_beats; i >= 0; --i) {
         // if II = 3 timing resolved, TODO evalute performance once more.
-        #pragma HLS PIPELINE II=1
+        #pragma HLS PIPELINE II=3
         if (i < data.start_end_data.start_beat || i > data.start_end_data.end_beat) {
             c[i] = buffer.read();
         } else {
