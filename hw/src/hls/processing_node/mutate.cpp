@@ -21,7 +21,7 @@ static void inline swap(Beat& b, FieldIndex i, FieldIndex j){
 static void copyAndStream(IndividualAsBeats &p0, IndividualAsBeats &p1, hls::stream<BeatPacket> &reverse_buffer_0, hls::stream<BeatPacket> &reverse_buffer_1, hls::stream<Beat> &buffer_0, hls::stream<Beat> &buffer_1, FieldIndex num_cities, BeatIndex total_beats, const StartEndData &start_end_data) {
     //std::cout << "Copying and streaming from city " << start_city << " to " << end_city << std::endl;
 
-    OX_COPY_UNCHANGED_AND_STREAM_REVERSED_LOOP: for (int i = total_beats; i >= 0; --i) {
+    OX_COPY_UNCHANGED_AND_STREAM_REVERSED_LOOP: for (int i = total_beats - 1; i >= 0; --i) {
         #pragma HLS PIPELINE II=1
         Beat p0b = p0[i]; 
         Beat p1b = p1[i];
@@ -76,7 +76,7 @@ static void write(IndividualAsBeats &c, hls::stream<BeatPacket> &reverse_buffer,
         data
     );
 
-    WRITE_BACK_LOOP: for (int i = total_beats; i >= 0; --i) {
+    WRITE_BACK_LOOP: for (int i = total_beats - 1; i >= 0; --i) {
         // if II = 3 timing resolved, TODO evalute performance once more.
         #pragma HLS PIPELINE II=3
         if (i < data.start_end_data.start_beat || i > data.start_end_data.end_beat) {
