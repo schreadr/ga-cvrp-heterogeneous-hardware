@@ -53,7 +53,7 @@
 
 namespace {
 
-constexpr const char kDefaultProblemFile[] = "../../P-n16-k8.vrp";
+constexpr const char kDefaultProblemFile[] = "../../P-n40-k5_edited.vrp";
 
 void print_hex_dump(const std::string &label, const std::uint8_t *bytes, std::size_t size) {
     std::cout << label << " (" << size << " B):\n";

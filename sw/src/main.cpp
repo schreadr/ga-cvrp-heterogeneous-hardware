@@ -75,7 +75,7 @@ constexpr uint32_t CSR_CONTROL_AUTORESTART     = 0x81;
 constexpr uint32_t CSR_NUM_INDIVIDUALS_0     = 0x10 / 8;
 constexpr uint32_t CSR_NUM_INDIVIDUALS_1     = 0x18 / 8;
 constexpr uint32_t CSR_NUM_CITIES  = 0x20 / 8;
-constexpr const char kDefaultProblemFile[] = "../../P-n16-k8.vrp";
+constexpr const char kDefaultProblemFile[] = "../../P-n40-k5_edited.vrp";
 
 std::size_t round_up(std::size_t value, std::size_t alignment) {
     return ((value + alignment - 1) / alignment) * alignment;
