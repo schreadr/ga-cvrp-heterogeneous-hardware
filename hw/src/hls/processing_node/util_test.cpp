@@ -69,12 +69,17 @@ static int test1(){
 
     BeatPacket pkt2;
     pkt2.beat = 0;
-    set_field(pkt2.beat, 0, 0x444);
-    set_field(pkt2.beat, 1, 0x555);
-    pkt2.n = 2;
+    pkt2.n = 0;
+
+    BeatPacket pkt3;
+    pkt3.beat = 0;
+    set_field(pkt3.beat, 0, 0x444);
+    set_field(pkt3.beat, 1, 0x555);
+    pkt3.n = 2;
 
     in_stream.write(pkt1);
     in_stream.write(pkt2);
+    in_stream.write(pkt3);
 
     // Execute the HLS component
     stream_beats_to_individual(in_stream, dst_ind, dst_start_idx, n_cities_to_copy, StartEndDataWithBeats(get_start_end_data(dst_start_idx, dst_end_idx), 0, 0), n_beats, num_cities);
@@ -117,12 +122,17 @@ static int test2(){
 
     BeatPacket pkt2;
     pkt2.beat = 0;
-    set_field(pkt2.beat, 0, 0x444);
-    set_field(pkt2.beat, 1, 0x555);
-    pkt2.n = 2;
+    pkt2.n = 0;
+
+    BeatPacket pkt3;
+    pkt3.beat = 0;
+    set_field(pkt3.beat, 0, 0x444);
+    set_field(pkt3.beat, 1, 0x555);
+    pkt3.n = 2;
 
     in_stream.write(pkt1);
     in_stream.write(pkt2);
+    in_stream.write(pkt3);
 
     // Execute the HLS component
     stream_beats_to_individual(in_stream, dst_ind, dst_start_idx, n_cities_to_copy, StartEndDataWithBeats(get_start_end_data(dst_start_idx, dst_end_idx), 0, 0), n_beats, num_cities);
@@ -165,12 +175,17 @@ static int test3(){
 
     BeatPacket pkt2;
     pkt2.beat = 0;
-    set_field(pkt2.beat, 0, 0x444);
-    set_field(pkt2.beat, 1, 0x555);
-    pkt2.n = 2;
+    pkt2.n = 0;
+
+    BeatPacket pkt3;
+    pkt3.beat = 0;
+    set_field(pkt3.beat, 0, 0x444);
+    set_field(pkt3.beat, 1, 0x555);
+    pkt3.n = 2;
 
     in_stream.write(pkt1);
     in_stream.write(pkt2);
+    in_stream.write(pkt3);
 
     // Execute the HLS component
     stream_beats_to_individual(in_stream, dst_ind, dst_start_idx, n_cities_to_copy, StartEndDataWithBeats(get_start_end_data(dst_start_idx, dst_end_idx), 0, 0), n_beats, num_cities);

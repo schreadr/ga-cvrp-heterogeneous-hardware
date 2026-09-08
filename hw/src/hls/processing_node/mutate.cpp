@@ -86,6 +86,7 @@ static void write(IndividualAsBeats &c, hls::stream<BeatPacket> &reverse_buffer,
         }
     }
 
+    // TODO may just incorprate stream_beats_to_individual to be safe but takes way more time
     capture_and_propagate(state, reverse_buffer, c, num_cities);
     capture_and_propagate(state, reverse_buffer, c, num_cities);
     flush_accumulated_beat(state, c);

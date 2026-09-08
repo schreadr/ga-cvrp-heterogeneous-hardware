@@ -90,6 +90,7 @@ void capture_and_propagate(BeatConsumerState &state, hls::stream<BeatPacket> &in
 }
 
 void flush_accumulated_beat(BeatConsumerState &state, IndividualAsBeats &dst_ind) {
+    // TODO check if cities left?
     if (state.current_beat_idx != MAX_BEATS) {
         //std::cout << "Flushing accum_beat to dst_ind at index " << state.current_beat_idx << ": ";
         //print_beat_node_ids(state.accum_beat, get_first_city_index(state.current_beat_idx), FIELDS_PER_BEAT - 1);
