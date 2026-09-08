@@ -28,7 +28,7 @@
 //              CONTROL REGISTER INTERFACE             //
 /////////////////////////////////////////////////////////
 // The kernel configuration values (num_individuals0, num_individuals1,
-// beats_per_individual) are scalar arguments of the HLS kernel itself. Vitis HLS
+// num_cities, vehicle_capacity) are scalar arguments of the HLS kernel itself. Vitis HLS
 // maps each of them to a register of the AXI4-Lite control interface generated
 // directly for the kernel (bundle 'control'); the control register handling is
 // therefore done by HLS, no custom register parser is needed anymore.
@@ -37,6 +37,7 @@
 //   setCSR(num_individuals0,     2)  -> byte offset 0x10
 //   setCSR(num_individuals1,     3)  -> byte offset 0x18
 //   setCSR(num_cities, 4)  -> byte offset 0x20 (write last)
+//   setCSR(vehicle_capacity, 5) -> byte offset 0x28
 // (Coyote CSRs are 64-bit wide, hence the CSR index equals offset / 8; the
 // offsets 0x00-0x0F are reserved by the AXI4-Lite control block.)
 //
@@ -116,11 +117,8 @@ axil_ctrl_dwidth_64_32 inst_axil_ctrl_dwidth (
 
 // debug vars
 
-(* mark_debug = "true" *) wire [31:0] dbg_num_ind0;
-(* mark_debug = "true" *) wire        dbg_num_ind0_vld;
-    
-(* mark_debug = "true" *) wire [31:0] dbg_num_ind1;
-(* mark_debug = "true" *) wire        dbg_num_ind1_vld;
+(* mark_debug = "true" *) wire [31:0] dbg_num_ind;
+(* mark_debug = "true" *) wire        dbg_num_ind_vld;
 
 (* mark_debug = "true" *) wire [31:0] dbg_num_cit;
 (* mark_debug = "true" *) wire        dbg_num_cit_vld;
@@ -184,10 +182,8 @@ processing_node_hls_ip inst_pn(
 
 
     // debug
-    .dbg_num_individuals0     (dbg_num_ind0),
-    .dbg_num_individuals0_ap_vld(dbg_num_ind0_vld),
-    .dbg_num_individuals1     (dbg_num_ind1),
-    .dbg_num_individuals1_ap_vld(dbg_num_ind1_vld),
+    .dbg_num_individuals     (dbg_num_ind),
+    .dbg_num_individuals_ap_vld(dbg_num_ind_vld),
     .dbg_num_cities (dbg_num_cit),
     .dbg_num_cities_ap_vld(dbg_num_cit_vld)
 );
@@ -218,10 +214,8 @@ ila_processing_node inst_ila_processing_node (
     .probe14(axis_host_send[1].tlast),   // 1 bit
     .probe15(axis_host_send[1].tdata),    // 512 bits
 
-    .probe16     (dbg_num_ind0),
-    .probe17     (dbg_num_ind0_vld),
-    .probe18     (dbg_num_ind1),
-    .probe19     (dbg_num_ind1_vld),
-    .probe20     (dbg_num_cit),
-    .probe21     (dbg_num_cit_vld)
+    .probe16     (dbg_num_ind),
+    .probe17     (dbg_num_ind_vld),
+    .probe18     (dbg_num_cit),
+    .probe19     (dbg_num_cit_vld)
 );

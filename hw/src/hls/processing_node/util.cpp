@@ -3,6 +3,41 @@
 
 #include <hls_stream.h>
 
+template <int W_IN>
+ap_uint<(W_IN + 1) / 2> integer_sqrt(ap_uint<W_IN> value) {
+    #pragma HLS INLINE
+
+    constexpr int W_OUT = (W_IN + 1) / 2;
+    constexpr int W_EVEN = W_OUT * 2;
+
+    ap_uint<W_EVEN> rad = value;
+    ap_uint<W_OUT> q = 0;
+    ap_uint<W_EVEN + 2> ac = 0;
+
+    for (int i = 0; i < W_OUT; ++i) {
+        #pragma HLS UNROLL
+
+        ap_uint<W_EVEN + 2> shifted_ac = (ac << 2) | (rad >> (W_EVEN - 2));
+        rad <<= 2;
+
+        ap_uint<W_EVEN + 2> trial = (ap_uint<W_EVEN + 2>(q) << 2) | 1;
+        ap_int<W_EVEN + 3> test_res = ap_int<W_EVEN + 3>(shifted_ac) - ap_int<W_EVEN + 3>(trial);
+
+        if (test_res >= 0) {
+            ac = test_res;
+            q = (q << 1) | 1;
+        } else {
+            ac = shifted_ac;
+            q <<= 1;
+        }
+    }
+
+    return q;
+}
+
+template ap_uint<4> integer_sqrt<8>(ap_uint<8> value);
+template ap_uint<5> integer_sqrt<9>(ap_uint<9> value);
+template ap_uint<8> integer_sqrt<16>(ap_uint<16> value);
 
 void inline capture_next_packet(BeatConsumerState &state, hls::stream<BeatPacket> &in_stream){
     #pragma HLS INLINE

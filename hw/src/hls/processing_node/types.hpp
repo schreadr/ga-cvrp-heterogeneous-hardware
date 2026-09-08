@@ -12,6 +12,7 @@ typedef ap_axiu<AXI_WIDTH, 0, 0, 0> axi_word_t;
 
 // Single field (fitness or city) packed representation
 typedef ap_uint<COORD_BITS> Coord;
+// TODO rename to Demand
 typedef ap_uint<CAPACITY_BITS> Capacity;
 typedef ap_uint<NODE_ID_BITS> NodeId;
 typedef ap_uint<FIELD_BITS> FitnessOrCity;

@@ -8,11 +8,11 @@ void processing_node(
     hls::stream<axi_word_t> &out0,
     hls::stream<axi_word_t> &in1,
     hls::stream<axi_word_t> &out1,
-    int num_individuals0,
-    int num_individuals1,
+    int num_individuals,
     int num_cities,
-    int *dbg_num_individuals0,
-    int *dbg_num_individuals1,
+    int vehicle_capacity,
+    int depot_cords,
+    int *dbg_num_individuals,
     int *dbg_num_cities
 );
 

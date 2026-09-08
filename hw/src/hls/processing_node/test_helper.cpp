@@ -1,4 +1,5 @@
 #include "test_helper.hpp"
+#include "ga.hpp"
 
 #include <cstring>
 #include <algorithm>
@@ -100,6 +101,15 @@ std::vector<Individual> tb_pull_individuals(hls::stream_of_blocks<IndividualAsBe
         individuals.push_back(decode_individual(problem, ind, problem.nodes.size()));
     }
     return individuals;
+}
+
+std::vector<Individual> build_population(const ProblemInstance &problem,
+                                         const std::vector<std::vector<int>> &tours) {
+    std::vector<Individual> out;
+    for (const std::vector<int> &tour : tours) {
+        out.push_back(build_individual(problem, tour));
+    }
+    return out;
 }
 
 std::vector<Individual> build_population(const ProblemInstance &problem,

@@ -65,16 +65,17 @@ constexpr std::uint32_t kPopulationSeed = 0xC0FFEEu;
 // Control register indices, matching the AXI4-Lite control register map generated
 // by Vitis HLS for the scalar configuration arguments of the processing_node kernel
 // (see hw/src/hls/processing_node/processing_node.cpp). The byte offsets of the
-// kernel registers are 0x10 (num_individuals0), 0x18 (num_individuals1) and
-// 0x20 (beats_per_individual); offsets 0x00-0x0F are reserved by the AXI4-Lite
+// kernel registers are 0x10 (num_individuals0), 0x18 (num_individuals1),
+// 0x20 (num_cities) and 0x28 (vehicle_capacity); offsets 0x00-0x0F are reserved by the AXI4-Lite
 // control block. Coyote CSRs are 64-bit wide, so the setCSR index equals
 // byte offset / 8. The kernel is free-running and starts processing once
 // beats_per_individual reads non-zero, so it must be written last.
 constexpr uint32_t CSR_CONTROL     = 0x00;
 constexpr uint32_t CSR_CONTROL_AUTORESTART     = 0x81;
-constexpr uint32_t CSR_NUM_INDIVIDUALS_0     = 0x10 / 8;
-constexpr uint32_t CSR_NUM_INDIVIDUALS_1     = 0x18 / 8;
-constexpr uint32_t CSR_NUM_CITIES  = 0x20 / 8;
+constexpr uint32_t CSR_NUM_INDIVIDUALS     = 0x10 / 8;
+constexpr uint32_t CSR_NUM_CITIES  = 0x18 / 8;
+constexpr uint32_t CSR_VEHICLE_CAPACITY = 0x20 / 8;
+constexpr uint32_t CSR_DEPOT_COORDS_CAPACITY = 0x28 / 8;
 constexpr const char kDefaultProblemFile[] = "../../P-n40-k5_edited.vrp";
 
 std::size_t round_up(std::size_t value, std::size_t alignment) {
@@ -178,14 +179,16 @@ int main(int argc, char *argv[])  {
     // Set the kernel configuration registers; the free-running HLS kernel starts
     // processing as soon as beats_per_individual reads non-zero, so it must be
     // written last (see hw/src/hls/processing_node/processing_node.cpp)
-    coyote_thread.setCSR(reg_num_ind0, CSR_NUM_INDIVIDUALS_0);
-    coyote_thread.setCSR(reg_num_ind1, CSR_NUM_INDIVIDUALS_1);
+    coyote_thread.setCSR(reg_num_ind0, CSR_NUM_INDIVIDUALS);
     coyote_thread.setCSR(reg_num_cities, CSR_NUM_CITIES);
+    coyote_thread.setCSR(problem.capacity, CSR_VEHICLE_CAPACITY);
+    coyote_thread.setCSR(problem.depot.x << COORD_BITS | problem.depot.y, CSR_DEPOT_COORDS_CAPACITY);
     coyote_thread.setCSR(CSR_CONTROL_AUTORESTART, CSR_CONTROL);
 
-    std::cout << coyote_thread.getCSR(CSR_NUM_INDIVIDUALS_0) << " individuals on Stream 0" << std::endl;
-    std::cout << coyote_thread.getCSR(CSR_NUM_INDIVIDUALS_1) << " individuals on Stream 1" << std::endl;
+    std::cout << coyote_thread.getCSR(CSR_NUM_INDIVIDUALS) << " individuals on Stream 0" << std::endl;
     std::cout << coyote_thread.getCSR(CSR_NUM_CITIES) << " num cities" << std::endl << std::endl;
+    std::cout << coyote_thread.getCSR(CSR_VEHICLE_CAPACITY) << " vehicle capacity" << std::endl << std::endl;
+    std::cout << "Depot coordinates: (" << (coyote_thread.getCSR(CSR_DEPOT_COORDS_CAPACITY) >> COORD_BITS) << ", " << (coyote_thread.getCSR(CSR_DEPOT_COORDS_CAPACITY) & ((1 << COORD_BITS) - 1)) << ")" << std::endl << std::endl;
 
     HEADER("PERF DUAL STREAM LOCAL");
     std::cout << "Streaming encoded individuals across 2 streams..." << std::endl;

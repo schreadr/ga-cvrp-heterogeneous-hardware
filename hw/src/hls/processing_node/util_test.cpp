@@ -1,6 +1,8 @@
 #include "util.hpp"
 #include "util_test.hpp"
 
+#include <cmath>
+
 
 static void init_all_0(IndividualAsBeats &ind) {
     for (int i = 0; i < MAX_BEATS; ++i) {
@@ -204,10 +206,31 @@ static int test3(){
     return success ? 0 : 1;
 }
 
+int test_integer_sqrt() {
+    bool success = true;
+
+    for (int i = 0; i < (1 << 8); ++i) {
+        int expected = (int) std::floor(std::sqrt(i));
+        int result = integer_sqrt<8>(i);
+        if (result != expected) {
+            std::cout << "Integer sqrt test FAILED for input " << i << ": Expected " << expected << ", got " << result << std::endl;
+            success = false;
+        }
+    }
+
+    if (success) {
+        std::cout << "Integer sqrt test PASSED successfully!" << std::endl;
+    } else {
+        std::cout << "Integer sqrt test FAILED!" << std::endl;
+    }
+
+    return success ? 0 : 1;
+}
 
 int test_stream_beats_to_individual() {
     int errors = test1();
     errors += test2();
     errors += test3();
+    errors += test_integer_sqrt();
     return errors;
 }

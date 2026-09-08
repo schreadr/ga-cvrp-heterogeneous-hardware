@@ -3,6 +3,7 @@
 #include "crossover_test.hpp"
 #include "util_test.hpp"
 #include "mutate_test.hpp"
+#include "repair_fitness_test.hpp"
 
 #include <cstring>
 #include <iostream>
@@ -14,8 +15,6 @@
 
 static int kNumCities = 40;
 static std::size_t kNumIndividuals = 3;
-static std::uint32_t kFitness0Base = 1000;
-static std::uint32_t kFitness1Base = 2000;
 
 static int kDepotId = 1;
 
@@ -71,8 +70,8 @@ int run_integration_test(){
     hls::stream<axi_word_t> in1("in1"), out1("out1");
 
     const ProblemInstance problem = make_problem();
-    const std::vector<Individual> pop_0 = build_population(problem, kPop0Tours, kFitness0Base);
-    const std::vector<Individual> pop_1 = build_population(problem, kPop1Tours, kFitness1Base);
+    const std::vector<Individual> pop_0 = build_population(problem, kPop0Tours);
+    const std::vector<Individual> pop_1 = build_population(problem, kPop1Tours);
 
     const std::vector<std::uint8_t> enc_0 = encode_population_fixed(problem, pop_0);
     const std::vector<std::uint8_t> enc_1 = encode_population_fixed(problem, pop_1);
@@ -80,7 +79,7 @@ int run_integration_test(){
     const std::size_t total_bytes_0 = enc_0.size();
     const std::size_t total_bytes_1 = enc_1.size();
 
-    int dbg_indiv0, dbg_indiv1, dbg_cities;
+    int dbg_indiv0, dbg_cities;
 
     std::cout << "Streaming encoded populations..." << std::endl;
     tb_push_bytes(in0, enc_0.data(), total_bytes_0, true);
@@ -88,10 +87,11 @@ int run_integration_test(){
 
     std::cout << "Executing Processing Node..." << std::endl;
     processing_node(in0, out0, in1, out1,
-                    static_cast<int>(kNumIndividuals),
-                    static_cast<int>(kNumIndividuals),
+                    kNumIndividuals,
                     kNumCities,
-                    &dbg_indiv0, &dbg_indiv1, &dbg_cities);
+                    problem.capacity,
+                    (problem.depot.x << COORD_BITS) | problem.depot.y,
+                    &dbg_indiv0, &dbg_cities);
 
     std::vector<std::uint8_t> got_0(total_bytes_0);
     std::vector<std::uint8_t> got_1(total_bytes_1);
@@ -99,8 +99,8 @@ int run_integration_test(){
     tb_pull_bytes(out1, got_1.data(), total_bytes_1);
 
     // Build the hard-coded expected children via the host codec.
-    const std::vector<Individual> exp_child_0 = build_population(problem, kExpChild0Tours, kFitness0Base);
-    const std::vector<Individual> exp_child_1 = build_population(problem, kExpChild1Tours, kFitness1Base);
+    std::vector<Individual> exp_child_0 = build_population(problem, kExpChild0Tours);
+    std::vector<Individual> exp_child_1 = build_population(problem, kExpChild1Tours);
     const std::vector<Individual> got_child_0 = decode_population_fixed(problem, got_0.data(), kNumIndividuals);
     const std::vector<Individual> got_child_1 = decode_population_fixed(problem, got_1.data(), kNumIndividuals);
 
@@ -130,28 +130,32 @@ int run_integration_test(){
 
 int main() {
     int errors=0;
-    #ifndef __RTL_SIMULATION__
-        std::cout << "\nRunning Util Unit Test..." << std::endl;
-        errors = test_stream_beats_to_individual();
-        if (errors != 0) {
-            std::cout << "Util Unit Test failed with " << errors << " errors." << std::endl;
-            return errors;
-        }
+    std::cout << "\nRunning Util Unit Test..." << std::endl;
+    errors = test_stream_beats_to_individual();
+    if (errors != 0) {
+        std::cout << "Util Unit Test failed with " << errors << " errors." << std::endl;
+        return errors;
+    }
+    std::cout << "\nRunning Mutate Unit Test..." << std::endl;
+    errors = run_mutate_test();
+    if (errors != 0) {
+        std::cout << "Mutate Unit Test failed with " << errors << " errors." << std::endl;
+        return errors;
+    }
 
-        std::cout << "\nRunning Mutate Unit Test..." << std::endl;
-        errors = run_mutate_test();
-        if (errors != 0) {
-            std::cout << "Mutate Unit Test failed with " << errors << " errors." << std::endl;
-            return errors;
-        }
+    std::cout << "\nRunning Crossover Unit Test..." << std::endl;
+    errors = run_crossover_test();
+    if (errors != 0) {
+        std::cout << "Crossover Unit Test failed with " << errors << " errors." << std::endl;
+        return errors;
+    }
 
-        std::cout << "\nRunning Crossover Unit Test..." << std::endl;
-        errors = run_crossover_test();
-        if (errors != 0) {
-            std::cout << "Crossover Unit Test failed with " << errors << " errors." << std::endl;
-            return errors;
-        }
-    #endif
+    std::cout << "\nRunning Repair/Fitness Unit Test..." << std::endl;
+    errors = run_repair_fitness_test();
+    if (errors != 0) {
+        std::cout << "Repair/Fitness Unit Test failed with " << errors << " errors." << std::endl;
+        return errors;
+    }
 
     std::cout << "\nRunning Integration Test..." << std::endl;
     errors = run_integration_test();

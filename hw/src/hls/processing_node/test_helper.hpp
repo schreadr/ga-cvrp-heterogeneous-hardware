@@ -21,6 +21,8 @@ void tb_push_individuals(hls::stream_of_blocks<IndividualAsBeats> &stream, const
 
 std::vector<Individual> tb_pull_individuals(hls::stream_of_blocks<IndividualAsBeats> &stream, const ProblemInstance &problem, int population_size);
 
+std::vector<Individual> build_population(const ProblemInstance &problem,
+                                         const std::vector<std::vector<int>> &tours);
 
 std::vector<Individual> build_population(const ProblemInstance &problem,
                                          const std::vector<std::vector<int>> &tours,

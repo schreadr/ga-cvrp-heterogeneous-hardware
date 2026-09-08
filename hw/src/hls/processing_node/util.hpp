@@ -57,4 +57,7 @@ void stream_beats_to_individual(
     FieldIndex num_cities
 );
 
+template <int W_IN>
+ap_uint<(W_IN + 1) / 2> integer_sqrt(ap_uint<W_IN> value);
+
 #endif // UTIL_HPP

@@ -33,11 +33,11 @@
 #include <stdexcept>
 #include <cstring>
 
-std::uint32_t ceil_euclidean_distance(const ProblemNode &lhs, const ProblemNode &rhs) {
+std::uint32_t floor_euclidean_distance(const ProblemNode &lhs, const ProblemNode &rhs) {
     const long long dx = static_cast<long long>(lhs.x) - static_cast<long long>(rhs.x);
     const long long dy = static_cast<long long>(lhs.y) - static_cast<long long>(rhs.y);
     const long long squared = dx * dx + dy * dy;
-    return static_cast<std::uint32_t>(std::ceil(std::sqrt(static_cast<long double>(squared))));
+    return static_cast<std::uint32_t>(std::floor(std::sqrt(static_cast<long double>(squared))));
 }
 
 std::uint32_t compute_fitness(const ProblemInstance &problem, const Individual &individual) {
@@ -47,9 +47,9 @@ std::uint32_t compute_fitness(const ProblemInstance &problem, const Individual &
 
     for (const auto &gene : individual.tour) {
         const ProblemNode &current = problem.nodes.at(static_cast<std::size_t>(gene.node_id));
-        total_distance += ceil_euclidean_distance(*previous, current);
+        total_distance += floor_euclidean_distance(*previous, current);
         if (gene.depot_after) {
-            total_distance += ceil_euclidean_distance(current, depot);
+            total_distance += floor_euclidean_distance(current, depot);
             previous = &depot;
         } else {
             previous = &current;
@@ -57,7 +57,7 @@ std::uint32_t compute_fitness(const ProblemInstance &problem, const Individual &
     }
 
     if (previous != &depot) {
-        total_distance += ceil_euclidean_distance(*previous, depot);
+        total_distance += floor_euclidean_distance(*previous, depot);
     }
 
     return total_distance;

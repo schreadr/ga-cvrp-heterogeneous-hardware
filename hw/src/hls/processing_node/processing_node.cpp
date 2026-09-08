@@ -1,6 +1,7 @@
 #include "processing_node.hpp"
 #include "crossover.hpp"
 #include "mutate.hpp"
+#include "repair_fitness.hpp"
 #include <hls_streamofblocks.h>
 
 // added these for compilation with coyote
@@ -9,6 +10,7 @@
 #include "util.cpp"
 #include "crossover.cpp"
 #include "mutate.cpp"
+#include "repair_fitness.cpp"
 
 #endif
 
@@ -60,7 +62,9 @@ static void process_stream(
     hls::stream<axi_word_t> &in1,
     hls::stream<axi_word_t> &out1,
     int num_individuals,
-    FieldIndex num_cities
+    FieldIndex num_cities,
+    Capacity vehicle_capacity,
+    int depot_cords
 ) {
     #pragma HLS DATAFLOW
 
@@ -70,21 +74,24 @@ static void process_stream(
     hls::stream_of_blocks<IndividualAsBeats> stream_cx_1;
     hls::stream_of_blocks<IndividualAsBeats> stream_mut_0;
     hls::stream_of_blocks<IndividualAsBeats> stream_mut_1;
+    hls::stream_of_blocks<IndividualAsBeats> stream_repaired_0;
+    hls::stream_of_blocks<IndividualAsBeats> stream_repaired_1;
 
     producer(in0, stream_0, num_individuals, num_cities);
     producer(in1, stream_1, num_individuals, num_cities);
     crossover(stream_0, stream_1, stream_cx_0, stream_cx_1, num_individuals, num_cities);
     mutate(stream_cx_0, stream_cx_1, stream_mut_0, stream_mut_1, num_individuals, num_cities);
-    consumer(stream_mut_0, out0, num_individuals, num_cities);
-    consumer(stream_mut_1, out1, num_individuals, num_cities);
+    repair_fitness(stream_mut_0, stream_repaired_0, num_individuals, num_cities, Capacity(vehicle_capacity), depot_cords);
+    repair_fitness(stream_mut_1, stream_repaired_1, num_individuals, num_cities, Capacity(vehicle_capacity), depot_cords);
+    consumer(stream_repaired_0, out0, num_individuals, num_cities);
+    consumer(stream_repaired_1, out1, num_individuals, num_cities);
 }
 
 static void drive_debug_probes(
-    int num_individuals0, int num_individuals1, int num_cities,
-    int *dbg0, int *dbg1, int *dbg_num_cities
+    int num_individuals,  int num_cities,
+    int *dbg_individuals, int *dbg_num_cities
 ) {
-    *dbg0 = num_individuals0;
-    *dbg1 = num_individuals1;
+    *dbg_individuals = num_individuals;
     *dbg_num_cities = num_cities;
 }
 
@@ -93,11 +100,11 @@ void processing_node(
     hls::stream<axi_word_t> &out0,
     hls::stream<axi_word_t> &in1,
     hls::stream<axi_word_t> &out1,
-    int num_individuals0,
-    int num_individuals1,
+    int num_individuals,
     int num_cities,
-    int *dbg_num_individuals0,
-    int *dbg_num_individuals1,
+    int vehicle_capacity,
+    int depot_cords,
+    int *dbg_num_individuals,
     int *dbg_num_cities
 ) {
     #pragma HLS INTERFACE axis port=in0
@@ -105,18 +112,17 @@ void processing_node(
     #pragma HLS INTERFACE axis port=in1
     #pragma HLS INTERFACE axis port=out1
 
-    #pragma HLS INTERFACE s_axilite port=num_individuals0 offset=0x10 bundle=control
-    #pragma HLS INTERFACE s_axilite port=num_individuals1 offset=0x18 bundle=control
-    #pragma HLS INTERFACE s_axilite port=num_cities offset=0x20 bundle=control
+    #pragma HLS INTERFACE s_axilite port=num_individuals offset=0x10 bundle=control
+    #pragma HLS INTERFACE s_axilite port=num_cities offset=0x18 bundle=control
+    #pragma HLS INTERFACE s_axilite port=vehicle_capacity offset=0x20 bundle=control
+    #pragma HLS INTERFACE s_axilite port=depot_cords offset=0x28 bundle=control
 
-    #pragma HLS INTERFACE ap_vld port=dbg_num_individuals0
-    #pragma HLS INTERFACE ap_vld port=dbg_num_individuals1
+    #pragma HLS INTERFACE ap_vld port=dbg_num_individuals
     #pragma HLS INTERFACE ap_vld port=dbg_num_cities
 
     #pragma HLS INTERFACE s_axilite port=return bundle=control
 
     #pragma HLS DATAFLOW
-    drive_debug_probes(num_individuals0, num_individuals1, num_cities,
-                       dbg_num_individuals0, dbg_num_individuals1, dbg_num_cities);
-    process_stream(in0, out0, in1, out1, num_individuals0, FieldIndex(num_cities));
+    drive_debug_probes(num_individuals, num_cities, dbg_num_individuals, dbg_num_cities);
+    process_stream(in0, out0, in1, out1, num_individuals, FieldIndex(num_cities), Capacity(vehicle_capacity), depot_cords);
 }
