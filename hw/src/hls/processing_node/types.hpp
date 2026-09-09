@@ -38,6 +38,18 @@ struct StartEndData {
         : start_beat(s_beat), start_field(s_field), end_beat(e_beat), end_field(e_field) {}
 };
 
+struct CityPair {
+    FieldIndex start;
+    FieldIndex end;
+
+    CityPair() : start(0), end(0) {}
+    CityPair(FieldIndex s, FieldIndex e) : start(s), end(e) {}
+
+    bool operator==(const CityPair &other) const {
+        return start == other.start && end == other.end;
+    }
+};
+
 // Get the beat and field indices for a global field index (0 = fitness)
 static inline void get_beat_field(FieldIndex global_idx, BeatIndex &beat_idx, FieldIndex &field_idx) {
     #pragma HLS INLINE
@@ -95,6 +107,13 @@ static inline FitnessOrCity get_field(const IndividualAsBeats &ind, FieldIndex g
     FieldIndex field_idx;
     get_beat_field(global_idx, beat_idx, field_idx);
     return get_field(ind, beat_idx, field_idx);
+}
+
+static inline FitnessOrCity consume_next_field(Beat &beat) {
+    #pragma HLS INLINE
+    FitnessOrCity field = beat.range(FIELD_BITS - 1, 0);
+    beat >>= FIELD_BITS;
+    return field;
 }
 
 static inline void set_field_o(IndividualAsBeats &ind, BeatIndex beat_idx, FieldIndex field_offset, FitnessOrCity val) {

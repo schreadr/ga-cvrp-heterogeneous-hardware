@@ -180,6 +180,12 @@ processing_node_hls_ip inst_pn(
     .out1_TVALID   (axis_host_send[1].tvalid),
     .out1_TREADY   (axis_host_send[1].tready),
 
+    // AXI-Stream input random
+    .in_random_TDATA  (axis_host_recv[2].tdata),
+    .in_random_TKEEP  (axis_host_recv[2].tkeep),
+    .in_random_TLAST  (axis_host_recv[2].tlast),
+    .in_random_TVALID (axis_host_recv[2].tvalid),
+    .in_random_TREADY (axis_host_recv[2].tready),
 
     // debug
     .dbg_num_individuals     (dbg_num_ind),
@@ -194,6 +200,7 @@ always_comb sq_rd.tie_off_m();
 always_comb sq_wr.tie_off_m();
 always_comb cq_rd.tie_off_s();
 always_comb cq_wr.tie_off_s();
+always_comb axis_host_send[2].tie_off_m();
 
 ila_processing_node inst_ila_processing_node (
     .clk(aclk),

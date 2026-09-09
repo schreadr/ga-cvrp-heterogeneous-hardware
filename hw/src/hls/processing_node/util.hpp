@@ -16,6 +16,8 @@ struct BeatProducerState {
     BeatProducerState() : beat(0), count(0) {}
 };
 
+void append_field(BeatProducerState &state, FitnessOrCity field);
+
 void send_field(
     BeatProducerState &state,
     FitnessOrCity field,

@@ -78,8 +78,16 @@ int run_crossover_test() {
     tb_push_individuals(in0, problem, pop_0);
     tb_push_individuals(in1, problem, pop_1);
 
+    const FieldIndex kOxStart = 2;
+    const FieldIndex kOxEnd = 2 + FIELDS_PER_BEAT * 2;
+    hls::stream<CityPair> crossover_pairs("crossover_pairs");
+
+    for (std::size_t i = 0; i < kNumIndividuals; ++i) {
+        crossover_pairs.write(CityPair{kOxStart, kOxEnd});
+    }
+
     std::cout << "Executing Crossover..." << std::endl;
-    crossover(in0, in1, out0, out1,
+    crossover(in0, in1, crossover_pairs, out0, out1,
               static_cast<int>(kNumIndividuals),
               kNumCities);
 

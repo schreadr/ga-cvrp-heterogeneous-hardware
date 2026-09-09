@@ -8,12 +8,20 @@ void processing_node(
     hls::stream<axi_word_t> &out0,
     hls::stream<axi_word_t> &in1,
     hls::stream<axi_word_t> &out1,
+    hls::stream<axi_word_t> &in_random,
     int num_individuals,
     int num_cities,
     int vehicle_capacity,
     int depot_cords,
     int *dbg_num_individuals,
     int *dbg_num_cities
+);
+
+void random_number_converter(
+    hls::stream<axi_word_t> &in_random,
+    hls::stream<CityPair> &crossover_pairs,
+    hls::stream<CityPair> &mutate_pairs,
+    int num_individuals
 );
 
 #endif // PROCESSING_NODE_HPP

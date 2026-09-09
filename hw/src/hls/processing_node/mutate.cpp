@@ -4,11 +4,9 @@
 #include <cassert>
 
 // -----------------------------------------------------------------------------
-// OX crossover cut points (hard-coded for now).
-// Valid range: 0 < OX_START <= OX_END <= MAX_CITIES (both inclusive). cities are index from 1 to num_cities.
+// Mutate cut points are provided dynamically via mutate_pairs stream.
+// Valid range: 0 < pair.start <= pair.end <= MAX_CITIES (both inclusive).
 // -----------------------------------------------------------------------------
-#define MUTATE_START 2
-#define MUTATE_END   2 + FIELDS_PER_BEAT*2
 
 
 static void inline swap(Beat& b, FieldIndex i, FieldIndex j){
@@ -110,6 +108,7 @@ static void reverse_order(IndividualAsBeats &p0, IndividualAsBeats &p1, Individu
 void mutate(
     hls::stream_of_blocks<IndividualAsBeats> &in0,
     hls::stream_of_blocks<IndividualAsBeats> &in1,
+    hls::stream<CityPair> &mutate_pairs,
     hls::stream_of_blocks<IndividualAsBeats> &out0,
     hls::stream_of_blocks<IndividualAsBeats> &out1,
     int num_individuals,
@@ -121,7 +120,10 @@ void mutate(
         hls::read_lock<IndividualAsBeats> p1(in1);
         hls::write_lock<IndividualAsBeats> c1(out1);
 
-        FieldIndex start_idx = MUTATE_START, end_idx = MUTATE_END;
+        CityPair cut_points = mutate_pairs.read();
+
+        FieldIndex start_idx = cut_points.start;
+        FieldIndex end_idx = cut_points.end;
         const StartEndData &start_end_data = get_start_end_data(start_idx, end_idx);
         StartEndDataWithBeats start_end_data_with_beats0(start_end_data, p0[start_end_data.start_beat], p0[start_end_data.end_beat]);
         StartEndDataWithBeats start_end_data_with_beats1(start_end_data, p1[start_end_data.start_beat], p1[start_end_data.end_beat]);

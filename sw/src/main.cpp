@@ -139,42 +139,59 @@ int main(int argc, char *argv[])  {
     const std::size_t bytes_0 = encoded_pop_0.size();
     const std::size_t bytes_1 = encoded_pop_1.size();
 
-    std::cout << "Loaded problem: " << problem.name << std::endl;
-    std::cout << "Dimension: " << problem.dimension << std::endl;
-    std::cout << "Vehicle capacity: " << problem.capacity << std::endl;
-    std::cout << "Total population size: " << population.size() << " (Stream 0: " << pop_0.size() << ", Stream 1: " << pop_1.size() << ")" << std::endl;
-    std::cout << "Stream 0 payload: " << bytes_0 << " B | Stream 1 payload: " << bytes_1 << " B" << std::endl << std::endl;
-
-    // Obtain Coyote thread
-    coyote::cThread coyote_thread(DEFAULT_VFPGA_ID, getpid());
-
-    // Allocate memory for both streams (2 inputs, 2 outputs)
-    std::uint8_t *src_mem_0 = allocate_buffer(coyote_thread, bytes_0, mapped, hugepages);
-    std::uint8_t *src_mem_1 = allocate_buffer(coyote_thread, bytes_1, mapped, hugepages);
-    std::uint8_t *dst_mem_0 = allocate_buffer(coyote_thread, bytes_0, mapped, hugepages);
-    std::uint8_t *dst_mem_1 = allocate_buffer(coyote_thread, bytes_1, mapped, hugepages);
-
-    if (!src_mem_0 || !src_mem_1 || !dst_mem_0 || !dst_mem_1) {
-        throw std::runtime_error("Could not allocate split buffers; exiting...");
-    }
-
-    // Copy encoded population data to respective allocated source buffers
-    std::memcpy(src_mem_0, encoded_pop_0.data(), bytes_0);
-    std::memcpy(src_mem_1, encoded_pop_1.data(), bytes_1);
-    std::memset(dst_mem_0, 0, bytes_0);
-    std::memset(dst_mem_1, 0, bytes_1);
-
-    // Setup Scatter-Gather descriptors for Stream 0 and Stream 1
-    coyote::localSg src_sg_0 = { .addr = src_mem_0, .len = bytes_0, .stream = stream, .dest = 0 };
-    coyote::localSg src_sg_1 = { .addr = src_mem_1, .len = bytes_1, .stream = stream, .dest = 1 };
-
-    coyote::localSg dst_sg_0 = { .addr = dst_mem_0, .len = bytes_0, .stream = stream, .dest = 0 };
-    coyote::localSg dst_sg_1 = { .addr = dst_mem_1, .len = bytes_1, .stream = stream, .dest = 1 };
-
     const uint32_t reg_num_ind0 = static_cast<uint32_t>(pop_0.size());
     const uint32_t reg_num_ind1 = static_cast<uint32_t>(pop_1.size());
     // depot is excluded from the number of cities
     const uint32_t reg_num_cities = problem.dimension - 1;
+
+    // Generate exact number of random numbers for crossover and mutation cut points.
+    // Each individual pair requires 2 cut points for crossover and 2 cut points for mutation.
+    const std::size_t num_rnd = pop_0.size() * 4;
+    const std::size_t payload_bytes_rnd = num_rnd * sizeof(uint32_t);
+    const std::size_t bytes_rnd = round_up(payload_bytes_rnd, AXI_BYTES);
+
+    std::mt19937_64 rng(kPopulationSeed ^ 0xDEADBEEF);
+    std::uniform_int_distribution<uint32_t> dist(1, reg_num_cities);
+    std::vector<uint32_t> rnd_data(num_rnd);
+    for (std::size_t i = 0; i < num_rnd; ++i) {
+        rnd_data[i] = dist(rng);
+    }
+
+    std::cout << "Loaded problem: " << problem.name << std::endl;
+    std::cout << "Dimension: " << problem.dimension << std::endl;
+    std::cout << "Vehicle capacity: " << problem.capacity << std::endl;
+    std::cout << "Total population size: " << population.size() << " (Stream 0: " << pop_0.size() << ", Stream 1: " << pop_1.size() << ")" << std::endl;
+    std::cout << "Stream 0 payload: " << bytes_0 << " B | Stream 1 payload: " << bytes_1 << " B | Stream 2 (random) payload: " << bytes_rnd << " B (" << num_rnd << " random numbers)" << std::endl << std::endl;
+
+    // Obtain Coyote thread
+    coyote::cThread coyote_thread(DEFAULT_VFPGA_ID, getpid());
+
+    // Allocate memory for streams (2 input/output population streams + 1 random numbers stream)
+    std::uint8_t *src_mem_0 = allocate_buffer(coyote_thread, bytes_0, mapped, hugepages);
+    std::uint8_t *src_mem_1 = allocate_buffer(coyote_thread, bytes_1, mapped, hugepages);
+    std::uint8_t *src_mem_rnd = allocate_buffer(coyote_thread, bytes_rnd, mapped, hugepages);
+    std::uint8_t *dst_mem_0 = allocate_buffer(coyote_thread, bytes_0, mapped, hugepages);
+    std::uint8_t *dst_mem_1 = allocate_buffer(coyote_thread, bytes_1, mapped, hugepages);
+
+    if (!src_mem_0 || !src_mem_1 || !dst_mem_0 || !dst_mem_1 || !src_mem_rnd) {
+        throw std::runtime_error("Could not allocate split buffers; exiting...");
+    }
+
+    // Copy encoded population data and random numbers to respective allocated source buffers
+    std::memcpy(src_mem_0, encoded_pop_0.data(), bytes_0);
+    std::memcpy(src_mem_1, encoded_pop_1.data(), bytes_1);
+    std::memset(src_mem_rnd, 0, bytes_rnd);
+    std::memcpy(src_mem_rnd, rnd_data.data(), payload_bytes_rnd);
+    std::memset(dst_mem_0, 0, bytes_0);
+    std::memset(dst_mem_1, 0, bytes_1);
+
+    // Setup Scatter-Gather descriptors for Stream 0, Stream 1, and Stream 2 (random numbers)
+    coyote::localSg src_sg_0 = { .addr = src_mem_0, .len = bytes_0, .stream = stream, .dest = 0 };
+    coyote::localSg src_sg_1 = { .addr = src_mem_1, .len = bytes_1, .stream = stream, .dest = 1 };
+    coyote::localSg src_sg_rnd = { .addr = src_mem_rnd, .len = bytes_rnd, .stream = stream, .dest = 2 };
+
+    coyote::localSg dst_sg_0 = { .addr = dst_mem_0, .len = bytes_0, .stream = stream, .dest = 0 };
+    coyote::localSg dst_sg_1 = { .addr = dst_mem_1, .len = bytes_1, .stream = stream, .dest = 1 };
 
     // Set the kernel configuration registers; the free-running HLS kernel starts
     // processing as soon as beats_per_individual reads non-zero, so it must be
@@ -191,7 +208,7 @@ int main(int argc, char *argv[])  {
     std::cout << "Depot coordinates: (" << (coyote_thread.getCSR(CSR_DEPOT_COORDS_CAPACITY) >> COORD_BITS) << ", " << (coyote_thread.getCSR(CSR_DEPOT_COORDS_CAPACITY) & ((1 << COORD_BITS) - 1)) << ")" << std::endl << std::endl;
 
     HEADER("PERF DUAL STREAM LOCAL");
-    std::cout << "Streaming encoded individuals across 2 streams..." << std::endl;
+    std::cout << "Streaming encoded individuals across 2 streams + random numbers..." << std::endl;
 
     coyote::cBench bench(n_runs);
 
@@ -203,12 +220,14 @@ int main(int argc, char *argv[])  {
 
     auto bench_fn = [&]() {
         for (uint i = 0; i < N_THROUGHPUT_REPS; ++i) {
-            // Queue operations on Stream 0 and Stream 1
+            // Queue operations on Stream 0, Stream 1, and Stream 2 (random numbers)
+            coyote_thread.invoke(coyote::CoyoteOper::LOCAL_READ, src_sg_rnd);
             coyote_thread.invoke(coyote::CoyoteOper::LOCAL_TRANSFER, src_sg_0, dst_sg_0);
             coyote_thread.invoke(coyote::CoyoteOper::LOCAL_TRANSFER, src_sg_1, dst_sg_1);
         }
-        // Wait for both stream completions (2 transfers per iteration)
-        while (coyote_thread.checkCompleted(coyote::CoyoteOper::LOCAL_TRANSFER) != (2 * N_THROUGHPUT_REPS)) {}
+        // Wait for both stream transfers and random stream read completions
+        while (coyote_thread.checkCompleted(coyote::CoyoteOper::LOCAL_TRANSFER) != (2 * N_THROUGHPUT_REPS) ||
+               coyote_thread.checkCompleted(coyote::CoyoteOper::LOCAL_READ) != N_THROUGHPUT_REPS) {}
     };
 
     bench.execute(bench_fn, prep_fn);
@@ -217,12 +236,13 @@ int main(int argc, char *argv[])  {
         coyote::syncSg sg_sync;
         sg_sync = {.addr = src_mem_0, .len = bytes_0 }; coyote_thread.invoke(coyote::CoyoteOper::LOCAL_SYNC, sg_sync);
         sg_sync = {.addr = src_mem_1, .len = bytes_1 }; coyote_thread.invoke(coyote::CoyoteOper::LOCAL_SYNC, sg_sync);
+        sg_sync = {.addr = src_mem_rnd, .len = bytes_rnd }; coyote_thread.invoke(coyote::CoyoteOper::LOCAL_SYNC, sg_sync);
         sg_sync = {.addr = dst_mem_0, .len = bytes_0 }; coyote_thread.invoke(coyote::CoyoteOper::LOCAL_SYNC, sg_sync);
         sg_sync = {.addr = dst_mem_1, .len = bytes_1 }; coyote_thread.invoke(coyote::CoyoteOper::LOCAL_SYNC, sg_sync);
     }
 
     const double throughput_time = bench.getAvg();
-    const double total_transferred_bytes = (bytes_0 + bytes_1) * N_THROUGHPUT_REPS;
+    const double total_transferred_bytes = (bytes_0 + bytes_1 + bytes_rnd) * N_THROUGHPUT_REPS;
     const double throughput = total_transferred_bytes / (1024.0 * 1024.0 * throughput_time * 1e-9);
     std::cout << "Average throughput: " << std::setw(8) << throughput << " MB/s" << std::endl;
 
@@ -244,10 +264,11 @@ int main(int argc, char *argv[])  {
     if (!mapped) {
         const std::size_t alloc_0 = round_up(bytes_0, coyote::PAGE_SIZE);
         const std::size_t alloc_1 = round_up(bytes_1, coyote::PAGE_SIZE);
+        const std::size_t alloc_rnd = round_up(bytes_rnd, coyote::PAGE_SIZE);
         if (!hugepages) { 
-            free(src_mem_0); free(src_mem_1); free(dst_mem_0); free(dst_mem_1); 
+            free(src_mem_0); free(src_mem_1); free(src_mem_rnd); free(dst_mem_0); free(dst_mem_1); 
         } else { 
-            munmap(src_mem_0, alloc_0); munmap(src_mem_1, alloc_1); 
+            munmap(src_mem_0, alloc_0); munmap(src_mem_1, alloc_1); munmap(src_mem_rnd, alloc_rnd); 
             munmap(dst_mem_0, alloc_0); munmap(dst_mem_1, alloc_1); 
         }
     }

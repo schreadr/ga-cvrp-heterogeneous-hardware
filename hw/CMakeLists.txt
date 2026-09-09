@@ -35,9 +35,9 @@ find_package(CoyoteHW REQUIRED)
 project(ga-cvrp-heterogeneous-hardware)
 message("*** GA for CVRP on FPGA ***")
 
-# Enables streams from host memory (CPU DDR), two streams and card memory (FPGA HBM or DDR, TODO disable?) and t
+# Enables streams from host memory (CPU DDR): streams 0 and 1 for population, stream 2 for random numbers
 set(EN_STRM 1)
-set(N_STRM_AXI 2)
+set(N_STRM_AXI 3)
 
 set(EN_MEM 0)
 

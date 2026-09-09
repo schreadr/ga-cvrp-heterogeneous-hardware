@@ -97,15 +97,20 @@ void flush_accumulated_beat(BeatConsumerState &state, IndividualAsBeats &dst_ind
     }
 }
 
+void append_field(BeatProducerState &state, FitnessOrCity field){
+    #pragma HLS INLINE
+    state.beat >>= FIELD_BITS;
+    state.beat.range(BEAT_WIDTH - 1, BEAT_WIDTH - FIELD_BITS) = field;
+    state.count++;
+}
+
 void send_field(
     BeatProducerState &state,
     FitnessOrCity field,
     hls::stream<BeatPacket> &beat_stream
 ) {
     #pragma HLS INLINE
-    state.beat >>= FIELD_BITS;
-    state.beat.range(BEAT_WIDTH - 1, BEAT_WIDTH - FIELD_BITS) = field;
-    state.count++;
+    append_field(state, field);
 
     if (state.count == FIELDS_PER_BEAT) {
         BeatPacket pkt;

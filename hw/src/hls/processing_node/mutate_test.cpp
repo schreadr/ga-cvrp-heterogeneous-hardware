@@ -65,8 +65,16 @@ int run_mutate_test() {
     tb_push_individuals(in0, problem, pop_0);
     tb_push_individuals(in1, problem, pop_1);
 
+    const FieldIndex kMutateStart = 2;
+    const FieldIndex kMutateEnd = 2 + FIELDS_PER_BEAT * 2;
+    hls::stream<CityPair> mutate_pairs("mutate_pairs");
+
+    for (std::size_t i = 0; i < kNumIndividuals; ++i) {
+        mutate_pairs.write(CityPair{kMutateStart, kMutateEnd});
+    }
+
     std::cout << "Executing Mutate..." << std::endl;
-    mutate(in0, in1, out0, out1,
+    mutate(in0, in1, mutate_pairs, out0, out1,
               static_cast<int>(kNumIndividuals),
               kNumCities);
 

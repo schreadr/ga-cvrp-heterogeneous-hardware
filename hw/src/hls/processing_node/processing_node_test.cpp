@@ -65,9 +65,68 @@ static std::vector<std::vector<int>> kExpChild1Tours = {
     {31, 18, 17, 27, 26, 2, 1, 11, 30, 8, 9, 4, 39, 16, 37, 20, 36, 15, 25, 28, 32, 5, 21, 7, 38, 14, 33, 23, 29, 13, 22, 3, 6, 24, 34, 35, 0, 10, 12, 19}
 };
 
+int test_random_number_converter() {
+    std::cout << "Random Number Converter Unit Test" << std::endl;
+    hls::stream<axi_word_t> in_random("in_random");
+    hls::stream<CityPair> cx_pairs("cx_pairs");
+    hls::stream<CityPair> mut_pairs("mut_pairs");
+
+    const int test_individuals = 5;
+    std::vector<uint32_t> raw_randoms = {
+        15, 3, 8, 20,
+        2, 2, 30, 1,
+        25, 40, 14, 12,
+        19, 11, 5, 9,
+        39, 4, 7, 18
+    };
+
+    std::vector<std::pair<FieldIndex, FieldIndex>> exp_cx = {
+        {3, 15}, {2, 2}, {25, 40}, {11, 19}, {4, 39}
+    };
+    std::vector<std::pair<FieldIndex, FieldIndex>> exp_mut = {
+        {8, 20}, {1, 30}, {12, 14}, {5, 9}, {7, 18}
+    };
+
+    const std::size_t payload_bytes = raw_randoms.size() * sizeof(uint32_t);
+    const std::size_t total_bytes = ((payload_bytes + AXI_BYTES - 1) / AXI_BYTES) * AXI_BYTES;
+    std::vector<uint8_t> beat_bytes(total_bytes, 0);
+    std::memcpy(beat_bytes.data(), raw_randoms.data(), payload_bytes);
+
+    tb_push_bytes(in_random, beat_bytes.data(), total_bytes, true);
+
+    random_number_converter(in_random, cx_pairs, mut_pairs, test_individuals);
+
+    int errors = 0;
+    for (int i = 0; i < test_individuals; ++i) {
+        CityPair got_cx = cx_pairs.read();
+        CityPair got_mut = mut_pairs.read();
+
+        if (got_cx.start != exp_cx[i].first || got_cx.end != exp_cx[i].second) {
+            std::cout << "Mismatch in cx_pair[" << i << "]: got ("
+                      << got_cx.start << ", " << got_cx.end << ") expected ("
+                      << exp_cx[i].first << ", " << exp_cx[i].second << ")\n";
+            errors++;
+        }
+        if (got_mut.start != exp_mut[i].first || got_mut.end != exp_mut[i].second) {
+            std::cout << "Mismatch in mut_pair[" << i << "]: got ("
+                      << got_mut.start << ", " << got_mut.end << ") expected ("
+                      << exp_mut[i].first << ", " << exp_mut[i].second << ")\n";
+            errors++;
+        }
+    }
+
+    if (errors == 0) {
+        std::cout << "TEST PASSED!" << std::endl;
+    } else {
+        std::cout << "TEST FAILED with " << errors << " errors." << std::endl;
+    }
+    return errors;
+}
+
 int run_integration_test(){
     hls::stream<axi_word_t> in0("in0"), out0("out0");
     hls::stream<axi_word_t> in1("in1"), out1("out1");
+    hls::stream<axi_word_t> in_random("in_random");
 
     const ProblemInstance problem = make_problem();
     const std::vector<Individual> pop_0 = build_population(problem, kPop0Tours);
@@ -79,14 +138,28 @@ int run_integration_test(){
     const std::size_t total_bytes_0 = enc_0.size();
     const std::size_t total_bytes_1 = enc_1.size();
 
+    // Stream the cut points corresponding to the hardcoded test values
+    // kOxStart = 2, kOxEnd = 34; kMutateStart = 2, kMutateEnd = 34
+    // Pass them in mixed order to verify the converter sorts smaller first.
+    std::vector<uint32_t> rnd_nums = {
+        34, 2, 2, 34,
+        2, 34, 34, 2,
+        34, 2, 34, 2
+    };
+    const std::size_t payload_bytes_rnd = rnd_nums.size() * sizeof(uint32_t);
+    const std::size_t total_bytes_rnd = ((payload_bytes_rnd + AXI_BYTES - 1) / AXI_BYTES) * AXI_BYTES;
+    std::vector<uint8_t> enc_rnd(total_bytes_rnd, 0);
+    std::memcpy(enc_rnd.data(), rnd_nums.data(), payload_bytes_rnd);
+
     int dbg_indiv0, dbg_cities;
 
-    std::cout << "Streaming encoded populations..." << std::endl;
+    std::cout << "Streaming encoded populations and random numbers..." << std::endl;
     tb_push_bytes(in0, enc_0.data(), total_bytes_0, true);
     tb_push_bytes(in1, enc_1.data(), total_bytes_1, true);
+    tb_push_bytes(in_random, enc_rnd.data(), total_bytes_rnd, true);
 
     std::cout << "Executing Processing Node..." << std::endl;
-    processing_node(in0, out0, in1, out1,
+    processing_node(in0, out0, in1, out1, in_random,
                     kNumIndividuals,
                     kNumCities,
                     problem.capacity,
@@ -130,6 +203,12 @@ int run_integration_test(){
 
 int main() {
     int errors=0;
+    std::cout << "\nRunning Converter Unit Test..." << std::endl;
+    errors = test_random_number_converter();
+    if (errors != 0) {
+        std::cout << "Converter Unit Test failed with " << errors << " errors." << std::endl;
+        return errors;
+    }
     std::cout << "\nRunning Util Unit Test..." << std::endl;
     errors = test_util();
     if (errors != 0) {

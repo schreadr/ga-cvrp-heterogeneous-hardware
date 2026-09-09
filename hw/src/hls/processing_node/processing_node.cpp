@@ -56,11 +56,57 @@ static void consumer(
     }
 }
 
+void random_number_converter(
+    hls::stream<axi_word_t> &in_random,
+    hls::stream<CityPair> &crossover_pairs,
+    hls::stream<CityPair> &mutate_pairs,
+    int num_individuals
+) {
+    int indiv = 0;
+    int total_beats = (num_individuals * 4 + FIELDS_PER_BEAT - 1) >> FIELDS_PER_BEAT_LOG2;
+
+    CONVERTER_BEAT_LOOP: for (int b = 0; b < total_beats; b++) {
+        axi_word_t word = in_random.read();
+        CONVERTER_SLOT_LOOP: for (int slot = 0; slot < 4; slot++) {
+            if (indiv < num_individuals) {
+                FieldIndex slot_base = slot << 2;
+                FitnessOrCity c1 = get_field(word.data, slot_base + 0);
+                FitnessOrCity c2 = get_field(word.data, slot_base + 1);
+                FitnessOrCity m1 = get_field(word.data, slot_base + 2);
+                FitnessOrCity m2 = get_field(word.data, slot_base + 3);
+
+                CityPair cx_pair;
+                if (c1 <= c2) {
+                    cx_pair.start = c1;
+                    cx_pair.end = c2;
+                } else {
+                    cx_pair.start = c2;
+                    cx_pair.end = c1;
+                }
+
+                CityPair mut_pair;
+                if (m1 <= m2) {
+                    mut_pair.start = m1;
+                    mut_pair.end = m2;
+                } else {
+                    mut_pair.start = m2;
+                    mut_pair.end = m1;
+                }
+
+                crossover_pairs.write(cx_pair);
+                mutate_pairs.write(mut_pair);
+                indiv++;
+            }
+        }
+    }
+}
+
 static void process_stream(
     hls::stream<axi_word_t> &in0,
     hls::stream<axi_word_t> &out0,
     hls::stream<axi_word_t> &in1,
     hls::stream<axi_word_t> &out1,
+    hls::stream<axi_word_t> &in_random,
     int num_individuals,
     FieldIndex num_cities,
     Capacity vehicle_capacity,
@@ -77,12 +123,16 @@ static void process_stream(
     hls::stream_of_blocks<IndividualAsBeats> stream_repaired_0;
     hls::stream_of_blocks<IndividualAsBeats> stream_repaired_1;
 
+    hls::stream<CityPair> crossover_pairs("crossover_pairs");
+    hls::stream<CityPair> mutate_pairs("mutate_pairs");
+
     producer(in0, stream_0, num_individuals, num_cities);
     producer(in1, stream_1, num_individuals, num_cities);
-    crossover(stream_0, stream_1, stream_cx_0, stream_cx_1, num_individuals, num_cities);
-    mutate(stream_cx_0, stream_cx_1, stream_mut_0, stream_mut_1, num_individuals, num_cities);
-    repair_fitness(stream_mut_0, stream_repaired_0, num_individuals, num_cities, Capacity(vehicle_capacity), depot_cords);
-    repair_fitness(stream_mut_1, stream_repaired_1, num_individuals, num_cities, Capacity(vehicle_capacity), depot_cords);
+    random_number_converter(in_random, crossover_pairs, mutate_pairs, num_individuals);
+    crossover(stream_0, stream_1, crossover_pairs, stream_cx_0, stream_cx_1, num_individuals, num_cities);
+    mutate(stream_cx_0, stream_cx_1, mutate_pairs, stream_mut_0, stream_mut_1, num_individuals, num_cities);
+    repair_fitness(stream_mut_0, stream_repaired_0, num_individuals, num_cities, vehicle_capacity, depot_cords);
+    repair_fitness(stream_mut_1, stream_repaired_1, num_individuals, num_cities, vehicle_capacity, depot_cords);
     consumer(stream_repaired_0, out0, num_individuals, num_cities);
     consumer(stream_repaired_1, out1, num_individuals, num_cities);
 }
@@ -100,6 +150,7 @@ void processing_node(
     hls::stream<axi_word_t> &out0,
     hls::stream<axi_word_t> &in1,
     hls::stream<axi_word_t> &out1,
+    hls::stream<axi_word_t> &in_random,
     int num_individuals,
     int num_cities,
     int vehicle_capacity,
@@ -111,6 +162,7 @@ void processing_node(
     #pragma HLS INTERFACE axis port=out0
     #pragma HLS INTERFACE axis port=in1
     #pragma HLS INTERFACE axis port=out1
+    #pragma HLS INTERFACE axis port=in_random
 
     #pragma HLS INTERFACE s_axilite port=num_individuals offset=0x10 bundle=control
     #pragma HLS INTERFACE s_axilite port=num_cities offset=0x18 bundle=control
@@ -124,5 +176,5 @@ void processing_node(
 
     #pragma HLS DATAFLOW
     drive_debug_probes(num_individuals, num_cities, dbg_num_individuals, dbg_num_cities);
-    process_stream(in0, out0, in1, out1, num_individuals, FieldIndex(num_cities), Capacity(vehicle_capacity), depot_cords);
+    process_stream(in0, out0, in1, out1, in_random, num_individuals, FieldIndex(num_cities), Capacity(vehicle_capacity), depot_cords);
 }
