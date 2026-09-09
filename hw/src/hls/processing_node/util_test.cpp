@@ -84,7 +84,7 @@ static int test1(){
     in_stream.write(pkt3);
 
     // Execute the HLS component
-    stream_beats_to_individual(in_stream, dst_ind, dst_start_idx, n_cities_to_copy, StartEndDataWithBeats(get_start_end_data(dst_start_idx, dst_end_idx), 0, 0), n_beats, num_cities);
+    stream_beats_to_individual<4>(in_stream, dst_ind, dst_start_idx, n_cities_to_copy, StartEndDataWithBeats(get_start_end_data(dst_start_idx, dst_end_idx), 0, 0), n_beats, num_cities);
 
     std::vector<int> indices = {dst_start_idx, dst_start_idx + 1, dst_start_idx + 2, dst_start_idx + 3, dst_start_idx + 4};
     std::vector<int> expected_values = {0x111, 0x222, 0x333, 0x444, 0x555};
@@ -137,7 +137,7 @@ static int test2(){
     in_stream.write(pkt3);
 
     // Execute the HLS component
-    stream_beats_to_individual(in_stream, dst_ind, dst_start_idx, n_cities_to_copy, StartEndDataWithBeats(get_start_end_data(dst_start_idx, dst_end_idx), 0, 0), n_beats, num_cities);
+    stream_beats_to_individual<4>(in_stream, dst_ind, dst_start_idx, n_cities_to_copy, StartEndDataWithBeats(get_start_end_data(dst_start_idx, dst_end_idx), 0, 0), n_beats, num_cities);
 
     std::vector<int> indices = {dst_start_idx, dst_start_idx + 1, dst_start_idx + 2, dst_start_idx + 3, dst_start_idx + 4};
     std::vector<int> expected_values = {0x111, 0x222, 0x333, 0x444, 0x555};
@@ -190,7 +190,7 @@ static int test3(){
     in_stream.write(pkt3);
 
     // Execute the HLS component
-    stream_beats_to_individual(in_stream, dst_ind, dst_start_idx, n_cities_to_copy, StartEndDataWithBeats(get_start_end_data(dst_start_idx, dst_end_idx), 0, 0), n_beats, num_cities);
+    stream_beats_to_individual<4>(in_stream, dst_ind, dst_start_idx, n_cities_to_copy, StartEndDataWithBeats(get_start_end_data(dst_start_idx, dst_end_idx), 0, 0), n_beats, num_cities);
 
     std::vector<int> indices = {dst_start_idx, dst_start_idx + 1, 1, 2, 3};
     std::vector<int> expected_values = {0x111, 0x222, 0x333, 0x444, 0x555};
@@ -227,10 +227,137 @@ int test_integer_sqrt() {
     return success ? 0 : 1;
 }
 
-int test_stream_beats_to_individual() {
+static std::vector<std::pair<FieldIndex, Beat>> drain_stream(hls::stream<BeatPacket> &stream) {
+    std::vector<std::pair<FieldIndex, Beat>> packets;
+    while (!stream.empty()) {
+        BeatPacket pkt = stream.read();
+        packets.push_back({pkt.n, pkt.beat});
+    }
+    return packets;
+}
+
+static void print_packet_diff(
+    const std::vector<std::pair<FieldIndex, Beat>> &expected,
+    const std::vector<std::pair<FieldIndex, Beat>> &received
+) {
+    std::cout << "Expected " << expected.size() << " packet(s), received " << received.size() << " packet(s)" << std::endl;
+    for (size_t i = 0; i < expected.size() || i < received.size(); ++i) {
+        if (i < expected.size() && i < received.size()) {
+            if (expected[i] != received[i]) {
+                std::cout << "  Packet " << i << " mismatch: Expected (n=" << expected[i].first << ", beat=" << std::hex << expected[i].second 
+                          << "), got (n=" << received[i].first << ", beat=" << received[i].second << ")" << std::endl;
+            }
+        } else if (i < expected.size()) {
+            std::cout << "  Missing packet " << i << ": Expected (n=" << expected[i].first << ", beat=" << std::hex << expected[i].second << ")" << std::endl;
+        } else {
+            std::cout << "  Extra packet " << i << ": Got (n=" << received[i].first << ", beat=" << std::hex << received[i].second << ")" << std::endl;
+        }
+    }
+}
+
+static int test_beat_producer_partial() {
+    hls::stream<BeatPacket> stream;
+    BeatProducerState state;
+
+    send_field(state, 0x111, stream);
+    send_field(state, 0x222, stream);
+    send_field(state, 0x333, stream);
+    finalizeStream(state, stream);
+
+    std::vector<std::pair<FieldIndex, Beat>> expected;
+    Beat b = 0;
+    set_field(b, 0, 0x111);
+    set_field(b, 1, 0x222);
+    set_field(b, 2, 0x333);
+    expected.push_back({3, b});
+
+    std::vector<std::pair<FieldIndex, Beat>> received = drain_stream(stream);
+
+    bool pass = (received == expected);
+    if (!pass) {
+        std::cout << "test_beat_producer_partial FAILED!" << std::endl;
+        print_packet_diff(expected, received);
+        return 1;
+    }
+    std::cout << "test_beat_producer_partial PASSED successfully!" << std::endl;
+    return 0;
+}
+
+static int test_beat_producer_full() {
+    hls::stream<BeatPacket> stream;
+    BeatProducerState state;
+
+    for (int i = 0; i < FIELDS_PER_BEAT; ++i) {
+        send_field(state, 0x1000 + i, stream);
+    }
+    finalizeStream(state, stream);
+
+    std::vector<std::pair<FieldIndex, Beat>> expected;
+    Beat b = 0;
+    for (int i = 0; i < FIELDS_PER_BEAT; ++i) {
+        set_field(b, i, 0x1000 + i);
+    }
+    expected.push_back({FIELDS_PER_BEAT, b});
+
+    std::vector<std::pair<FieldIndex, Beat>> received = drain_stream(stream);
+
+    bool pass = (received == expected);
+    if (!pass) {
+        std::cout << "test_beat_producer_full FAILED!" << std::endl;
+        print_packet_diff(expected, received);
+        return 1;
+    }
+    std::cout << "test_beat_producer_full PASSED successfully!" << std::endl;
+    return 0;
+}
+
+static int test_beat_producer_multibeat() {
+    hls::stream<BeatPacket> stream;
+    BeatProducerState state;
+
+    for (int i = 0; i < 19; ++i) {
+        send_field(state, 0x2000 + i, stream);
+    }
+    finalizeStream(state, stream);
+
+    std::vector<std::pair<FieldIndex, Beat>> expected;
+    Beat b1 = 0;
+    for (int i = 0; i < FIELDS_PER_BEAT; ++i) {
+        set_field(b1, i, 0x2000 + i);
+    }
+    expected.push_back({FIELDS_PER_BEAT, b1});
+
+    Beat b2 = 0;
+    for (int i = 0; i < 3; ++i) {
+        set_field(b2, i, 0x2000 + 16 + i);
+    }
+    expected.push_back({3, b2});
+
+    std::vector<std::pair<FieldIndex, Beat>> received = drain_stream(stream);
+
+    bool pass = (received == expected);
+    if (!pass) {
+        std::cout << "test_beat_producer_multibeat FAILED!" << std::endl;
+        print_packet_diff(expected, received);
+        return 1;
+    }
+    std::cout << "test_beat_producer_multibeat PASSED successfully!" << std::endl;
+    return 0;
+}
+
+int test_beat_producer() {
+    int errors = 0;
+    errors += test_beat_producer_partial();
+    errors += test_beat_producer_full();
+    errors += test_beat_producer_multibeat();
+    return errors;
+}
+
+int test_util() {
     int errors = test1();
     errors += test2();
     errors += test3();
     errors += test_integer_sqrt();
+    errors += test_beat_producer();
     return errors;
 }

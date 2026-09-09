@@ -131,7 +131,7 @@ int run_integration_test(){
 int main() {
     int errors=0;
     std::cout << "\nRunning Util Unit Test..." << std::endl;
-    errors = test_stream_beats_to_individual();
+    errors = test_util();
     if (errors != 0) {
         std::cout << "Util Unit Test failed with " << errors << " errors." << std::endl;
         return errors;

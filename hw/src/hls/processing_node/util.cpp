@@ -3,42 +3,6 @@
 
 #include <hls_stream.h>
 
-template <int W_IN>
-ap_uint<(W_IN + 1) / 2> integer_sqrt(ap_uint<W_IN> value) {
-    #pragma HLS INLINE
-
-    constexpr int W_OUT = (W_IN + 1) / 2;
-    constexpr int W_EVEN = W_OUT * 2;
-
-    ap_uint<W_EVEN> rad = value;
-    ap_uint<W_OUT> q = 0;
-    ap_uint<W_EVEN + 2> ac = 0;
-
-    for (int i = 0; i < W_OUT; ++i) {
-        #pragma HLS UNROLL
-
-        ap_uint<W_EVEN + 2> shifted_ac = (ac << 2) | (rad >> (W_EVEN - 2));
-        rad <<= 2;
-
-        ap_uint<W_EVEN + 2> trial = (ap_uint<W_EVEN + 2>(q) << 2) | 1;
-        ap_int<W_EVEN + 3> test_res = ap_int<W_EVEN + 3>(shifted_ac) - ap_int<W_EVEN + 3>(trial);
-
-        if (test_res >= 0) {
-            ac = test_res;
-            q = (q << 1) | 1;
-        } else {
-            ac = shifted_ac;
-            q <<= 1;
-        }
-    }
-
-    return q;
-}
-
-template ap_uint<4> integer_sqrt<8>(ap_uint<8> value);
-template ap_uint<5> integer_sqrt<9>(ap_uint<9> value);
-template ap_uint<8> integer_sqrt<16>(ap_uint<16> value);
-
 void inline capture_next_packet(BeatConsumerState &state, hls::stream<BeatPacket> &in_stream){
     #pragma HLS INLINE
     BeatPacket pkt = in_stream.read();
@@ -133,27 +97,38 @@ void flush_accumulated_beat(BeatConsumerState &state, IndividualAsBeats &dst_ind
     }
 }
 
-void stream_beats_to_individual(
-    hls::stream<BeatPacket> &in_stream,
-    IndividualAsBeats &dst_ind,
-    FieldIndex dst_start_idx,
-    FieldIndex n_cities_to_copy,
-    const StartEndDataWithBeats &start_end_data,
-    BeatIndex n_beats,
-    FieldIndex num_cities
+void send_field(
+    BeatProducerState &state,
+    FitnessOrCity field,
+    hls::stream<BeatPacket> &beat_stream
 ) {
-    BeatConsumerState state(
-        n_cities_to_copy,
-        dst_start_idx,
-        start_end_data
-    );
+    #pragma HLS INLINE
+    state.beat >>= FIELD_BITS;
+    state.beat.range(BEAT_WIDTH - 1, BEAT_WIDTH - FIELD_BITS) = field;
+    state.count++;
 
-    WRITE_BEATS_LOOP: do {
-        #pragma HLS PIPELINE II=4
-        // Instruct HLS that state dependency across iterations can be pipelined
-        capture_and_propagate(state, in_stream, dst_ind, num_cities);
-    } while (state.current_valid_fields > 0 || state.cities_left > 0);
+    if (state.count == FIELDS_PER_BEAT) {
+        BeatPacket pkt;
+        pkt.beat = state.beat;
+        pkt.n = state.count;
+        beat_stream.write(pkt);
+        state.count = 0;
+        state.beat = 0;
+    }
+}
 
-    // Flush final accumulated beat to RAM after loop ends
-    flush_accumulated_beat(state, dst_ind);
+void finalizeStream(
+    BeatProducerState &state,
+    hls::stream<BeatPacket> &beat_stream
+) {
+    #pragma HLS INLINE
+    if (state.count > 0) {
+        state.beat >>= (FIELDS_PER_BEAT - state.count) * FIELD_BITS;
+        BeatPacket pkt;
+        pkt.beat = state.beat;
+        pkt.n = state.count;
+        beat_stream.write(pkt);
+        state.count = 0;
+        state.beat = 0;
+    }
 }

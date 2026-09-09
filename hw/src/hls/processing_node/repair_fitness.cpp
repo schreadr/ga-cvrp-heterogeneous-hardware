@@ -15,20 +15,22 @@ struct CoordinatePair {
     Coord to_y;
 };
 
-constexpr int MAX_COORDINATES_PER_BEAT = FIELDS_PER_BEAT * 2;
-
-struct CoordinateBeat {
-    CoordinatePair pairs[MAX_COORDINATES_PER_BEAT];
-    FieldIndex count;
+struct CoordinateElement {
+    CoordinatePair pair;
     bool last;
 };
 
-struct RouteState {
-    Capacity load;
-    Point prev_coord;
-    FitnessOrCity prev_city;
-    FieldIndex prev_field_idx;
-};
+// Static mask to clear all depot flags (bit 20 = 2*COORD_BITS+CAPACITY_BITS)
+static inline ap_uint<BEAT_WIDTH> get_clear_depots_mask() {
+    #pragma HLS INLINE
+    ap_uint<BEAT_WIDTH> mask = ~(ap_uint<BEAT_WIDTH>(0));
+    for (int i = 0; i < FIELDS_PER_BEAT; ++i) {
+        #pragma HLS UNROLL
+        // Clear the specific depot bit for each field
+        mask &= ~(ap_uint<BEAT_WIDTH>(1) << (i * FIELD_BITS + DEPOT_FLAG_FIELD_OFFSET));
+    }
+    return mask;
+}
 
 static ap_uint<COORD_BITS + 1> abs_coord_diff(Coord lhs, Coord rhs) {
     #pragma HLS INLINE
@@ -49,160 +51,126 @@ static FitnessOrCity floored_distance(const CoordinatePair &pair) {
     return FitnessOrCity(distance);
 }
 
-static void append_coordinate(
-    CoordinateBeat &coordinate_beat,
+static void stream_coordinate(
+    hls::stream<CoordinateElement> &coordinates,
     Point from,
-    Point to
-) {
-    #pragma HLS INLINE
-    coordinate_beat.pairs[(int) coordinate_beat.count++] = CoordinatePair{from.x, from.y, to.x, to.y};
-}
-
-static void close_route(
-    Beat &beat,
-    CoordinateBeat &coordinate_beat,
-    RouteState &route,
-    Point depot
-) {
-    #pragma HLS INLINE
-    set_is_depot(route.prev_city, true);
-    set_field(beat, route.prev_field_idx, route.prev_city);
-    append_coordinate(coordinate_beat, route.prev_coord, depot);
-    route.prev_coord = depot;
-    route.load = 0;
-}
-
-static void commit_city(
-    Beat &beat,
-    FieldIndex field_idx,
-    FitnessOrCity city,
-    Capacity demand,
-    CoordinateBeat &coordinate_beat,
-    RouteState &route
-) {
-    #pragma HLS INLINE
-    Point city_coord = {get_coord_x(city), get_coord_y(city)};
-    append_coordinate(coordinate_beat, route.prev_coord, city_coord);
-
-    route.load += demand;
-    route.prev_city = city;
-    route.prev_coord = city_coord;
-    route.prev_field_idx = field_idx;
-    set_field(beat, field_idx, city);
-}
-
-static void process_city(
-    Beat &beat,
-    FieldIndex field_idx,
-    CoordinateBeat &coordinate_beat,
-    RouteState &route,
-    Capacity vehicle_capacity,
-    Point depot
-) {
-    #pragma HLS INLINE
-    FitnessOrCity city = get_field(beat, field_idx);
-    set_is_depot(city, false);
-
-    Capacity demand = get_capacity(city);
-    if (route.load + demand > vehicle_capacity) {
-        close_route(beat, coordinate_beat, route, depot);
-    }
-    commit_city(beat, field_idx, city, demand, coordinate_beat, route);
-}
-
-static void commit_beat(
-    IndividualAsBeats &output,
-    Beat beat,
-    BeatIndex beat_idx,
-    hls::stream<CoordinateBeat> &coordinates,
-    CoordinateBeat coordinate_beat,
+    Point to,
     bool last
 ) {
     #pragma HLS INLINE
-    output[beat_idx] = beat;
-    coordinate_beat.last = last;
-    coordinates.write(coordinate_beat);
+    CoordinateElement elem;
+    elem.pair = CoordinatePair{from.x, from.y, to.x, to.y};
+    elem.last = last;
+    coordinates.write(elem);
 }
 
 static void repair_depots(
     const IndividualAsBeats &input,
-    IndividualAsBeats &output,
     FieldIndex num_cities,
-    BeatIndex total_beats,
     Capacity vehicle_capacity,
     Coord depot_x,
     Coord depot_y,
-    hls::stream<CoordinateBeat> &coordinates
+    hls::stream<CoordinateElement> &coordinates,
+    hls::stream<BeatPacket> &beat_stream
 ) {
     Point depot = {depot_x, depot_y};
-    RouteState route = {0, depot, 0, 0};
+    
+    Capacity remaining_capacity = vehicle_capacity;
+    Point prev_coord = depot;
 
-    Beat prev_beat = 0;
-    CoordinateBeat prev_coordinates = {};
+    BeatProducerState out_state;
 
-    REPAIR_BEAT_LOOP: for (BeatIndex beat_idx = 0; beat_idx < total_beats; ++beat_idx) {
-        Beat beat = input[beat_idx];
-        FieldIndex first_field = get_first_city_index(beat_idx);
-        FieldIndex last_field = get_last_field_index(num_cities, beat_idx);
-        CoordinateBeat coordinate_beat = {};
+    bool have_prev = false;
+    FitnessOrCity prev_city = 0;
 
-        FitnessOrCity first = get_field(beat, first_field);
-        set_is_depot(first, false);
-        Capacity first_demand = get_capacity(first);
+    FieldIndex field_idx = 1;
+    BeatIndex current_beat_idx = 0;
+    const ap_uint<BEAT_WIDTH> CLEAR_DEPOT_MASK = get_clear_depots_mask();
+    
+    Beat active_beat = (input[0] & CLEAR_DEPOT_MASK) >> FIELD_BITS;
+    BeatFieldIndex cities_in_beat = FIELDS_PER_BEAT - 1;
 
-        if (beat_idx > 0 && route.load + first_demand > vehicle_capacity) {
-            close_route(prev_beat, prev_coordinates, route, depot);
+    bool next_beat_ready = false;
+    Beat prefetched_beat_reg = input[0] & CLEAR_DEPOT_MASK;
+
+    REPAIR_FIELD_LOOP: while (field_idx <= num_cities) {
+        #pragma HLS PIPELINE II=1
+        
+        // Snapshot pipeline registers to sever all combinational paths
+        Beat beat_to_load = prefetched_beat_reg;
+        
+        // Advance BRAM address early based strictly on start-of-cycle registers
+        if (cities_in_beat == 2 && !next_beat_ready) {
+            current_beat_idx++;
+            next_beat_ready = true;
         }
 
-        commit_city(beat, first_field, first, first_demand, coordinate_beat, route);
+        // Unconditional extraction from active_beat register
+        FitnessOrCity current_city = active_beat.range(FIELD_BITS - 1, 0);
+        Capacity demand = get_capacity(current_city);
+        bool route_exceeds = (have_prev && demand > remaining_capacity);
 
-        if (beat_idx > 0) {
-            commit_beat(output, prev_beat, beat_idx - 1, coordinates, prev_coordinates, false);
-        }
+        if (cities_in_beat == 0) {
+            // Load the beat that was prefetched and stabilized in the pipeline
+            active_beat = beat_to_load;
+            cities_in_beat = FIELDS_PER_BEAT;
+            next_beat_ready = false;
+        } else {
+            if (route_exceeds) {
+                set_is_depot(prev_city, true);
+                
+                stream_coordinate(coordinates, prev_coord, depot, false);
+                prev_coord = depot;
+                remaining_capacity = vehicle_capacity;
+                
+                send_field(out_state, prev_city, beat_stream);
+                
+                have_prev = false;
+            } else {
+                if (have_prev) {
+                    send_field(out_state, prev_city, beat_stream);
+                }
+                
+                Point city_coord = {get_coord_x(current_city), get_coord_y(current_city)};
+                stream_coordinate(coordinates, prev_coord, city_coord, false);
+                prev_coord = city_coord;
+                remaining_capacity -= demand;
+                
+                prev_city = current_city;
+                have_prev = true;
 
-        REPAIR_FIELD_LOOP: for (FieldIndex field_idx = 0; field_idx < FIELDS_PER_BEAT; ++field_idx) {
-            #pragma HLS PIPELINE II=1
-            if(field_idx > first_field && field_idx <= last_field) {
-                process_city(beat, field_idx, coordinate_beat, route, vehicle_capacity, depot);
+                active_beat >>= FIELD_BITS;
+                cities_in_beat--;
+                field_idx++;
             }
         }
 
-        prev_beat = beat;
-        prev_coordinates = coordinate_beat;
+        // Unconditional BRAM read to update the shift register at END of cycle
+        // Because it is unconditional, HLS does not insert a MUX (select).
+        prefetched_beat_reg = input[current_beat_idx] & CLEAR_DEPOT_MASK;
     }
 
-    if (total_beats > 0) {
-        close_route(prev_beat, prev_coordinates, route, depot);
-        commit_beat(output, prev_beat, total_beats - 1, coordinates, prev_coordinates, true);
+    // Finalize end of individual
+    if (have_prev) {
+        set_is_depot(prev_city, true);
+        stream_coordinate(coordinates, prev_coord, depot, true);
+        
+        send_field(out_state, prev_city, beat_stream);
+        finalizeStream(out_state, beat_stream);
     }
 }
 
 static FitnessOrCity calculate_fitness(
-    hls::stream<CoordinateBeat> &coordinates
+    hls::stream<CoordinateElement> &coordinates
 ) {
     FitnessOrCity total = 0;
-    CoordinateBeat coordinate_beat;
-
-    bool need_read = true;
-    int pair_idx = 0;
-    bool done = false;
-
-    CONSUME_COORDINATES_LOOP: while (!done) {
-        #pragma HLS PIPELINE II=1 REWIND
-        if (need_read) {
-            coordinate_beat = coordinates.read();
-            pair_idx = 0;
-            need_read = (coordinate_beat.count == 0);
-            done = coordinate_beat.last && need_read;
-        } else {
-            total += floored_distance(coordinate_beat.pairs[pair_idx]);
-            pair_idx++;
-            if (pair_idx == coordinate_beat.count) {
-                need_read = true;
-                done = coordinate_beat.last;
-            }
-        }
-    }
+    CoordinateElement elem;
+    
+    CONSUME_COORDINATES_LOOP: do {
+        #pragma HLS PIPELINE II=1
+        elem = coordinates.read();
+        total += floored_distance(elem.pair);
+    } while (!elem.last);
 
     return total;
 }
@@ -215,13 +183,15 @@ static void repair_and_calculate(
     Capacity vehicle_capacity,
     Coord depot_x,
     Coord depot_y,
-    FitnessOrCity &fitness
+    FitnessOrCity &fitness,
+    const StartEndDataWithBeats &start_end_data
 ) {
     #pragma HLS DATAFLOW
-    hls::stream<CoordinateBeat> coordinates;
+    hls::stream<CoordinateElement> coordinates;
+    hls::stream<BeatPacket> beat_stream;
 
-    repair_depots(input, output, num_cities, total_beats, vehicle_capacity,
-                  depot_x, depot_y, coordinates);
+    repair_depots(input, num_cities, vehicle_capacity, depot_x, depot_y, coordinates, beat_stream);
+    stream_beats_to_individual<4>(beat_stream, output, 1, num_cities, start_end_data, total_beats, num_cities);
     fitness = calculate_fitness(coordinates);
 }
 
@@ -239,13 +209,17 @@ void repair_fitness(
     FieldIndex city_count = FieldIndex(num_cities);
     BeatIndex total_beats = get_total_beats(num_cities);
 
+    StartEndData start_end_data = get_start_end_data(1, num_cities);
+
     REPAIR_FITNESS_INDIV_LOOP: for (int individual_idx = 0; individual_idx < num_individuals; ++individual_idx) {
         hls::read_lock<IndividualAsBeats> input(in);
         hls::write_lock<IndividualAsBeats> output(out);
 
+        StartEndDataWithBeats data(start_end_data, input[start_end_data.start_beat], input[start_end_data.end_beat]);
+
         FitnessOrCity fitness;
         repair_and_calculate(
-            input, output, city_count, total_beats, vehicle_capacity, depot_x, depot_y, fitness);
+            input, output, city_count, total_beats, vehicle_capacity, depot_x, depot_y, fitness, data);
         set_fitness(output, fitness);
     }
 }

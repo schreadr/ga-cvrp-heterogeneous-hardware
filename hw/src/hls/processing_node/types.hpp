@@ -7,6 +7,8 @@
 
 #include "ga_encoding_constants.hpp"
 
+#define DEPOT_FLAG_FIELD_OFFSET (2 * COORD_BITS + CAPACITY_BITS)
+
 // AXI4-Stream payload
 typedef ap_axiu<AXI_WIDTH, 0, 0, 0> axi_word_t;
 
@@ -18,6 +20,8 @@ typedef ap_uint<NODE_ID_BITS> NodeId;
 typedef ap_uint<FIELD_BITS> FitnessOrCity;
 typedef ap_uint<BEAT_WIDTH> Beat;
 
+// TODO use it where indicated
+typedef ap_uint<FIELDS_PER_BEAT_LOG2 + 1> BeatFieldIndex;
 typedef ap_uint<MAX_FIELDS_LOG2 + 1> FieldIndex;
 typedef ap_uint<MAX_BEATS_LOG2 + 1> BeatIndex;
 
@@ -162,7 +166,7 @@ static inline Capacity get_capacity(FitnessOrCity val) {
 }
 static inline bool get_is_depot(FitnessOrCity val) {
     #pragma HLS INLINE
-    return val[2*COORD_BITS+CAPACITY_BITS];
+    return val[DEPOT_FLAG_FIELD_OFFSET];
 }
 
 static inline FieldIndex get_node_id_idx(FieldIndex city_idx) {
@@ -194,7 +198,7 @@ static inline void set_capacity(FitnessOrCity &val, Capacity cap) {
 }
 static inline void set_is_depot(FitnessOrCity &val, bool depot) {
     #pragma HLS INLINE
-    val[2*COORD_BITS+CAPACITY_BITS] = depot;
+    val[DEPOT_FLAG_FIELD_OFFSET] = depot;
 }
 static inline void set_node_id(FitnessOrCity &val, NodeId id) {
     #pragma HLS INLINE

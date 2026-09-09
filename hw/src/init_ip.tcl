@@ -11,7 +11,7 @@ if {$cfg(fpga_arch) eq "ultrascale_plus"} {
     puts "ERROR: Unsupported FPGA architecture: $cfg(fpga_arch)"
     exit 1
 }
-set_property -dict [list CONFIG.C_NUM_OF_PROBES {22} CONFIG.C_PROBE7_WIDTH {512} CONFIG.C_PROBE3_WIDTH {512} CONFIG.C_PROBE15_WIDTH {512} CONFIG.C_PROBE11_WIDTH {512} CONFIG.C_EN_STRG_QUAL {1} CONFIG.ALL_PROBE_SAME_MU_CNT {2} CONFIG.C_PROBE16_WIDTH {32} CONFIG.C_PROBE17_WIDTH {1} CONFIG.C_PROBE18_WIDTH {32} CONFIG.C_PROBE19_WIDTH {1}] [get_ips ila_processing_node]
+set_property -dict [list CONFIG.C_NUM_OF_PROBES {20} CONFIG.C_PROBE7_WIDTH {512} CONFIG.C_PROBE3_WIDTH {512} CONFIG.C_PROBE15_WIDTH {512} CONFIG.C_PROBE11_WIDTH {512} CONFIG.C_EN_STRG_QUAL {1} CONFIG.ALL_PROBE_SAME_MU_CNT {2} CONFIG.C_PROBE16_WIDTH {32} CONFIG.C_PROBE17_WIDTH {1} CONFIG.C_PROBE18_WIDTH {32} CONFIG.C_PROBE19_WIDTH {1}] [get_ips ila_processing_node]
 
 # AXI4-Lite data width converter for the kernel control path
 # Downsizes the 64-bit Coyote user CSR bus (axi_ctrl) to the 32-bit AXI4-Lite

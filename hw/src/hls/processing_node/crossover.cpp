@@ -64,8 +64,8 @@ void fill_up_in_circle(StartEndData &start_end_data_unused_city_search, StartEnd
     find_unsued_cities(p1, beat_stream_0, start_end_data_unused_city_search, num_cities, total_beats, n_cities_to_insert, taken0);
     find_unsued_cities(p0, beat_stream_1, start_end_data_unused_city_search, num_cities, total_beats, n_cities_to_insert, taken1);
 
-    stream_beats_to_individual(beat_stream_0, c0, start_idx, n_cities_to_insert, start_end_data_with_beats0, total_beats, num_cities);
-    stream_beats_to_individual(beat_stream_1, c1, start_idx, n_cities_to_insert, start_end_data_with_beats1, total_beats, num_cities);
+    stream_beats_to_individual<4>(beat_stream_0, c0, start_idx, n_cities_to_insert, start_end_data_with_beats0, total_beats, num_cities);
+    stream_beats_to_individual<4>(beat_stream_1, c1, start_idx, n_cities_to_insert, start_end_data_with_beats1, total_beats, num_cities);
 }
 
 
