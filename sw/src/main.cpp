@@ -144,18 +144,10 @@ int main(int argc, char *argv[])  {
     // depot is excluded from the number of cities
     const uint32_t reg_num_cities = problem.dimension - 1;
 
-    // Generate exact number of random numbers for crossover and mutation cut points.
-    // Each individual pair requires 2 cut points for crossover and 2 cut points for mutation.
-    const std::size_t num_rnd = pop_0.size() * 4;
-    const std::size_t payload_bytes_rnd = num_rnd * sizeof(uint32_t);
-    const std::size_t bytes_rnd = round_up(payload_bytes_rnd, AXI_BYTES);
-
-    std::mt19937_64 rng(kPopulationSeed ^ 0xDEADBEEF);
-    std::uniform_int_distribution<uint32_t> dist(1, reg_num_cities);
-    std::vector<uint32_t> rnd_data(num_rnd);
-    for (std::size_t i = 0; i < num_rnd; ++i) {
-        rnd_data[i] = dist(rng);
-    }
+    // Calculate random numbers buffer size for crossover and mutation cut points.
+    // Each individual pair requires RANDOMS_PER_INDIV random numbers (c1, c2, m1, m2).
+    const std::size_t num_rnd = pop_0.size() * RANDOMS_PER_INDIV;
+    const std::size_t bytes_rnd = get_random_bytes(pop_0.size());
 
     std::cout << "Loaded problem: " << problem.name << std::endl;
     std::cout << "Dimension: " << problem.dimension << std::endl;
@@ -177,21 +169,20 @@ int main(int argc, char *argv[])  {
         throw std::runtime_error("Could not allocate split buffers; exiting...");
     }
 
-    // Copy encoded population data and random numbers to respective allocated source buffers
+    // Copy encoded population data and generate random numbers in allocated source buffers
     std::memcpy(src_mem_0, encoded_pop_0.data(), bytes_0);
     std::memcpy(src_mem_1, encoded_pop_1.data(), bytes_1);
-    std::memset(src_mem_rnd, 0, bytes_rnd);
-    std::memcpy(src_mem_rnd, rnd_data.data(), payload_bytes_rnd);
+    generate_random_numbers(pop_0.size(), src_mem_rnd, reg_num_cities, kPopulationSeed ^ 0xDEADBEEF);
     std::memset(dst_mem_0, 0, bytes_0);
     std::memset(dst_mem_1, 0, bytes_1);
 
     // Setup Scatter-Gather descriptors for Stream 0, Stream 1, and Stream 2 (random numbers)
-    coyote::localSg src_sg_0 = { .addr = src_mem_0, .len = bytes_0, .stream = stream, .dest = 0 };
-    coyote::localSg src_sg_1 = { .addr = src_mem_1, .len = bytes_1, .stream = stream, .dest = 1 };
-    coyote::localSg src_sg_rnd = { .addr = src_mem_rnd, .len = bytes_rnd, .stream = stream, .dest = 2 };
+    coyote::localSg src_sg_0 = { .addr = src_mem_0, .len = static_cast<uint32_t>(bytes_0), .stream = stream, .dest = 0 };
+    coyote::localSg src_sg_1 = { .addr = src_mem_1, .len = static_cast<uint32_t>(bytes_1), .stream = stream, .dest = 1 };
+    coyote::localSg src_sg_rnd = { .addr = src_mem_rnd, .len = static_cast<uint32_t>(bytes_rnd), .stream = stream, .dest = 2 };
 
-    coyote::localSg dst_sg_0 = { .addr = dst_mem_0, .len = bytes_0, .stream = stream, .dest = 0 };
-    coyote::localSg dst_sg_1 = { .addr = dst_mem_1, .len = bytes_1, .stream = stream, .dest = 1 };
+    coyote::localSg dst_sg_0 = { .addr = dst_mem_0, .len = static_cast<uint32_t>(bytes_0), .stream = stream, .dest = 0 };
+    coyote::localSg dst_sg_1 = { .addr = dst_mem_1, .len = static_cast<uint32_t>(bytes_1), .stream = stream, .dest = 1 };
 
     // Set the kernel configuration registers; the free-running HLS kernel starts
     // processing as soon as beats_per_individual reads non-zero, so it must be

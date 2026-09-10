@@ -63,17 +63,16 @@ void random_number_converter(
     int num_individuals
 ) {
     int indiv = 0;
-    int total_beats = (num_individuals * 4 + FIELDS_PER_BEAT - 1) >> FIELDS_PER_BEAT_LOG2;
+    int total_beats = get_total_random_beats(num_individuals);
 
     CONVERTER_BEAT_LOOP: for (int b = 0; b < total_beats; b++) {
         axi_word_t word = in_random.read();
-        CONVERTER_SLOT_LOOP: for (int slot = 0; slot < 4; slot++) {
+        CONVERTER_SLOT_LOOP: for (int slot = 0; slot < INDIVS_PER_RANDOM_BEAT; slot++) {
             if (indiv < num_individuals) {
-                FieldIndex slot_base = slot << 2;
-                FitnessOrCity c1 = get_field(word.data, slot_base + 0);
-                FitnessOrCity c2 = get_field(word.data, slot_base + 1);
-                FitnessOrCity m1 = get_field(word.data, slot_base + 2);
-                FitnessOrCity m2 = get_field(word.data, slot_base + 3);
+                RandomNumber c1 = consume_next_random(word.data);
+                RandomNumber c2 = consume_next_random(word.data);
+                RandomNumber m1 = consume_next_random(word.data);
+                RandomNumber m2 = consume_next_random(word.data);
 
                 CityPair cx_pair;
                 if (c1 <= c2) {

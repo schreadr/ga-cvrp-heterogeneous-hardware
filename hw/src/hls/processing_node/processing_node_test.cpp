@@ -88,7 +88,7 @@ int test_random_number_converter() {
     };
 
     const std::size_t payload_bytes = raw_randoms.size() * sizeof(uint32_t);
-    const std::size_t total_bytes = ((payload_bytes + AXI_BYTES - 1) / AXI_BYTES) * AXI_BYTES;
+    const std::size_t total_bytes = get_random_bytes(test_individuals);
     std::vector<uint8_t> beat_bytes(total_bytes, 0);
     std::memcpy(beat_bytes.data(), raw_randoms.data(), payload_bytes);
 
@@ -147,7 +147,7 @@ int run_integration_test(){
         34, 2, 34, 2
     };
     const std::size_t payload_bytes_rnd = rnd_nums.size() * sizeof(uint32_t);
-    const std::size_t total_bytes_rnd = ((payload_bytes_rnd + AXI_BYTES - 1) / AXI_BYTES) * AXI_BYTES;
+    const std::size_t total_bytes_rnd = get_random_bytes(kNumIndividuals);
     std::vector<uint8_t> enc_rnd(total_bytes_rnd, 0);
     std::memcpy(enc_rnd.data(), rnd_nums.data(), payload_bytes_rnd);
 

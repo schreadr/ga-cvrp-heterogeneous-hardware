@@ -18,6 +18,7 @@ typedef ap_uint<COORD_BITS> Coord;
 typedef ap_uint<CAPACITY_BITS> Capacity;
 typedef ap_uint<NODE_ID_BITS> NodeId;
 typedef ap_uint<FIELD_BITS> FitnessOrCity;
+typedef ap_uint<RANDOM_BITS> RandomNumber;
 typedef ap_uint<BEAT_WIDTH> Beat;
 
 // TODO use it where indicated
@@ -114,6 +115,13 @@ static inline FitnessOrCity consume_next_field(Beat &beat) {
     FitnessOrCity field = beat.range(FIELD_BITS - 1, 0);
     beat >>= FIELD_BITS;
     return field;
+}
+
+static inline RandomNumber consume_next_random(Beat &beat) {
+    #pragma HLS INLINE
+    RandomNumber rnd = beat.range(RANDOM_BITS - 1, 0);
+    beat >>= RANDOM_BITS;
+    return rnd;
 }
 
 static inline void set_field_o(IndividualAsBeats &ind, BeatIndex beat_idx, FieldIndex field_offset, FitnessOrCity val) {

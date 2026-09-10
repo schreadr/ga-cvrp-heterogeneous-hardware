@@ -1,5 +1,6 @@
 #include <array>
 #include <cstring>
+#include <random>
 
 #include "ga_streaming.hpp"
 #include "ga.hpp"
@@ -212,5 +213,24 @@ void population_to_buffer(std::vector<EncodedIndividual> &population, std::uint8
             population[i] = EncodedIndividual{bytes, population[i].fitness};
             bytes += beats_per_individual * AXI_BYTES;
         }
+    }
+}
+
+void generate_random_numbers(
+    std::size_t num_individuals,
+    std::uint8_t *buffer,
+    int num_cities,
+    std::uint64_t seed
+) {
+    const std::size_t total_bytes = get_random_bytes(num_individuals);
+    std::memset(buffer, 0, total_bytes);
+
+    const std::size_t num_rnd = num_individuals * RANDOMS_PER_INDIV;
+    std::mt19937_64 rng(seed);
+    std::uniform_int_distribution<uint32_t> dist(1, num_cities);
+
+    uint32_t *words = reinterpret_cast<uint32_t *>(buffer);
+    for (std::size_t i = 0; i < num_rnd; ++i) {
+        words[i] = dist(rng);
     }
 }
