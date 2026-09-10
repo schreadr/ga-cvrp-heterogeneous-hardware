@@ -116,6 +116,7 @@ struct EncodedIndividual {
 struct GAParams {
     std::size_t population_size_multiplier = 0;
     std::size_t n_generations = 0;
+    std::size_t  n_best_keep = 0;
     std::uint32_t seed = 0;
 
     std::uint8_t* buffer_src_0 = nullptr;

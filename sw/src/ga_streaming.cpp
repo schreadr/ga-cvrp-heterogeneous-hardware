@@ -201,9 +201,9 @@ void population_to_buffer(std::vector<EncodedIndividual> &population, std::uint8
     if (reversedOrder) {
         for (int i=population.size()-1; i>=0; --i) {
             // Serialize each individual and write to bytes
-            std::memcpy(bytes, population[i].bytes, beats_per_individual * AXI_BYTES);
-            population[i] = EncodedIndividual{bytes, population[i].fitness};
-            bytes += beats_per_individual * AXI_BYTES;
+            std::uint8_t *dest = bytes + (i * beats_per_individual * AXI_BYTES);
+            std::memcpy(dest, population[i].bytes, beats_per_individual * AXI_BYTES);
+            population[i] = EncodedIndividual{dest, population[i].fitness};
         }
     } else {
         for (int i=0; i<population.size(); ++i) {

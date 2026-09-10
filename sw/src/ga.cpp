@@ -131,21 +131,29 @@ void update_population(std::vector<EncodedIndividual> &population, std::vector<E
     int i_pop=0;
     int i_new=0;
     std::uint32_t last_fitness = std::numeric_limits<std::uint32_t>::max();
-    for (int i = 0; i < n_keep_best && i_new < new_generation.size(); ++i) {
-        // If the fitness values are equal, we prefer the new generation individual
-        if(new_generation[i_new].fitness == population[i_pop].fitness){
-            new_population[i]=new_generation[i_new];
+    for (int i = 0; i < n_keep_best && (i_new < new_generation.size() || i_pop < population.size()); ++i) {
+        if (i_new < new_generation.size() && i_pop < population.size()) {
+            // If the fitness values are equal, we prefer the new generation individual
+            if (new_generation[i_new].fitness == population[i_pop].fitness) {
+                new_population[i] = new_generation[i_new];
+                last_fitness = new_generation[i_new].fitness;
+                while (++i_new < new_generation.size() && new_generation[i_new].fitness == last_fitness);
+                i_pop++;
+            // If the new generation individual has a better fitness, we take it
+            } else if (new_generation[i_new].fitness < population[i_pop].fitness) {
+                new_population[i] = new_generation[i_new];
+                last_fitness = new_generation[i_new].fitness;
+                while (++i_new < new_generation.size() && new_generation[i_new].fitness == last_fitness);
+            } else {
+                new_population[i] = population[i_pop];
+                i_pop++;
+            }
+        } else if (i_new < new_generation.size()) {
+            new_population[i] = new_generation[i_new];
             last_fitness = new_generation[i_new].fitness;
-            while (new_generation[++i_new].fitness == last_fitness && i_new < new_generation.size());
-            
-            i_pop++;
-        // If the new generation individual has a better fitness, we take it
-        }else if(new_generation[i_new].fitness < population[i_pop].fitness){
-            new_population[i]=new_generation[i_new];
-            last_fitness = new_generation[i_new].fitness;
-            while (new_generation[++i_new].fitness == last_fitness && i_new < new_generation.size());
+            while (++i_new < new_generation.size() && new_generation[i_new].fitness == last_fitness);
         } else {
-            new_population[i]=population[i_pop];
+            new_population[i] = population[i_pop];
             i_pop++;
         }
     }
@@ -165,13 +173,14 @@ void update_population(std::vector<EncodedIndividual> &population, std::vector<E
     // Fill the rest of the new population with individuals from the old population eliminating duplicates
     int new_pop_ge_index = n_keep_best;
     for (int i = i_pop; i < population.size() && i_new_pop < population.size(); i++){
-        while(new_pop_ge_index < new_population.size() && new_population[new_pop_ge_index].fitness < population[i].fitness){
+        while(new_pop_ge_index < i_new_pop && new_population[new_pop_ge_index].fitness < population[i].fitness){
             new_pop_ge_index++;
         }
 
-        // if not equal then must new_pop must be greater thus pop[i] does not yet exist
-        if(new_population[new_pop_ge_index].fitness != population[i].fitness){
-            new_population[i] = population[i];
+        // if not equal then new_pop must be greater thus pop[i] does not yet exist
+        if(new_pop_ge_index >= i_new_pop || new_population[new_pop_ge_index].fitness != population[i].fitness){
+            new_population[i_new_pop] = population[i];
+            i_new_pop++;
         }
     }
 
@@ -197,7 +206,10 @@ void create_parent_pairs(const std::vector<EncodedIndividual> &population, std::
 void run_ga(const ProblemInstance& problem, GAParams& params, std::function<void()> create_new_generation){
     std::mt19937 new_seed(params.seed);
 
-    const std::vector<Individual> initial_population = build_initial_population(problem, problem.dimension * params.population_size_multiplier, new_seed());
+    std::vector<Individual> initial_population = build_initial_population(problem, problem.dimension * params.population_size_multiplier, new_seed());
+    std::sort(initial_population.begin(), initial_population.end(), [](const Individual &a, const Individual &b) {
+        return a.fitness < b.fitness;
+    });
     const std::vector<std::uint8_t> encoded_population = encode_population_fixed(problem, initial_population);
     const std::size_t n_bytes = encoded_population.size();
     const std::size_t pop_size = initial_population.size();
@@ -220,8 +232,6 @@ void run_ga(const ProblemInstance& problem, GAParams& params, std::function<void
 
     std::memcpy(pop_buffer, encoded_population.data(), n_bytes);
     population_from_buffer(pop_buffer, pop_size, population, problem.dimension);
-    
-    std::sort(population.get().begin(), population.get().end());
 
     for (int i=0; i< params.n_generations; i++){
         create_parent_pairs(population, parents1, parents2, new_seed());
@@ -231,9 +241,10 @@ void run_ga(const ProblemInstance& problem, GAParams& params, std::function<void
         create_new_generation();
 
         population_from_buffer(buffer_dst_0, pop_size, next_generation, problem.dimension);
-        update_population(population, next_generation, next_population, 100);
+        update_population(population, next_generation, next_population, params.n_best_keep);
         std::swap(population, next_population);
-        population_to_buffer(population, pop_buffer,problem.dimension, true);
+        parents2 = next_population;
+        population_to_buffer(population, pop_buffer, problem.dimension, true);
 
         std::cout << "Best fitness in iteration " << i << ": " << population.get()[0].fitness << std::endl;
     }
