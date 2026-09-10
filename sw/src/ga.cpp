@@ -303,12 +303,12 @@ void update_population(std::vector<EncodedIndividual> &population, std::vector<E
 
     std::sort(new_population.begin(), new_population.end());
 }
-
 void create_parent_pairs(const std::vector<EncodedIndividual> &population, std::vector<EncodedIndividual> &parents1, std::vector<EncodedIndividual> &parents2, std::uint32_t seed) {
     std::mt19937 gen(seed);
     std::uniform_int_distribution<std::size_t> dist(0, population.size() - 1);
 
-    for (std::size_t i = 0; i < population.size(); ++i) {
+    const std::size_t n_pairs = std::min(parents1.size(), parents2.size());
+    for (std::size_t i = 0; i < n_pairs; ++i) {
         std::size_t idx1 = dist(gen);
         std::size_t idx2 = dist(gen);
         std::size_t idx3 = dist(gen);
@@ -323,44 +323,52 @@ void create_parent_pairs(const std::vector<EncodedIndividual> &population, std::
 void run_ga(const ProblemInstance& problem, GAParams& params, std::function<void()> create_new_generation){
     std::mt19937 new_seed(params.seed);
 
-    std::vector<Individual> initial_population = build_initial_population(problem, problem.dimension * params.population_size_multiplier, new_seed());
+    const std::size_t pop_size = params.pop_size;
+    const std::size_t half_pop = pop_size / 2;
+    const int beats_per_ind = get_total_beats(problem.dimension - 1);
+    const std::size_t bytes_per_ind = beats_per_ind * AXI_BYTES;
+    const std::size_t half_bytes = half_pop * bytes_per_ind;
+
+    std::vector<Individual> initial_population = build_initial_population(problem, pop_size, new_seed());
     std::sort(initial_population.begin(), initial_population.end(), [](const Individual &a, const Individual &b) {
         return a.fitness < b.fitness;
     });
     const std::vector<std::uint8_t> encoded_population = encode_population_fixed(problem, initial_population);
     const std::size_t n_bytes = encoded_population.size();
-    const std::size_t pop_size = initial_population.size();
 
     std::vector<EncodedIndividual> vec1 = std::vector<EncodedIndividual>(pop_size);
     std::reference_wrapper<std::vector<EncodedIndividual>> population = vec1;
 
     std::vector<EncodedIndividual> vec2 = std::vector<EncodedIndividual>(pop_size);
-    std::reference_wrapper<std::vector<EncodedIndividual>> parents1 = vec2;
     std::reference_wrapper<std::vector<EncodedIndividual>> next_generation = vec2;
 
     std::vector<EncodedIndividual> vec3 = std::vector<EncodedIndividual>(pop_size);
-    std::reference_wrapper<std::vector<EncodedIndividual>> parents2 = vec3;
     std::reference_wrapper<std::vector<EncodedIndividual>> next_population = vec3;
 
-    std::uint8_t *buffer_src_0 = params.buffer_src_0;
-    std::uint8_t *buffer_src_1 = params.buffer_src_1;
-    std::uint8_t *buffer_dst_0 = params.buffer_dst_0;
+    std::vector<EncodedIndividual> parents1(half_pop);
+    std::vector<EncodedIndividual> parents2(half_pop);
+
+    std::uint8_t *buffer_src = params.buffer_src;
+    std::uint8_t *buffer_dst = params.buffer_dst;
+    std::uint8_t *buffer_src_rnd = params.buffer_src_rnd;
     std::uint8_t *pop_buffer = params.buffer_pop;
 
     std::memcpy(pop_buffer, encoded_population.data(), n_bytes);
     population_from_buffer(pop_buffer, pop_size, population, problem.dimension);
 
+    const std::size_t n_keep = std::min(pop_size, static_cast<std::size_t>(std::round(pop_size * (params.n_best_keep / 100.0))));
+
     for (int i=0; i< params.n_generations; i++){
         create_parent_pairs(population, parents1, parents2, new_seed());
-        population_to_buffer(parents1, buffer_src_0, problem.dimension);
-        population_to_buffer(parents2, buffer_src_1, problem.dimension);
-
+        population_to_buffer(parents1, buffer_src, problem.dimension);
+        population_to_buffer(parents2, buffer_src + half_bytes, problem.dimension);
+        generate_random_numbers(half_pop, buffer_src_rnd, problem.dimension - 1, new_seed());
+        
         create_new_generation();
 
-        population_from_buffer(buffer_dst_0, pop_size, next_generation, problem.dimension);
-        update_population(population, next_generation, next_population, params.n_best_keep);
+        population_from_buffer(buffer_dst, pop_size, next_generation, problem.dimension);
+        update_population(population, next_generation, next_population, n_keep);
         std::swap(population, next_population);
-        parents2 = next_population;
         population_to_buffer(population, pop_buffer, problem.dimension, true);
 
         std::cout << "Best fitness in iteration " << i << ": " << population.get()[0].fitness << std::endl;

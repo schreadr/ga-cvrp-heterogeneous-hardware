@@ -114,14 +114,14 @@ struct EncodedIndividual {
 };
 
 struct GAParams {
-    std::size_t population_size_multiplier = 0;
+    std::size_t pop_size = 0;
     std::size_t n_generations = 0;
-    std::size_t  n_best_keep = 0;
+    double n_best_keep = 0.0;
     std::uint32_t seed = 0;
 
-    std::uint8_t* buffer_src_0 = nullptr;
-    std::uint8_t* buffer_src_1 = nullptr;
-    std::uint8_t* buffer_dst_0 = nullptr;
+    std::uint8_t* buffer_src = nullptr;
+    std::uint8_t* buffer_dst = nullptr;
+    std::uint8_t* buffer_src_rnd = nullptr;
 
     std::uint8_t* buffer_pop = nullptr;
 };
