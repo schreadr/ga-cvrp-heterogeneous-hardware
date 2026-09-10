@@ -153,4 +153,6 @@ void create_parent_pairs(const std::vector<EncodedIndividual> &population, std::
 
 void run_ga(const ProblemInstance& problem, GAParams& params, std::function<void()> create_new_generation);
 
+bool validate_encoding_constants(const ProblemInstance &problem, bool throw_on_error = true);
+
 #endif

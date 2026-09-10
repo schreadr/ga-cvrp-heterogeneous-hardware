@@ -33,6 +33,123 @@
 #include <stdexcept>
 #include <cstring>
 
+template <typename T>
+static inline int bit_width(T n) {
+    if (n <= 0) return 0;
+    if constexpr (sizeof(T) <= sizeof(unsigned int)) {
+        return 32 - __builtin_clz(static_cast<unsigned int>(n));
+    } else {
+        return 64 - __builtin_clzll(static_cast<unsigned long long>(n));
+    }
+}
+
+bool validate_encoding_constants(const ProblemInstance &problem, bool throw_on_error) {
+    int max_trans_x = problem.depot.x;
+    int max_trans_y = problem.depot.y;
+    int max_demand = 0;
+    for (const auto &node : problem.nodes) {
+        max_trans_x = std::max(max_trans_x, node.x);
+        max_trans_y = std::max(max_trans_y, node.y);
+        max_demand = std::max(max_demand, node.demand);
+    }
+
+    bool failed = false;
+
+    int expected_coord_bits = bit_width(std::max(max_trans_x, max_trans_y));
+    if (COORD_BITS < expected_coord_bits) {
+        std::cout << "COORD_BITS is too small for the given problem instance. Required: " + std::to_string(expected_coord_bits) << std::endl;
+        failed = true;
+    }
+
+    int expected_capacity_bits = bit_width(problem.capacity);
+    if (CAPACITY_BITS < expected_capacity_bits) {
+        std::cout << "CAPACITY_BITS is too small for the given problem instance (max capacity must fit in). Required: " + std::to_string(expected_capacity_bits) << std::endl;
+        failed = true;
+    }
+
+    int expected_demand_bits = bit_width(max_demand);
+    if (CAPACITY_BITS < expected_demand_bits) {
+        std::cout << "CAPACITY_BITS is too small for the given problem instance (max demand must fit in). Required: " + std::to_string(expected_demand_bits) << std::endl;
+        failed = true;
+    }
+
+    int num_cities = problem.dimension - 1;
+    if (MAX_CITIES < num_cities) {
+        std::cout << "MAX_CITIES is too small for the given problem instance. Required: " + std::to_string(num_cities) << std::endl;
+        failed = true;
+    }
+
+    int max_fitness = 2 * std::ceil(std::sqrt(max_trans_x * max_trans_x + max_trans_y * max_trans_y)) * (problem.dimension - 1);
+    int expected_fitness_bits = bit_width(max_fitness);
+    if (FIELD_BITS < expected_fitness_bits) {
+        std::cout << "FIELD_BITS is too small for the given problem instance (max fitness must fit in). Required: " + std::to_string(expected_fitness_bits) << std::endl;
+        failed = true;
+    }
+
+    int req_node_id_bits = std::max<int>(1, bit_width(std::max<int>(MAX_CITIES, num_cities)));
+    int req_capacity_bits = std::max({(int)CAPACITY_BITS, expected_capacity_bits, expected_demand_bits});
+    int req_coord_bits = std::max<int>(COORD_BITS, expected_coord_bits);
+    int req_packed_bits = 2 * req_coord_bits + req_capacity_bits + DEPOT_BITS + req_node_id_bits;
+    if (FIELD_BITS < req_packed_bits) {
+        std::cout << "FIELD_BITS is too small for packed city field. Required: " + std::to_string(req_packed_bits) << std::endl;
+        failed = true;
+    }
+
+    if (failed) {
+        int new_coord_bits = req_coord_bits;
+        int new_capacity_bits = req_capacity_bits;
+        int new_node_id_bits = std::max<int>(NODE_ID_BITS, req_node_id_bits);
+        int new_max_cities = std::max<int>(MAX_CITIES, (1 << new_node_id_bits) - 1);
+
+        int min_field_bits = std::max(expected_fitness_bits, 2 * new_coord_bits + new_capacity_bits + DEPOT_BITS + new_node_id_bits);
+        int new_field_bits = FIELD_BITS;
+        while (new_field_bits < min_field_bits) {
+            new_field_bits *= 2;
+        }
+
+        int new_field_bits_log2 = static_cast<int>(std::log2(new_field_bits));
+        int new_axi_width = AXI_WIDTH;
+        int new_axi_bytes = new_axi_width / 8;
+        int new_fields_per_beat = new_axi_width / new_field_bits;
+        int new_fields_per_beat_log2 = static_cast<int>(std::log2(new_fields_per_beat));
+        int new_max_fields = new_max_cities + 1;
+        int new_max_fields_log2 = static_cast<int>(std::ceil(std::log2(new_max_fields)));
+        int new_max_beats = (new_max_fields + new_fields_per_beat - 1) / new_fields_per_beat;
+        int new_max_beats_log2 = static_cast<int>(std::ceil(std::log2(new_max_beats)));
+        int new_beat_width = new_fields_per_beat * new_field_bits;
+
+        std::cout << "\n======================================================================\n";
+        std::cout << "Suggested updated constants for ga_encoding_constants.hpp:\n";
+        std::cout << "======================================================================\n";
+        std::cout << "// User-configurable constants\n";
+        std::cout << "#define COORD_BITS       " << new_coord_bits << "\n";
+        std::cout << "#define CAPACITY_BITS    " << new_capacity_bits << "\n";
+        std::cout << "#define MAX_CITIES       " << new_max_cities << "\n\n";
+        std::cout << "// Encoding constants\n";
+        std::cout << "#define NODE_ID_BITS     " << new_node_id_bits << " // ceil(log2(MAX_CITIES))\n";
+        std::cout << "#define DEPOT_BITS        1\n";
+        std::cout << "#define FIELD_BITS       " << new_field_bits << " // next power of two of (2 * COORD_BITS + CAPACITY_BITS + DEPOT_BITS + NODE_ID_BITS)\n";
+        std::cout << "#define FIELD_BITS_LOG2   " << new_field_bits_log2 << " // log2(FIELD_BITS)\n\n";
+        std::cout << "#define AXI_WIDTH        512\n";
+        std::cout << "#define AXI_BYTES         64 // AXI_WIDTH / 8\n";
+        std::cout << "#define FIELDS_PER_BEAT   " << new_fields_per_beat << " // AXI_WIDTH / FIELD_BITS\n";
+        std::cout << "#define FIELDS_PER_BEAT_LOG2  " << new_fields_per_beat_log2 << " // log2(FIELDS_PER_BEAT)\n";
+        std::cout << "#define MAX_FIELDS       " << new_max_fields << " // MAX_CITIES + 1\n";
+        std::cout << "#define MAX_FIELDS_LOG2  " << new_max_fields_log2 << " // log2(MAX_FIELDS)\n";
+        std::cout << "#define MAX_BEATS        " << new_max_beats << " // MAX_FIELDS + FIELDS_PER_BEAT - 1) / FIELDS_PER_BEAT\n";
+        std::cout << "#define MAX_BEATS_LOG2   " << new_max_beats_log2 << " // log2(MAX_BEATS)\n";
+        std::cout << "#define BEAT_WIDTH       512 // FIELDS_PER_BEAT * FIELD_BITS\n";
+        std::cout << "======================================================================\n\n";
+
+        if (throw_on_error) {
+            throw std::runtime_error("Problem instance is not valid.");
+        }
+        return false;
+    }
+
+    return true;
+}
+
 std::uint32_t floor_euclidean_distance(const ProblemNode &lhs, const ProblemNode &rhs) {
     const long long dx = static_cast<long long>(lhs.x) - static_cast<long long>(rhs.x);
     const long long dy = static_cast<long long>(lhs.y) - static_cast<long long>(rhs.y);
@@ -251,3 +368,4 @@ void run_ga(const ProblemInstance& problem, GAParams& params, std::function<void
 
     std::cout << "Best solution found:\n" << decode_individual_fixed(problem, population.get()[0].bytes) << std::endl;
 }
+
