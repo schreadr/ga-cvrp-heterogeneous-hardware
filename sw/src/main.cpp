@@ -202,7 +202,10 @@ int main(int argc, char *argv[]) {
         generate_random_numbers(num_ind_per_stream, src_mem_rnd, reg_num_cities, seed ^ 0xDEADBEEF);
 
         std::cout << "Invoking FPGA for 1 generation..." << std::endl;
-        create_new_generation();
+        coyote::cBench bench(1, 0);
+        bench.execute(create_new_generation, [](){});
+        double throughput = ((double) pop_bytes) / (1024.0 * 1024.0 * 1e-9 * bench.getAvg());
+        std::cout << "Average throughput: " << std::setw(8) << throughput << " MB/s; " << std::endl;
 
         std::cout << "Decoding output individuals and verifying fitness..." << std::endl;
         const std::vector<Individual> children = decode_population_fixed(problem, dst_mem, pop_size);
