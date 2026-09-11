@@ -64,8 +64,21 @@ static void stream_coordinate(
     coordinates.write(elem);
 }
 
-static void repair_depots(
+static void stream_input_beats(
     const IndividualAsBeats &input,
+    BeatIndex total_beats,
+    hls::stream<Beat> &input_beats
+) {
+    #pragma HLS INLINE off
+    const ap_uint<BEAT_WIDTH> CLEAR_DEPOT_MASK = get_clear_depots_mask();
+    STREAM_INPUT_BEATS_LOOP: for (BeatIndex b = 0; b < total_beats; ++b) {
+        #pragma HLS PIPELINE II=1
+        input_beats.write(input[b] & CLEAR_DEPOT_MASK);
+    }
+}
+
+static void repair_depots(
+    hls::stream<Beat> &input_beats,
     FieldIndex num_cities,
     Capacity vehicle_capacity,
     Coord depot_x,
@@ -84,38 +97,21 @@ static void repair_depots(
     FitnessOrCity prev_city = 0;
 
     FieldIndex field_idx = 1;
-    BeatIndex current_beat_idx = 0;
-    const ap_uint<BEAT_WIDTH> CLEAR_DEPOT_MASK = get_clear_depots_mask();
     
-    Beat active_beat = (input[0] & CLEAR_DEPOT_MASK) >> FIELD_BITS;
+    Beat active_beat = input_beats.read() >> FIELD_BITS;
     BeatFieldIndex cities_in_beat = FIELDS_PER_BEAT - 1;
-
-    bool next_beat_ready = false;
-    Beat prefetched_beat_reg = input[0] & CLEAR_DEPOT_MASK;
 
     REPAIR_FIELD_LOOP: while (field_idx <= num_cities) {
         #pragma HLS PIPELINE II=1
         
-        // Snapshot pipeline registers to sever all combinational paths
-        Beat beat_to_load = prefetched_beat_reg;
-        
-        // Advance BRAM address early based strictly on start-of-cycle registers
-        if (cities_in_beat == 2 && !next_beat_ready) {
-            current_beat_idx++;
-            next_beat_ready = true;
-        }
-
-        // Unconditional extraction from active_beat register
-        FitnessOrCity current_city = active_beat.range(FIELD_BITS - 1, 0);
-        Capacity demand = get_capacity(current_city);
-        bool route_exceeds = (have_prev && demand > remaining_capacity);
-
         if (cities_in_beat == 0) {
-            // Load the beat that was prefetched and stabilized in the pipeline
-            active_beat = beat_to_load;
+            active_beat = input_beats.read();
             cities_in_beat = FIELDS_PER_BEAT;
-            next_beat_ready = false;
         } else {
+            FitnessOrCity current_city = active_beat.range(FIELD_BITS - 1, 0);
+            Capacity demand = get_capacity(current_city);
+            bool route_exceeds = (have_prev && demand > remaining_capacity);
+
             if (route_exceeds) {
                 set_is_depot(prev_city, true);
                 
@@ -144,10 +140,6 @@ static void repair_depots(
                 field_idx++;
             }
         }
-
-        // Unconditional BRAM read to update the shift register at END of cycle
-        // Because it is unconditional, HLS does not insert a MUX (select).
-        prefetched_beat_reg = input[current_beat_idx] & CLEAR_DEPOT_MASK;
     }
 
     // Finalize end of individual
@@ -187,10 +179,12 @@ static void repair_and_calculate(
     const StartEndDataWithBeats &start_end_data
 ) {
     #pragma HLS DATAFLOW
-    hls::stream<CoordinateElement> coordinates;
-    hls::stream<BeatPacket> beat_stream;
+    hls::stream<Beat> input_beats("input_beats");
+    hls::stream<CoordinateElement> coordinates("coordinates");
+    hls::stream<BeatPacket> beat_stream("beat_stream");
 
-    repair_depots(input, num_cities, vehicle_capacity, depot_x, depot_y, coordinates, beat_stream);
+    stream_input_beats(input, total_beats, input_beats);
+    repair_depots(input_beats, num_cities, vehicle_capacity, depot_x, depot_y, coordinates, beat_stream);
     stream_beats_to_individual<4>(beat_stream, output, 1, num_cities, start_end_data, total_beats, num_cities);
     fitness = calculate_fitness(coordinates);
 }
