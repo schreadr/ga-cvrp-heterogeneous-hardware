@@ -117,11 +117,11 @@ axil_ctrl_dwidth_64_32 inst_axil_ctrl_dwidth (
 
 // debug vars
 
-(* mark_debug = "true" *) wire [31:0] dbg_num_ind;
-(* mark_debug = "true" *) wire        dbg_num_ind_vld;
+wire [31:0] dbg_num_ind;
+wire        dbg_num_ind_vld;
 
-(* mark_debug = "true" *) wire [31:0] dbg_num_cit;
-(* mark_debug = "true" *) wire        dbg_num_cit_vld;
+wire [31:0] dbg_num_cit;
+wire        dbg_num_cit_vld;
 
 /////////////////////////////////////////////////////////
 //               PROCESSING NODE (HLS)                //
@@ -202,6 +202,8 @@ always_comb cq_rd.tie_off_s();
 always_comb cq_wr.tie_off_s();
 always_comb axis_host_send[2].tie_off_m();
 
+// NOTE: ILA disabled to eliminate routing congestion and timing violations caused by 2,126 probe nets.
+/*
 ila_processing_node inst_ila_processing_node (
     .clk(aclk),
     .probe0(axis_host_recv[0].tvalid),  // 1 bit
@@ -226,3 +228,4 @@ ila_processing_node inst_ila_processing_node (
     .probe18     (dbg_num_cit),
     .probe19     (dbg_num_cit_vld)
 );
+*/
