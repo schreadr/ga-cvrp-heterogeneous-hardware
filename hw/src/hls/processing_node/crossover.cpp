@@ -4,14 +4,10 @@
 #include <cassert>
 #include <hls_stream.h>
 
-// -----------------------------------------------------------------------------
-// OX crossover cut points are provided dynamically via crossover_pairs stream.
-// Valid range: 0 < pair.start <= pair.end <= MAX_CITIES (both inclusive).
-// -----------------------------------------------------------------------------
-
-// TODO how can resources be optimized?
 void find_unsued_cities(IndividualAsBeats &p, hls::stream<BeatPacket> &out, StartEndData &start_end_data_unused_city_search, FieldIndex num_cities, BeatIndex total_beats, FieldIndex n_cities_to_find, ap_uint<MAX_CITIES> &taken){
-    BeatIndex fill_beats_to_go = start_end_data_unused_city_search.start_beat == start_end_data_unused_city_search.end_beat ? BeatIndex(total_beats + BeatIndex(1)) : BeatIndex(total_beats);
+    bool wraps_same_beat = (start_end_data_unused_city_search.start_beat == start_end_data_unused_city_search.end_beat &&
+                            start_end_data_unused_city_search.start_field > start_end_data_unused_city_search.end_field);
+    BeatIndex fill_beats_to_go = wraps_same_beat ? BeatIndex(total_beats + BeatIndex(1)) : BeatIndex(total_beats);
 
     BeatProducerState out_state;
     FieldIndex found = 0;
@@ -115,12 +111,14 @@ void crossover(
             }
         }
 
-        StartEndData start_end_data_unused_city_search = get_start_end_data(end_idx+1, end_idx);
-        StartEndData start_end_data_circle = get_start_end_data(end_idx+1, start_idx-1);
+        FieldIndex next_city = (end_idx == num_cities) ? FieldIndex(1) : FieldIndex(end_idx + 1);
+        FieldIndex prev_city = (start_idx == 1) ? FieldIndex(num_cities) : FieldIndex(start_idx - 1);
+
+        StartEndData start_end_data_unused_city_search = get_start_end_data(next_city, end_idx);
+        StartEndData start_end_data_circle = get_start_end_data(next_city, prev_city);
         StartEndDataWithBeats start_end_data_with_beats0(start_end_data_circle, p0[start_end_data_circle.start_beat], p0[start_end_data_circle.end_beat]);
         StartEndDataWithBeats start_end_data_with_beats1(start_end_data_circle, p1[start_end_data_circle.start_beat], p1[start_end_data_circle.end_beat]);
 
-        BeatIndex total_beats = get_total_beats(num_cities);
-        fill_up_in_circle(start_end_data_unused_city_search, start_end_data_with_beats0, start_end_data_with_beats1, p0, p1,c0, c1, total_beats, num_cities, end_idx+1, num_cities - (end_idx - start_idx + 1), taken0, taken1);
+        fill_up_in_circle(start_end_data_unused_city_search, start_end_data_with_beats0, start_end_data_with_beats1, p0, p1, c0, c1, total_beats, num_cities, next_city, num_cities - (end_idx - start_idx + 1), taken0, taken1);
     }
 }
