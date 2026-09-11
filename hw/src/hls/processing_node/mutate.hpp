@@ -5,13 +5,17 @@
 #include <hls_streamofblocks.h>
 #include <hls_stream.h>
 
+void mutate_core(
+    IndividualAsBeats &p,
+    CityPair cut_points,
+    IndividualAsBeats &c,
+    int num_cities
+);
+
 void mutate(
-    hls::stream_of_blocks<IndividualAsBeats> &in0,
-    hls::stream_of_blocks<IndividualAsBeats> &in1,
-    hls::stream<CityPair> &mutate_pairs,
-    hls::stream_of_blocks<IndividualAsBeats> &out0,
-    hls::stream_of_blocks<IndividualAsBeats> &out1,
-    int num_individuals,
+    hls::stream_of_blocks<IndividualAsBeats> &in,
+    CityPair cut_points,
+    hls::stream_of_blocks<IndividualAsBeats> &out,
     int num_cities
 );
 

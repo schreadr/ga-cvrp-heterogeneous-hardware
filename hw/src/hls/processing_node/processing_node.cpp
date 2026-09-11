@@ -100,6 +100,32 @@ void random_number_converter(
     }
 }
 
+static void mutate_sequential(
+    hls::stream_of_blocks<IndividualAsBeats> &in0,
+    hls::stream_of_blocks<IndividualAsBeats> &in1,
+    hls::stream<CityPair> &mutate_pairs,
+    hls::stream_of_blocks<IndividualAsBeats> &out0,
+    hls::stream_of_blocks<IndividualAsBeats> &out1,
+    int num_individuals,
+    int num_cities
+) {
+    #pragma HLS ALLOCATION function instances=mutate_core limit=1
+
+    MUTATE_INDIV_LOOP: for (int i = 0; i < num_individuals; i++) {
+        CityPair pair = mutate_pairs.read();
+        {
+            hls::read_lock<IndividualAsBeats> p0(in0);
+            hls::write_lock<IndividualAsBeats> c0(out0);
+            mutate_core(p0, pair, c0, num_cities);
+        }
+        {
+            hls::read_lock<IndividualAsBeats> p1(in1);
+            hls::write_lock<IndividualAsBeats> c1(out1);
+            mutate_core(p1, pair, c1, num_cities);
+        }
+    }
+}
+
 static void process_stream(
     hls::stream<axi_word_t> &in0,
     hls::stream<axi_word_t> &out0,
@@ -134,7 +160,7 @@ static void process_stream(
     producer(in1, stream_1, num_individuals, num_cities);
     random_number_converter(in_random, crossover_pairs, mutate_pairs, num_individuals);
     crossover(stream_0, stream_1, crossover_pairs, stream_cx_0, stream_cx_1, num_individuals, num_cities);
-    mutate(stream_cx_0, stream_cx_1, mutate_pairs, stream_mut_0, stream_mut_1, num_individuals, num_cities);
+    mutate_sequential(stream_cx_0, stream_cx_1, mutate_pairs, stream_mut_0, stream_mut_1, num_individuals, num_cities);
     repair_fitness(stream_mut_0, stream_repaired_0, num_individuals, num_cities, vehicle_capacity, depot_cords);
     repair_fitness(stream_mut_1, stream_repaired_1, num_individuals, num_cities, vehicle_capacity, depot_cords);
     consumer(stream_repaired_0, out0, num_individuals, num_cities);

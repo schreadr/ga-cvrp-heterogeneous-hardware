@@ -12,7 +12,6 @@
 static int kNumCities = 40;
 static std::size_t kNumIndividuals = 2;
 static std::uint32_t kFitness0Base = 1000;
-static std::uint32_t kFitness1Base = 2000;
 
 static int kDepotId = 1;
 
@@ -54,16 +53,12 @@ int run_mutate_test() {
     std::cout << "Mutate Unit Test" << std::endl;
     hls::stream_of_blocks<IndividualAsBeats> in0;
     hls::stream_of_blocks<IndividualAsBeats> out0;
-    hls::stream_of_blocks<IndividualAsBeats> in1;
-    hls::stream_of_blocks<IndividualAsBeats> out1;
 
     const ProblemInstance problem = make_problem();
     const std::vector<Individual> pop_0 = build_population(problem, kPopTours, kFitness0Base);
-    const std::vector<Individual> pop_1 = build_population(problem, kPopTours, kFitness1Base);
 
     std::cout << "Streaming parents into block streams..." << std::endl;
     tb_push_individuals(in0, problem, pop_0);
-    tb_push_individuals(in1, problem, pop_1);
 
     const FieldIndex kMutateStart = 2;
     const FieldIndex kMutateEnd = 2 + FIELDS_PER_BEAT * 2;
@@ -74,15 +69,13 @@ int run_mutate_test() {
     }
 
     std::cout << "Executing Mutate..." << std::endl;
-    mutate(in0, in1, mutate_pairs, out0, out1,
-              static_cast<int>(kNumIndividuals),
-              kNumCities);
+    for (std::size_t i = 0; i < kNumIndividuals; ++i) {
+        mutate(in0, mutate_pairs.read(), out0, kNumCities);
+    }
 
     std::cout << "Reading children from block streams..." << std::endl;
     const std::vector<Individual> child_0 = tb_pull_individuals(out0, problem, kNumIndividuals);
-    const std::vector<Individual> child_1 = tb_pull_individuals(out1, problem, kNumIndividuals);
     const std::vector<Individual> exp_child_0 = build_population(problem, kExpChildTours, kFitness0Base);
-    const std::vector<Individual> exp_child_1 = build_population(problem, kExpChildTours, kFitness1Base);
     
     std::cout << "Verifying Outputs..." << std::endl;
     int errors = 0;
@@ -90,11 +83,6 @@ int run_mutate_test() {
         if (child_0[i] != exp_child_0[i]) {
             std::cout << "Stream 0 indiv " << i << " mismatch:\n -g:"
                       << child_0[i] << "\n -e:" << exp_child_0[i] << std::endl;
-            errors++;
-        }
-        if (child_1[i] != exp_child_1[i]) {
-            std::cout << "Stream 1 indiv " << i << " mismatch:\n -g:"
-                      << child_1[i] << "\n -e:" << exp_child_1[i] << std::endl;
             errors++;
         }
     }
@@ -148,16 +136,12 @@ int run_mutate_test_1beat() {
     std::cout << "Mutate Unit Test (1-Beat Instance, 15 cities)" << std::endl;
     hls::stream_of_blocks<IndividualAsBeats> in0;
     hls::stream_of_blocks<IndividualAsBeats> out0;
-    hls::stream_of_blocks<IndividualAsBeats> in1;
-    hls::stream_of_blocks<IndividualAsBeats> out1;
 
     const ProblemInstance problem = make_problem_1beat();
     const std::vector<Individual> pop_0 = build_population(problem, kPopTours_1b, kFitness0Base);
-    const std::vector<Individual> pop_1 = build_population(problem, kPopTours_1b, kFitness1Base);
 
     std::cout << "Streaming parents into block streams..." << std::endl;
     tb_push_individuals(in0, problem, pop_0);
-    tb_push_individuals(in1, problem, pop_1);
 
     hls::stream<CityPair> mutate_pairs("mutate_pairs_1b");
     const std::vector<CityPair> cut_points = {
@@ -170,35 +154,27 @@ int run_mutate_test_1beat() {
     }
 
     std::cout << "Executing Mutate (1-beat)..." << std::endl;
-    mutate(in0, in1, mutate_pairs, out0, out1,
-           static_cast<int>(kNumIndividuals_1b),
-           kNumCities_1b);
+    for (std::size_t i = 0; i < kNumIndividuals_1b; ++i) {
+        mutate(in0, mutate_pairs.read(), out0, kNumCities_1b);
+    }
 
     std::cout << "Reading children from block streams..." << std::endl;
     int errors = 0;
     std::vector<Individual> child_0;
-    std::vector<Individual> child_1;
     try {
         child_0 = tb_pull_individuals(out0, problem, kNumIndividuals_1b);
-        child_1 = tb_pull_individuals(out1, problem, kNumIndividuals_1b);
     } catch (const std::exception &e) {
         std::cout << "Exception decoding children (corrupted individual in 1-beat mutate test): " << e.what() << std::endl;
         return 1;
     }
 
     const std::vector<Individual> exp_child_0 = build_population(problem, kExpChildTours_1b, kFitness0Base);
-    const std::vector<Individual> exp_child_1 = build_population(problem, kExpChildTours_1b, kFitness1Base);
 
     std::cout << "Verifying Outputs..." << std::endl;
     for (std::size_t i = 0; i < kNumIndividuals_1b; ++i) {
         if (child_0[i] != exp_child_0[i]) {
-            std::cout << "Stream 0 indiv " << i << " (cut [" << cut_points[i].start << ", " << cut_points[i].end << "]) mismatch:\n -g:"
+            std::cout << "Indiv " << i << " (cut [" << cut_points[i].start << ", " << cut_points[i].end << "]) mismatch:\n -g:"
                       << child_0[i] << "\n -e:" << exp_child_0[i] << std::endl;
-            errors++;
-        }
-        if (child_1[i] != exp_child_1[i]) {
-            std::cout << "Stream 1 indiv " << i << " (cut [" << cut_points[i].start << ", " << cut_points[i].end << "]) mismatch:\n -g:"
-                      << child_1[i] << "\n -e:" << exp_child_1[i] << std::endl;
             errors++;
         }
     }
