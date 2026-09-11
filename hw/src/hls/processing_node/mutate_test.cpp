@@ -61,7 +61,7 @@ int run_mutate_test() {
     tb_push_individuals(in0, problem, pop_0);
 
     const FieldIndex kMutateStart = 2;
-    const FieldIndex kMutateEnd = 2 + FIELDS_PER_BEAT * 2;
+    const FieldIndex kMutateEnd = 34;
     hls::stream<CityPair> mutate_pairs("mutate_pairs");
 
     for (std::size_t i = 0; i < kNumIndividuals; ++i) {
@@ -96,12 +96,12 @@ int run_mutate_test() {
     return errors;
 }
 
-static int kNumCities_1b = 15;
-static std::size_t kNumIndividuals_1b = 2;
+static int kNumCities_border_cases = 15;
+static std::size_t kNumIndividuals_border_cases = 2;
 
-static std::vector<ProblemNode> make_nodes_1beat() {
-    std::vector<ProblemNode> nodes(kNumCities_1b);
-    for (int i = 1; i <= kNumCities_1b; ++i) {
+static std::vector<ProblemNode> make_nodes_border_cases() {
+    std::vector<ProblemNode> nodes(kNumCities_border_cases);
+    for (int i = 1; i <= kNumCities_border_cases; ++i) {
         nodes[i-1] = ProblemNode{
            i,
            i & ((1 << COORD_BITS) - 1),
@@ -112,66 +112,66 @@ static std::vector<ProblemNode> make_nodes_1beat() {
     return nodes;
 }
 
-static ProblemInstance make_problem_1beat() {
+static ProblemInstance make_problem_border_cases() {
     ProblemInstance p;
-    p.name = "tb_1beat";
-    p.dimension = kNumCities_1b + 1;
+    p.name = "tb_border_cases";
+    p.dimension = kNumCities_border_cases + 1;
     p.capacity = (1 << CAPACITY_BITS) - 1;
     p.depot = ProblemNode{kDepotId, 0, 0, 0};
-    p.nodes = make_nodes_1beat();
+    p.nodes = make_nodes_border_cases();
     return p;
 }
 
-static std::vector<std::vector<int>> kPopTours_1b = {
+static std::vector<std::vector<int>> kPopTours_border_cases = {
     {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14},
     {14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0}
 };
 
-static std::vector<std::vector<int>> kExpChildTours_1b = {
+static std::vector<std::vector<int>> kExpChildTours_border_cases = {
     {0, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 14},
     {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14}
 };
 
-int run_mutate_test_1beat() {
-    std::cout << "Mutate Unit Test (1-Beat Instance, 15 cities)" << std::endl;
+int run_mutate_test_border_cases() {
+    std::cout << "Mutate Unit Test (Border Cases, 15 cities)" << std::endl;
     hls::stream_of_blocks<IndividualAsBeats> in0;
     hls::stream_of_blocks<IndividualAsBeats> out0;
 
-    const ProblemInstance problem = make_problem_1beat();
-    const std::vector<Individual> pop_0 = build_population(problem, kPopTours_1b, kFitness0Base);
+    const ProblemInstance problem = make_problem_border_cases();
+    const std::vector<Individual> pop_0 = build_population(problem, kPopTours_border_cases, kFitness0Base);
 
     std::cout << "Streaming parents into block streams..." << std::endl;
     tb_push_individuals(in0, problem, pop_0);
 
-    hls::stream<CityPair> mutate_pairs("mutate_pairs_1b");
+    hls::stream<CityPair> mutate_pairs("mutate_pairs_border_cases");
     const std::vector<CityPair> cut_points = {
         CityPair{2, 14},
         CityPair{1, 15}
     };
 
-    for (std::size_t i = 0; i < kNumIndividuals_1b; ++i) {
+    for (std::size_t i = 0; i < kNumIndividuals_border_cases; ++i) {
         mutate_pairs.write(cut_points[i]);
     }
 
-    std::cout << "Executing Mutate (1-beat)..." << std::endl;
-    for (std::size_t i = 0; i < kNumIndividuals_1b; ++i) {
-        mutate(in0, mutate_pairs.read(), out0, kNumCities_1b);
+    std::cout << "Executing Mutate (border cases)..." << std::endl;
+    for (std::size_t i = 0; i < kNumIndividuals_border_cases; ++i) {
+        mutate(in0, mutate_pairs.read(), out0, kNumCities_border_cases);
     }
 
     std::cout << "Reading children from block streams..." << std::endl;
     int errors = 0;
     std::vector<Individual> child_0;
     try {
-        child_0 = tb_pull_individuals(out0, problem, kNumIndividuals_1b);
+        child_0 = tb_pull_individuals(out0, problem, kNumIndividuals_border_cases);
     } catch (const std::exception &e) {
-        std::cout << "Exception decoding children (corrupted individual in 1-beat mutate test): " << e.what() << std::endl;
+        std::cout << "Exception decoding children (corrupted individual in border cases mutate test): " << e.what() << std::endl;
         return 1;
     }
 
-    const std::vector<Individual> exp_child_0 = build_population(problem, kExpChildTours_1b, kFitness0Base);
+    const std::vector<Individual> exp_child_0 = build_population(problem, kExpChildTours_border_cases, kFitness0Base);
 
     std::cout << "Verifying Outputs..." << std::endl;
-    for (std::size_t i = 0; i < kNumIndividuals_1b; ++i) {
+    for (std::size_t i = 0; i < kNumIndividuals_border_cases; ++i) {
         if (child_0[i] != exp_child_0[i]) {
             std::cout << "Indiv " << i << " (cut [" << cut_points[i].start << ", " << cut_points[i].end << "]) mismatch:\n -g:"
                       << child_0[i] << "\n -e:" << exp_child_0[i] << std::endl;
@@ -180,9 +180,9 @@ int run_mutate_test_1beat() {
     }
 
     if (errors == 0) {
-        std::cout << "1-BEAT MUTATE TEST PASSED!" << std::endl;
+        std::cout << "BORDER CASES MUTATE TEST PASSED!" << std::endl;
     } else {
-        std::cout << "1-BEAT MUTATE TEST FAILED with " << errors << " errors." << std::endl;
+        std::cout << "BORDER CASES MUTATE TEST FAILED with " << errors << " errors." << std::endl;
     }
 
     return errors;

@@ -18,24 +18,28 @@ std::vector<std::array<uint64_t, 8>> encode_individual_fixed(
     const ProblemInstance &problem,
     const Individual &individual
 ) {
-    std::vector<uint32_t> fields;
+    std::vector<uint64_t> fields;
     fields.reserve(problem.dimension);
 
     // 1. Fitness field: LSB placed at bit 0 of field 0
-    fields.push_back(individual.fitness);
+    uint64_t fitness_mask = (FIELD_BITS >= 64) ? ~0ULL : ((1ULL << FIELD_BITS) - 1ULL);
+    fields.push_back(static_cast<uint64_t>(individual.fitness) & fitness_mask);
 
     // 2. City fields: each integer LSB-aligned to its starting offset L
+    const uint64_t id_mask    = (1ULL << NODE_ID_BITS) - 1ULL;
+    const uint64_t coord_mask = (1ULL << COORD_BITS) - 1ULL;
+    const uint64_t cap_mask   = (1ULL << CAPACITY_BITS) - 1ULL;
+
     for (const auto &gene : individual.tour) {
         const ProblemNode &node = problem.nodes.at(static_cast<std::size_t>(gene.node_id));
 
-        // TODO add proper validation and may use long for fitness
-        uint32_t id_val    = static_cast<uint32_t>(gene.node_id) & ((1u << NODE_ID_BITS) - 1u);
-        uint32_t x_val     = static_cast<uint32_t>(node.x) & ((1u << COORD_BITS) - 1u);
-        uint32_t y_val     = static_cast<uint32_t>(node.y) & ((1u << COORD_BITS) - 1u);
-        uint32_t cap_val   = static_cast<uint32_t>(node.demand) & ((1u << CAPACITY_BITS) - 1u);
-        uint32_t depot_val = gene.depot_after ? 1u : 0u;
+        uint64_t id_val    = static_cast<uint64_t>(gene.node_id) & id_mask;
+        uint64_t x_val     = static_cast<uint64_t>(node.x) & coord_mask;
+        uint64_t y_val     = static_cast<uint64_t>(node.y) & coord_mask;
+        uint64_t cap_val   = static_cast<uint64_t>(node.demand) & cap_mask;
+        uint64_t depot_val = gene.depot_after ? 1ULL : 0ULL;
 
-        uint32_t city = 0;
+        uint64_t city = 0;
         city |= (x_val << 0);                                              // Interval [COORD_BITS-1 : 0]
         city |= (y_val << COORD_BITS);                                     // Interval [2*COORD_BITS-1 : COORD_BITS]
         city |= (cap_val << (2 * COORD_BITS));                             // Interval [2*COORD_BITS+CAPACITY_BITS-1 : 2*COORD_BITS]
@@ -46,27 +50,22 @@ std::vector<std::array<uint64_t, 8>> encode_individual_fixed(
     }
 
     const int beats_per_individual = get_total_beats(static_cast<int>(problem.nodes.size()));
-    while (fields.size() < beats_per_individual * FIELDS_PER_BEAT) {
+    while (fields.size() < static_cast<std::size_t>(beats_per_individual * FIELDS_PER_BEAT)) {
         fields.push_back(0);
     }
 
     // Write fields LSB-first directly into 512-bit beat buffer
     std::vector<std::array<uint64_t, 8>> beats(beats_per_individual);
-    for (size_t beat_idx = 0; beat_idx < beats_per_individual; ++beat_idx) {
+    for (size_t beat_idx = 0; beat_idx < static_cast<size_t>(beats_per_individual); ++beat_idx) {
         std::array<uint64_t, 8> &beat = beats[beat_idx];
         beat.fill(0);
 
         for (size_t slot = 0; slot < FIELDS_PER_BEAT; ++slot) {
             size_t field_idx = beat_idx * FIELDS_PER_BEAT + slot;
-            uint32_t value = fields[field_idx];
+            uint64_t value = fields[field_idx];
             size_t bit_offset = slot * FIELD_BITS;
 
-            for (int bit = 0; bit < FIELD_BITS; ++bit) {
-                if ((value >> bit) & 1u) {
-                    size_t abs_bit = bit_offset + bit;
-                    beat[abs_bit / 64] |= (1ULL << (abs_bit % 64));
-                }
-            }
+            beat[bit_offset / 64] |= (value << (bit_offset % 64));
         }
     }
     return beats;
@@ -97,45 +96,42 @@ Individual decode_individual_fixed(
     const int beats_per_individual = get_total_beats(static_cast<int>(problem.nodes.size()));
 
     Individual individual;
-    std::vector<std::uint32_t> fields;
+    std::vector<std::uint64_t> fields;
     fields.reserve(beats_per_individual * FIELDS_PER_BEAT);
 
-    for (std::size_t beat_idx = 0; beat_idx < beats_per_individual; ++beat_idx) {
+    const uint64_t field_mask = (FIELD_BITS >= 64) ? ~0ULL : ((1ULL << FIELD_BITS) - 1ULL);
+
+    for (std::size_t beat_idx = 0; beat_idx < static_cast<std::size_t>(beats_per_individual); ++beat_idx) {
         const std::uint64_t *words = reinterpret_cast<const std::uint64_t *>(
             beat_bytes + (beat_idx * AXI_BYTES)
         );
 
         for (std::size_t slot = 0; slot < FIELDS_PER_BEAT; ++slot) {
             std::size_t bit_offset = slot * FIELD_BITS;
-            std::uint32_t value = 0;
-
-            for (int bit = 0; bit < FIELD_BITS; ++bit) {
-                std::size_t abs_bit = bit_offset + bit;
-                if ((words[abs_bit / 64] >> (abs_bit % 64)) & 1ULL) {
-                    value |= (1u << bit);
-                }
-            }
+            std::size_t word_idx = bit_offset / 64;
+            std::size_t bit_in_word = bit_offset % 64;
+            std::uint64_t value = (words[word_idx] >> bit_in_word) & field_mask;
             fields.push_back(value);
         }
     }
 
-    individual.fitness = fields[0] & ((1ul << FIELD_BITS) - 1ul);
+    individual.fitness = static_cast<uint32_t>(fields[0] & field_mask);
 
-    const std::uint32_t coord_mask    = (1u << COORD_BITS) - 1u;
-    const std::uint32_t capacity_mask = (1u << CAPACITY_BITS) - 1u;
-    const std::uint32_t id_mask       = (1u << NODE_ID_BITS) - 1u;
+    const std::uint64_t coord_mask    = (1ULL << COORD_BITS) - 1ULL;
+    const std::uint64_t capacity_mask = (1ULL << CAPACITY_BITS) - 1ULL;
+    const std::uint64_t id_mask       = (1ULL << NODE_ID_BITS) - 1ULL;
     const std::size_t num_cities       = problem.nodes.size();
 
     individual.tour.reserve(num_cities);
     for (std::size_t i = 1; i <= num_cities; ++i) {
-        std::uint32_t city = fields[i];
+        std::uint64_t city = fields[i];
 
         // Extract using exact lower bounds
-        std::uint32_t x      = (city >> 0) & coord_mask;
-        std::uint32_t y      = (city >> COORD_BITS) & coord_mask;
-        std::uint32_t demand = (city >> (2 * COORD_BITS)) & capacity_mask;
-        bool depot_after     = ((city >> (2 * COORD_BITS + CAPACITY_BITS)) & 1u) != 0u;
-        std::uint32_t node_id_enc = (city >> (2 * COORD_BITS + CAPACITY_BITS + DEPOT_BITS)) & id_mask;
+        std::uint32_t x      = static_cast<uint32_t>((city >> 0) & coord_mask);
+        std::uint32_t y      = static_cast<uint32_t>((city >> COORD_BITS) & coord_mask);
+        std::uint32_t demand = static_cast<uint32_t>((city >> (2 * COORD_BITS)) & capacity_mask);
+        bool depot_after     = ((city >> (2 * COORD_BITS + CAPACITY_BITS)) & 1ULL) != 0ULL;
+        std::uint32_t node_id_enc = static_cast<uint32_t>((city >> (2 * COORD_BITS + CAPACITY_BITS + DEPOT_BITS)) & id_mask);
 
         // Validate the encoded node_id matches the problem node
         int node_id = static_cast<int>(node_id_enc);
@@ -185,18 +181,20 @@ void population_from_buffer(
     int problem_dimension
 ) {
     const int beats_per_individual = get_total_beats(problem_dimension - 1);
-    // return a the population of ecoded individuals, each with a pointer to its bytes, read the fitness from the offset, see constants. make it as efficent as possible
     const std::size_t bytes_per_individual = beats_per_individual * AXI_BYTES;
-    const std::size_t genome_bytes = bytes_per_individual > sizeof(std::uint32_t)
-                                   ? bytes_per_individual - sizeof(std::uint32_t) : 0;
+    const std::size_t fitness_bytes = FIELD_BITS / 8;
+    const std::size_t genome_bytes = bytes_per_individual > fitness_bytes
+                                   ? bytes_per_individual - fitness_bytes : 0;
+    const uint64_t fitness_mask = (FIELD_BITS >= 64) ? ~0ULL : ((1ULL << FIELD_BITS) - 1ULL);
+
     for (std::size_t i = 0; i < num_individuals; ++i) {
         const std::uint8_t *ind_bytes = buffer + (i * bytes_per_individual);
-        std::uint32_t fitness;
-        std::memcpy(&fitness, ind_bytes, sizeof(fitness));
-        fitness = fitness & ((1ul << FIELD_BITS) - 1u);
-        population[i].fitness=fitness;
-        population[i].bytes=ind_bytes;
-        population[i].hash = hash_genome(ind_bytes + sizeof(std::uint32_t), genome_bytes);
+        std::uint64_t raw_fitness = 0;
+        std::memcpy(&raw_fitness, ind_bytes, std::min(sizeof(raw_fitness), fitness_bytes));
+        raw_fitness &= fitness_mask;
+        population[i].fitness = static_cast<std::uint32_t>(raw_fitness);
+        population[i].bytes = ind_bytes;
+        population[i].hash = hash_genome(ind_bytes + fitness_bytes, genome_bytes);
     }
 }
 

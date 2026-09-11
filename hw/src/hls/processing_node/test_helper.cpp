@@ -117,7 +117,7 @@ std::vector<Individual> build_population(const ProblemInstance &problem,
                                          std::uint32_t fitness_base) {
     std::vector<Individual> out(tours.size());
     for (std::size_t i = 0; i < tours.size(); ++i) {
-        out[i].fitness = (fitness_base + static_cast<std::uint32_t>(i)) & ((1ULL << FIELD_BITS) - 1ULL);
+        out[i].fitness = fitness_base + static_cast<std::uint32_t>(i);
         out[i].tour.reserve(tours[i].size());
         for (int node_id : tours[i]) {
             (void)problem;

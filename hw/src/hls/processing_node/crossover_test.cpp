@@ -79,7 +79,7 @@ int run_crossover_test() {
     tb_push_individuals(in1, problem, pop_1);
 
     const FieldIndex kOxStart = 2;
-    const FieldIndex kOxEnd = 2 + FIELDS_PER_BEAT * 2;
+    const FieldIndex kOxEnd = 34;
     hls::stream<CityPair> crossover_pairs("crossover_pairs");
 
     for (std::size_t i = 0; i < kNumIndividuals; ++i) {
@@ -121,12 +121,12 @@ int run_crossover_test() {
     return errors;
 }
 
-static int kNumCities_1b = 15;
-static std::size_t kNumIndividuals_1b = 4;
+static int kNumCities_border_cases = 15;
+static std::size_t kNumIndividuals_border_cases = 4;
 
-static std::vector<ProblemNode> make_nodes_1beat() {
-    std::vector<ProblemNode> nodes(kNumCities_1b);
-    for (int i = 1; i <= kNumCities_1b; ++i) {
+static std::vector<ProblemNode> make_nodes_border_cases() {
+    std::vector<ProblemNode> nodes(kNumCities_border_cases);
+    for (int i = 1; i <= kNumCities_border_cases; ++i) {
         nodes[i-1] = ProblemNode{
            i,
            i & ((1 << COORD_BITS) - 1),
@@ -137,60 +137,60 @@ static std::vector<ProblemNode> make_nodes_1beat() {
     return nodes;
 }
 
-static ProblemInstance make_problem_1beat() {
+static ProblemInstance make_problem_border_cases() {
     ProblemInstance p;
-    p.name = "tb_1beat";
-    p.dimension = kNumCities_1b + 1;
+    p.name = "tb_border_cases";
+    p.dimension = kNumCities_border_cases + 1;
     p.capacity = (1 << CAPACITY_BITS) - 1;
     p.depot = ProblemNode{kDepotId, 0, 0, 0};
-    p.nodes = make_nodes_1beat();
+    p.nodes = make_nodes_border_cases();
     return p;
 }
 
-static std::vector<std::vector<int>> kPop0Tours_1b = {
+static std::vector<std::vector<int>> kPop0Tours_border_cases = {
     {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14},
     {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14},
     {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14},
     {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14}
 };
 
-static std::vector<std::vector<int>> kPop1Tours_1b = {
+static std::vector<std::vector<int>> kPop1Tours_border_cases = {
     {14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0},
     {14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0},
     {14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0},
     {14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0}
 };
 
-static std::vector<std::vector<int>> kExpChild0Tours_1b = {
+static std::vector<std::vector<int>> kExpChild0Tours_border_cases = {
     {14, 13, 12, 11, 10, 5, 6, 7, 8, 9, 4, 3, 2, 1, 0},
     {3, 2, 1, 0, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14},
     {0, 1, 2, 3, 4, 9, 8, 7, 6, 5, 14, 13, 12, 11, 10},
     {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14}
 };
 
-static std::vector<std::vector<int>> kExpChild1Tours_1b = {
+static std::vector<std::vector<int>> kExpChild1Tours_border_cases = {
     {0, 1, 2, 3, 4, 9, 8, 7, 6, 5, 10, 11, 12, 13, 14},
     {11, 12, 13, 14, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0},
     {14, 13, 12, 11, 10, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4},
     {14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0}
 };
 
-int run_crossover_test_1beat() {
-    std::cout << "Crossover Unit Test (1-Beat Instance, 15 cities)" << std::endl;
+int run_crossover_test_border_cases() {
+    std::cout << "Crossover Unit Test (Border Cases, 15 cities)" << std::endl;
     hls::stream_of_blocks<IndividualAsBeats> in0;
     hls::stream_of_blocks<IndividualAsBeats> out0;
     hls::stream_of_blocks<IndividualAsBeats> in1;
     hls::stream_of_blocks<IndividualAsBeats> out1;
 
-    const ProblemInstance problem = make_problem_1beat();
-    const std::vector<Individual> pop_0 = build_population(problem, kPop0Tours_1b, kFitness0Base);
-    const std::vector<Individual> pop_1 = build_population(problem, kPop1Tours_1b, kFitness1Base);
+    const ProblemInstance problem = make_problem_border_cases();
+    const std::vector<Individual> pop_0 = build_population(problem, kPop0Tours_border_cases, kFitness0Base);
+    const std::vector<Individual> pop_1 = build_population(problem, kPop1Tours_border_cases, kFitness1Base);
 
     std::cout << "Streaming parents into block streams..." << std::endl;
     tb_push_individuals(in0, problem, pop_0);
     tb_push_individuals(in1, problem, pop_1);
 
-    hls::stream<CityPair> crossover_pairs("crossover_pairs_1b");
+    hls::stream<CityPair> crossover_pairs("crossover_pairs_border_cases");
     const std::vector<CityPair> cut_points = {
         CityPair{6, 10},
         CityPair{5, 15},
@@ -198,32 +198,32 @@ int run_crossover_test_1beat() {
         CityPair{1, 15}
     };
 
-    for (std::size_t i = 0; i < kNumIndividuals_1b; ++i) {
+    for (std::size_t i = 0; i < kNumIndividuals_border_cases; ++i) {
         crossover_pairs.write(cut_points[i]);
     }
 
-    std::cout << "Executing Crossover (1-beat)..." << std::endl;
+    std::cout << "Executing Crossover (border cases)..." << std::endl;
     crossover(in0, in1, crossover_pairs, out0, out1,
-              static_cast<int>(kNumIndividuals_1b),
-              kNumCities_1b);
+              static_cast<int>(kNumIndividuals_border_cases),
+              kNumCities_border_cases);
 
     std::cout << "Reading children from block streams..." << std::endl;
     int errors = 0;
     std::vector<Individual> child_0;
     std::vector<Individual> child_1;
     try {
-        child_0 = tb_pull_individuals(out0, problem, kNumIndividuals_1b);
-        child_1 = tb_pull_individuals(out1, problem, kNumIndividuals_1b);
+        child_0 = tb_pull_individuals(out0, problem, kNumIndividuals_border_cases);
+        child_1 = tb_pull_individuals(out1, problem, kNumIndividuals_border_cases);
     } catch (const std::exception &e) {
-        std::cout << "Exception decoding children (corrupted individual in 1-beat test): " << e.what() << std::endl;
+        std::cout << "Exception decoding children (corrupted individual in border cases test): " << e.what() << std::endl;
         return 1;
     }
 
-    const std::vector<Individual> exp_child_0 = build_population(problem, kExpChild0Tours_1b, kFitness0Base);
-    const std::vector<Individual> exp_child_1 = build_population(problem, kExpChild1Tours_1b, kFitness1Base);
+    const std::vector<Individual> exp_child_0 = build_population(problem, kExpChild0Tours_border_cases, kFitness0Base);
+    const std::vector<Individual> exp_child_1 = build_population(problem, kExpChild1Tours_border_cases, kFitness1Base);
 
     std::cout << "Verifying Outputs..." << std::endl;
-    for (std::size_t i = 0; i < kNumIndividuals_1b; ++i) {
+    for (std::size_t i = 0; i < kNumIndividuals_border_cases; ++i) {
         if (child_0[i] != exp_child_0[i]) {
             std::cout << "Stream 0 indiv " << i << " (cut [" << cut_points[i].start << ", " << cut_points[i].end << "]) mismatch:\n -g:"
                       << child_0[i] << "\n -e:" << exp_child_0[i] << std::endl;
@@ -237,9 +237,9 @@ int run_crossover_test_1beat() {
     }
 
     if (errors == 0) {
-        std::cout << "1-BEAT CROSSOVER TEST PASSED!" << std::endl;
+        std::cout << "BORDER CASES CROSSOVER TEST PASSED!" << std::endl;
     } else {
-        std::cout << "1-BEAT CROSSOVER TEST FAILED with " << errors << " errors." << std::endl;
+        std::cout << "BORDER CASES CROSSOVER TEST FAILED with " << errors << " errors." << std::endl;
     }
 
     return errors;

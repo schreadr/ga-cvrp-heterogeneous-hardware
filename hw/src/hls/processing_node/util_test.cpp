@@ -321,17 +321,15 @@ static int test_beat_producer_multibeat() {
     finalizeStream(state, stream);
 
     std::vector<std::pair<FieldIndex, Beat>> expected;
-    Beat b1 = 0;
-    for (int i = 0; i < FIELDS_PER_BEAT; ++i) {
-        set_field(b1, i, 0x2000 + i);
+    const int total_fields = 19;
+    for (int start = 0; start < total_fields; start += FIELDS_PER_BEAT) {
+        int n = std::min(static_cast<int>(FIELDS_PER_BEAT), total_fields - start);
+        Beat b = 0;
+        for (int i = 0; i < n; ++i) {
+            set_field(b, i, 0x2000 + start + i);
+        }
+        expected.push_back({static_cast<FieldIndex>(n), b});
     }
-    expected.push_back({FIELDS_PER_BEAT, b1});
-
-    Beat b2 = 0;
-    for (int i = 0; i < 3; ++i) {
-        set_field(b2, i, 0x2000 + 16 + i);
-    }
-    expected.push_back({3, b2});
 
     std::vector<std::pair<FieldIndex, Beat>> received = drain_stream(stream);
 
@@ -353,14 +351,14 @@ int test_beat_producer() {
     return errors;
 }
 
-static int test_1beat() {
+static int test_border_cases() {
     IndividualAsBeats dst_ind;
     hls::stream<BeatPacket> in_stream;
 
     init_all_0(dst_ind);
 
     int num_cities = 15;
-    int n_beats = get_total_beats(num_cities); // 1
+    int n_beats = get_total_beats(num_cities);
 
     int dst_start_idx = 14;
     int n_cities_to_copy = 4;
@@ -393,9 +391,9 @@ static int test_1beat() {
     success &= validate_expect(indices, 0, dst_ind, 16);
 
     if (success) {
-        std::cout << "Test 1-Beat (Util) PASSED successfully!" << std::endl;
+        std::cout << "Test Border Cases (Util) PASSED successfully!" << std::endl;
     } else {
-        std::cout << "Test 1-Beat (Util) FAILED!" << std::endl;
+        std::cout << "Test Border Cases (Util) FAILED!" << std::endl;
     }
 
     return success ? 0 : 1;
@@ -407,6 +405,6 @@ int test_util() {
     errors += test3();
     errors += test_integer_sqrt();
     errors += test_beat_producer();
-    errors += test_1beat();
+    errors += test_border_cases();
     return errors;
 }

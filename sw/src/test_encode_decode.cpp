@@ -35,7 +35,7 @@
  *
  * Build (standalone, no Coyote dependency):
  *   g++ -std=c++17 -I . test_encode_decode.cpp \
-       ga.cpp ga_streaming.cpp problem_parser.cpp -o test_encode_decode
+       ga.cpp ga_streaming.cpp problem_parser.cpp -o test_encode_decode & & ./test_encode_decode
  */
 
 #include <cstdint>

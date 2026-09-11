@@ -201,12 +201,12 @@ int run_integration_test(){
     return errors;
 }
 
-static int kNumCities_1b = 15;
-static std::size_t kNumIndividuals_1b = 2;
+static int kNumCities_border_cases = 15;
+static std::size_t kNumIndividuals_border_cases = 2;
 
-static std::vector<ProblemNode> make_nodes_1beat() {
-    std::vector<ProblemNode> nodes(kNumCities_1b);
-    for (int i = 1; i <= kNumCities_1b; ++i) {
+static std::vector<ProblemNode> make_nodes_border_cases() {
+    std::vector<ProblemNode> nodes(kNumCities_border_cases);
+    for (int i = 1; i <= kNumCities_border_cases; ++i) {
         nodes[i-1] = ProblemNode{
            i,
            i & ((1 << COORD_BITS) - 1),
@@ -217,45 +217,45 @@ static std::vector<ProblemNode> make_nodes_1beat() {
     return nodes;
 }
 
-static ProblemInstance make_problem_1beat() {
+static ProblemInstance make_problem_border_cases() {
     ProblemInstance p;
-    p.name = "tb_1beat";
-    p.dimension = kNumCities_1b + 1;
+    p.name = "tb_border_cases";
+    p.dimension = kNumCities_border_cases + 1;
     p.capacity = (1 << CAPACITY_BITS) - 1;
     p.depot = ProblemNode{kDepotId, 0, 0, 0};
-    p.nodes = make_nodes_1beat();
+    p.nodes = make_nodes_border_cases();
     return p;
 }
 
-static std::vector<std::vector<int>> kPop0Tours_1b = {
+static std::vector<std::vector<int>> kPop0Tours_border_cases = {
     {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14},
     {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14}
 };
 
-static std::vector<std::vector<int>> kPop1Tours_1b = {
+static std::vector<std::vector<int>> kPop1Tours_border_cases = {
     {14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0},
     {14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0}
 };
 
-static std::vector<std::vector<int>> kExpChild0Tours_1b = {
+static std::vector<std::vector<int>> kExpChild0Tours_border_cases = {
     {14, 13, 12, 11, 10, 5, 6, 7, 8, 9, 4, 3, 2, 1, 0},
     {3, 2, 1, 0, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14}
 };
 
-static std::vector<std::vector<int>> kExpChild1Tours_1b = {
+static std::vector<std::vector<int>> kExpChild1Tours_border_cases = {
     {0, 1, 2, 3, 4, 9, 8, 7, 6, 5, 10, 11, 12, 13, 14},
     {11, 12, 13, 14, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0}
 };
 
-int run_integration_test_1beat() {
-    std::cout << "Running Integration Test (1-Beat Instance, 15 cities)..." << std::endl;
-    hls::stream<axi_word_t> in0("in0_1b"), out0("out0_1b");
-    hls::stream<axi_word_t> in1("in1_1b"), out1("out1_1b");
-    hls::stream<axi_word_t> in_random("in_random_1b");
+int run_integration_test_border_cases() {
+    std::cout << "Running Integration Test (Border Cases, 15 cities)..." << std::endl;
+    hls::stream<axi_word_t> in0("in0_border_cases"), out0("out0_border_cases");
+    hls::stream<axi_word_t> in1("in1_border_cases"), out1("out1_border_cases");
+    hls::stream<axi_word_t> in_random("in_random_border_cases");
 
-    const ProblemInstance problem = make_problem_1beat();
-    const std::vector<Individual> pop_0 = build_population(problem, kPop0Tours_1b);
-    const std::vector<Individual> pop_1 = build_population(problem, kPop1Tours_1b);
+    const ProblemInstance problem = make_problem_border_cases();
+    const std::vector<Individual> pop_0 = build_population(problem, kPop0Tours_border_cases);
+    const std::vector<Individual> pop_1 = build_population(problem, kPop1Tours_border_cases);
 
     const std::vector<std::uint8_t> enc_0 = encode_population_fixed(problem, pop_0);
     const std::vector<std::uint8_t> enc_1 = encode_population_fixed(problem, pop_1);
@@ -268,21 +268,21 @@ int run_integration_test_1beat() {
         5, 15, 1, 1
     };
     const std::size_t payload_bytes_rnd = rnd_nums.size() * sizeof(uint32_t);
-    const std::size_t total_bytes_rnd = get_random_bytes(kNumIndividuals_1b);
+    const std::size_t total_bytes_rnd = get_random_bytes(kNumIndividuals_border_cases);
     std::vector<uint8_t> enc_rnd(total_bytes_rnd, 0);
     std::memcpy(enc_rnd.data(), rnd_nums.data(), payload_bytes_rnd);
 
     int dbg_indiv0, dbg_cities;
 
-    std::cout << "Streaming encoded populations and random numbers (1-beat)..." << std::endl;
+    std::cout << "Streaming encoded populations and random numbers (border cases)..." << std::endl;
     tb_push_bytes(in0, enc_0.data(), total_bytes_0, true);
     tb_push_bytes(in1, enc_1.data(), total_bytes_1, true);
     tb_push_bytes(in_random, enc_rnd.data(), total_bytes_rnd, true);
 
-    std::cout << "Executing Processing Node (1-beat)..." << std::endl;
+    std::cout << "Executing Processing Node (border cases)..." << std::endl;
     processing_node(in0, out0, in1, out1, in_random,
-                    static_cast<int>(kNumIndividuals_1b),
-                    kNumCities_1b,
+                    static_cast<int>(kNumIndividuals_border_cases),
+                    kNumCities_border_cases,
                     problem.capacity,
                     (problem.depot.x << COORD_BITS) | problem.depot.y,
                     &dbg_indiv0, &dbg_cities);
@@ -292,24 +292,24 @@ int run_integration_test_1beat() {
     tb_pull_bytes(out0, got_0.data(), total_bytes_0);
     tb_pull_bytes(out1, got_1.data(), total_bytes_1);
 
-    std::vector<Individual> exp_child_0 = build_population(problem, kExpChild0Tours_1b);
-    std::vector<Individual> exp_child_1 = build_population(problem, kExpChild1Tours_1b);
+    std::vector<Individual> exp_child_0 = build_population(problem, kExpChild0Tours_border_cases);
+    std::vector<Individual> exp_child_1 = build_population(problem, kExpChild1Tours_border_cases);
 
-    std::cout << "Decoding and verifying output individuals (1-beat)..." << std::endl;
+    std::cout << "Decoding and verifying output individuals (border cases)..." << std::endl;
     std::vector<Individual> got_child_0;
     std::vector<Individual> got_child_1;
     try {
-        got_child_0 = decode_population_fixed(problem, got_0.data(), kNumIndividuals_1b);
-        got_child_1 = decode_population_fixed(problem, got_1.data(), kNumIndividuals_1b);
+        got_child_0 = decode_population_fixed(problem, got_0.data(), kNumIndividuals_border_cases);
+        got_child_1 = decode_population_fixed(problem, got_1.data(), kNumIndividuals_border_cases);
     } catch (const std::exception &e) {
-        std::cout << "Exception decoding output population in 1-beat integration test: "
+        std::cout << "Exception decoding output population in border cases integration test: "
                   << e.what() << std::endl;
-        std::cout << "1-BEAT INTEGRATION TEST FAILED with exception." << std::endl;
+        std::cout << "BORDER CASES INTEGRATION TEST FAILED with exception." << std::endl;
         return 1;
     }
 
     int errors = 0;
-    for (std::size_t i = 0; i < kNumIndividuals_1b; ++i) {
+    for (std::size_t i = 0; i < kNumIndividuals_border_cases; ++i) {
         if (got_child_0[i] != exp_child_0[i]) {
             std::cout << "Stream 0 indiv " << i << " mismatch:\n -g:"
                       << got_child_0[i] << "\n -e:" << exp_child_0[i] << std::endl;
@@ -323,9 +323,9 @@ int run_integration_test_1beat() {
     }
 
     if (errors == 0) {
-        std::cout << "1-BEAT INTEGRATION TEST PASSED!" << std::endl;
+        std::cout << "BORDER CASES INTEGRATION TEST PASSED!" << std::endl;
     } else {
-        std::cout << "1-BEAT INTEGRATION TEST FAILED with " << errors << " errors." << std::endl;
+        std::cout << "BORDER CASES INTEGRATION TEST FAILED with " << errors << " errors." << std::endl;
     }
 
     return errors;
@@ -350,9 +350,9 @@ int main() {
     if (cur_err != 0) std::cout << "Mutate Unit Test failed with " << cur_err << " errors." << std::endl;
     errors += cur_err;
 
-    std::cout << "\nRunning Mutate 1-Beat Unit Test..." << std::endl;
-    cur_err = run_mutate_test_1beat();
-    if (cur_err != 0) std::cout << "Mutate 1-Beat Unit Test failed with " << cur_err << " errors." << std::endl;
+    std::cout << "\nRunning Mutate Border Cases Unit Test..." << std::endl;
+    cur_err = run_mutate_test_border_cases();
+    if (cur_err != 0) std::cout << "Mutate Border Cases Unit Test failed with " << cur_err << " errors." << std::endl;
     errors += cur_err;
 
     std::cout << "\nRunning Crossover Unit Test..." << std::endl;
@@ -360,9 +360,9 @@ int main() {
     if (cur_err != 0) std::cout << "Crossover Unit Test failed with " << cur_err << " errors." << std::endl;
     errors += cur_err;
 
-    std::cout << "\nRunning Crossover 1-Beat Unit Test..." << std::endl;
-    cur_err = run_crossover_test_1beat();
-    if (cur_err != 0) std::cout << "Crossover 1-Beat Unit Test failed with " << cur_err << " errors." << std::endl;
+    std::cout << "\nRunning Crossover Border Cases Unit Test..." << std::endl;
+    cur_err = run_crossover_test_border_cases();
+    if (cur_err != 0) std::cout << "Crossover Border Cases Unit Test failed with " << cur_err << " errors." << std::endl;
     errors += cur_err;
 
     std::cout << "\nRunning Repair/Fitness Unit Test..." << std::endl;
@@ -370,9 +370,9 @@ int main() {
     if (cur_err != 0) std::cout << "Repair/Fitness Unit Test failed with " << cur_err << " errors." << std::endl;
     errors += cur_err;
 
-    std::cout << "\nRunning Repair/Fitness 1-Beat Unit Test..." << std::endl;
-    cur_err = run_repair_fitness_test_1beat();
-    if (cur_err != 0) std::cout << "Repair/Fitness 1-Beat Unit Test failed with " << cur_err << " errors." << std::endl;
+    std::cout << "\nRunning Repair/Fitness Border Cases Unit Test..." << std::endl;
+    cur_err = run_repair_fitness_test_border_cases();
+    if (cur_err != 0) std::cout << "Repair/Fitness Border Cases Unit Test failed with " << cur_err << " errors." << std::endl;
     errors += cur_err;
 
     std::cout << "\nRunning Integration Test..." << std::endl;
@@ -380,9 +380,9 @@ int main() {
     if (cur_err != 0) std::cout << "Integration Test failed with " << cur_err << " errors." << std::endl;
     errors += cur_err;
 
-    std::cout << "\nRunning Integration 1-Beat Test..." << std::endl;
-    cur_err = run_integration_test_1beat();
-    if (cur_err != 0) std::cout << "Integration 1-Beat Test failed with " << cur_err << " errors." << std::endl;
+    std::cout << "\nRunning Integration Border Cases Test..." << std::endl;
+    cur_err = run_integration_test_border_cases();
+    if (cur_err != 0) std::cout << "Integration Border Cases Test failed with " << cur_err << " errors." << std::endl;
     errors += cur_err;
 
     if (errors == 0) {

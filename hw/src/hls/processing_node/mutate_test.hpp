@@ -2,6 +2,6 @@
 #define MUTATE_TEST_HPP
 
 int run_mutate_test();
-int run_mutate_test_1beat();
+int run_mutate_test_border_cases();
 
 #endif // MUTATE_TEST_HPP

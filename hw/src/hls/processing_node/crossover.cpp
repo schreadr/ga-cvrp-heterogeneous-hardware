@@ -14,7 +14,7 @@ void find_unsued_cities(IndividualAsBeats &p, hls::stream<BeatPacket> &out, Star
 
     assert(fill_beats_to_go <= MAX_BEATS+1);
     FIND_UNSED_CITIES_LOOP: for (BeatIndex step = 0; step < fill_beats_to_go && found < n_cities_to_find; step++) {
-        #pragma HLS PIPELINE II=10
+        #pragma HLS PIPELINE II=6
         BeatIndex read_b = (start_end_data_unused_city_search.start_beat + step);
         if (read_b >= total_beats) read_b -= total_beats;
 
@@ -87,7 +87,7 @@ void crossover(
         BeatIndex itrs = start_end_data.end_beat - start_end_data.start_beat + 1;
         assert(itrs <= MAX_BEATS);
         COPY_BEAT_LOOP: for (BeatIndex i = 0; i < itrs; i++) {
-            #pragma HLS PIPELINE II=8
+            #pragma HLS PIPELINE II=4
             BeatIndex b = i + start_end_data.start_beat;
             FieldIndex low_field = (b == start_end_data.start_beat) ? start_end_data.start_field : get_first_city_index(b);
             FieldIndex high_field = (b == start_end_data.end_beat) ? start_end_data.end_field : get_last_field_index(num_cities, b);

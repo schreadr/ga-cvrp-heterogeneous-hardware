@@ -2,6 +2,6 @@
 #define CROSSOVER_TEST_HPP
 
 int run_crossover_test();
-int run_crossover_test_1beat();
+int run_crossover_test_border_cases();
 
 #endif // CROSSOVER_TEST_HPP
