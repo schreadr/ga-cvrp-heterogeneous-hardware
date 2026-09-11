@@ -51,19 +51,27 @@ static void write(IndividualAsBeats &c, hls::stream<BeatPacket> &reverse_buffer,
         data
     );
 
-    WRITE_BACK_LOOP: for (int i = total_beats - 1; i >= 0; --i) {
-        // if II = 3 timing resolved, TODO evalute performance once more.
-        #pragma HLS PIPELINE II=3
-        if (i < data.start_end_data.start_beat || i > data.start_end_data.end_beat) {
+    int i = total_beats - 1;
+    ap_uint<2> flushes = 2;
+
+    WRITE_BACK_LOOP: for (int step = 0; step < total_beats + 2; ++step) {
+        #pragma HLS PIPELINE II=4
+        if (i > data.start_end_data.end_beat) {
             c[i] = buffer.read();
-        } else {
+            i--;
+        } else if (i >= data.start_end_data.start_beat || flushes > 0) {
             capture_and_propagate(state, reverse_buffer, c, num_cities);
+            if (i >= data.start_end_data.start_beat) {
+                i--;
+            } else {
+                flushes--;
+            }
+        } else {
+            c[i] = buffer.read();
+            i--;
         }
     }
 
-    // TODO may just incorprate stream_beats_to_individual to be safe but takes way more time
-    capture_and_propagate(state, reverse_buffer, c, num_cities);
-    capture_and_propagate(state, reverse_buffer, c, num_cities);
     flush_accumulated_beat(state, c);
 }
 
