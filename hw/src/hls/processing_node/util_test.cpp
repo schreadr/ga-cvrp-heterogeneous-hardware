@@ -353,11 +353,60 @@ int test_beat_producer() {
     return errors;
 }
 
+static int test_1beat() {
+    IndividualAsBeats dst_ind;
+    hls::stream<BeatPacket> in_stream;
+
+    init_all_0(dst_ind);
+
+    int num_cities = 15;
+    int n_beats = get_total_beats(num_cities); // 1
+
+    int dst_start_idx = 14;
+    int n_cities_to_copy = 4;
+    int dst_end_idx = 2;
+
+    BeatPacket pkt1;
+    pkt1.beat = 0;
+    set_field(pkt1.beat, 0, 0x111);
+    set_field(pkt1.beat, 1, 0x222);
+    pkt1.n = 2;
+
+    BeatPacket pkt2;
+    pkt2.beat = 0;
+    set_field(pkt2.beat, 0, 0x333);
+    set_field(pkt2.beat, 1, 0x444);
+    pkt2.n = 2;
+
+    in_stream.write(pkt1);
+    in_stream.write(pkt2);
+
+    stream_beats_to_individual<4>(in_stream, dst_ind, dst_start_idx, n_cities_to_copy,
+                                  StartEndDataWithBeats(get_start_end_data(dst_start_idx, dst_end_idx), 0, 0),
+                                  n_beats, num_cities);
+
+    std::vector<int> indices = {14, 15, 1, 2};
+    std::vector<int> expected_values = {0x111, 0x222, 0x333, 0x444};
+
+    bool success = true;
+    success &= validate(indices, expected_values, dst_ind);
+    success &= validate_expect(indices, 0, dst_ind, 16);
+
+    if (success) {
+        std::cout << "Test 1-Beat (Util) PASSED successfully!" << std::endl;
+    } else {
+        std::cout << "Test 1-Beat (Util) FAILED!" << std::endl;
+    }
+
+    return success ? 0 : 1;
+}
+
 int test_util() {
     int errors = test1();
     errors += test2();
     errors += test3();
     errors += test_integer_sqrt();
     errors += test_beat_producer();
+    errors += test_1beat();
     return errors;
 }
