@@ -414,7 +414,7 @@ bool test_run_ga_in_place_buffer_shift() {
         std::vector<Individual> offspring_1 = {
             build_individual(problem, {1, 3, 4, 0, 2}), // fitness 156
             build_individual(problem, {2, 0, 3, 1, 4}), // fitness 187
-            build_individual(problem, {2, 0, 4, 1, 3})  // fitness 187
+            build_individual(problem, {2, 0, 3, 1, 4})  // fitness 187 (duplicate)
         };
         auto enc_0 = encode_population_fixed(problem, offspring_0);
         auto enc_1 = encode_population_fixed(problem, offspring_1);

@@ -33,6 +33,53 @@
 #include <stdexcept>
 #include <cstring>
 
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+#define HAS_X86_CRC32 1
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC push_options
+#pragma GCC target("sse4.2")
+#include <nmmintrin.h>
+#pragma GCC pop_options
+#elif defined(_MSC_VER)
+#include <intrin.h>
+#endif
+#endif
+
+const char *get_hash_backend_name() {
+#if defined(HAS_X86_CRC32)
+    return "Hardware CRC32 (SSE 4.2)";
+#else
+    return "Software FNV-1a (Portable)";
+#endif
+}
+
+#if defined(HAS_X86_CRC32) && (defined(__GNUC__) || defined(__clang__))
+__attribute__((target("sse4.2")))
+#endif
+std::uint64_t hash_genome(const std::uint8_t *bytes, std::size_t length) {
+#if defined(HAS_X86_CRC32)
+    std::uint64_t crc = 0xFFFFFFFFull;
+    std::size_t i = 0;
+    for (; i + 8 <= length; i += 8) {
+        std::uint64_t chunk;
+        std::memcpy(&chunk, bytes + i, sizeof(chunk));
+        crc = _mm_crc32_u64(crc, chunk);
+    }
+    for (; i < length; ++i) {
+        crc = _mm_crc32_u8(static_cast<std::uint32_t>(crc), bytes[i]);
+    }
+    return crc == 0 ? 1ull : crc;
+#else
+    // Fallback: 64-bit FNV-1a
+    std::uint64_t h = 14695981039346656037ull;
+    for (std::size_t i = 0; i < length; ++i) {
+        h ^= static_cast<std::uint64_t>(bytes[i]);
+        h *= 1099511628211ull;
+    }
+    return h == 0 ? 1ull : h;
+#endif
+}
+
 template <typename T>
 static inline int bit_width(T n) {
     if (n <= 0) return 0;
@@ -245,58 +292,78 @@ std::vector<Individual> build_initial_population(const ProblemInstance &problem,
 void update_population(std::vector<EncodedIndividual> &population, std::vector<EncodedIndividual> &new_generation, std::vector<EncodedIndividual> &new_population, int n_keep_best){
     std::sort(new_generation.begin(), new_generation.end());
 
-    int i_pop=0;
-    int i_new=0;
-    std::uint32_t last_fitness = std::numeric_limits<std::uint32_t>::max();
-    for (int i = 0; i < n_keep_best && (i_new < new_generation.size() || i_pop < population.size()); ++i) {
+    int i_pop = 0;
+    int i_new = 0;
+    EncodedIndividual last_ind = {nullptr, std::numeric_limits<std::uint32_t>::max(), std::numeric_limits<std::uint64_t>::max()};
+    int i_new_pop = 0;
+
+    while (i_new_pop < n_keep_best && (i_new < new_generation.size() || i_pop < population.size())) {
         if (i_new < new_generation.size() && i_pop < population.size()) {
-            // If the fitness values are equal, we prefer the new generation individual
-            if (new_generation[i_new].fitness == population[i_pop].fitness) {
-                new_population[i] = new_generation[i_new];
-                last_fitness = new_generation[i_new].fitness;
-                while (++i_new < new_generation.size() && new_generation[i_new].fitness == last_fitness);
+            // If both individuals are equal (same fitness and hash), we prefer the new generation individual
+            if (new_generation[i_new] == population[i_pop]) {
+                new_population[i_new_pop] = new_generation[i_new];
+                last_ind = new_generation[i_new];
+                while (++i_new < new_generation.size() && new_generation[i_new] == last_ind);
                 i_pop++;
-            // If the new generation individual has a better fitness, we take it
-            } else if (new_generation[i_new].fitness < population[i_pop].fitness) {
-                new_population[i] = new_generation[i_new];
-                last_fitness = new_generation[i_new].fitness;
-                while (++i_new < new_generation.size() && new_generation[i_new].fitness == last_fitness);
+                i_new_pop++;
+            // If the new generation individual has better (fitness, hash), we take it
+            } else if (new_generation[i_new] < population[i_pop]) {
+                new_population[i_new_pop] = new_generation[i_new];
+                last_ind = new_generation[i_new];
+                while (++i_new < new_generation.size() && new_generation[i_new] == last_ind);
+                i_new_pop++;
             } else {
-                new_population[i] = population[i_pop];
-                i_pop++;
+                new_population[i_new_pop] = population[i_pop];
+                last_ind = population[i_pop];
+                while (++i_pop < population.size() && population[i_pop] == last_ind);
+                i_new_pop++;
             }
         } else if (i_new < new_generation.size()) {
-            new_population[i] = new_generation[i_new];
-            last_fitness = new_generation[i_new].fitness;
-            while (++i_new < new_generation.size() && new_generation[i_new].fitness == last_fitness);
+            new_population[i_new_pop] = new_generation[i_new];
+            last_ind = new_generation[i_new];
+            while (++i_new < new_generation.size() && new_generation[i_new] == last_ind);
+            i_new_pop++;
         } else {
-            new_population[i] = population[i_pop];
-            i_pop++;
+            new_population[i_new_pop] = population[i_pop];
+            last_ind = population[i_pop];
+            while (++i_pop < population.size() && population[i_pop] == last_ind);
+            i_new_pop++;
         }
     }
 
     // Fill the rest of the new population with individuals from the new generation eliminating duplicates
-    int i_new_pop=n_keep_best;
+    int n_keep_actual = i_new_pop;
     for (int i = i_new; i < new_generation.size() && i_new_pop < population.size(); i++){
-        if(new_generation[i].fitness == last_fitness){
+        if (new_generation[i] == last_ind) {
             continue;
         }
 
         new_population[i_new_pop] = new_generation[i];
         i_new_pop++;
-        last_fitness = new_generation[i].fitness;
+        last_ind = new_generation[i];
     }
     
     // Fill the rest of the new population with individuals from the old population eliminating duplicates
-    int new_pop_ge_index = n_keep_best;
+    int new_pop_ge_index = n_keep_actual;
     for (int i = i_pop; i < population.size() && i_new_pop < population.size(); i++){
-        while(new_pop_ge_index < i_new_pop && new_population[new_pop_ge_index].fitness < population[i].fitness){
+        while (new_pop_ge_index < i_new_pop && new_population[new_pop_ge_index] < population[i]){
             new_pop_ge_index++;
         }
 
         // if not equal then new_pop must be greater thus pop[i] does not yet exist
-        if(new_pop_ge_index >= i_new_pop || new_population[new_pop_ge_index].fitness != population[i].fitness){
+        if (new_pop_ge_index >= i_new_pop || new_population[new_pop_ge_index] != population[i]){
             new_population[i_new_pop] = population[i];
+            i_new_pop++;
+        }
+    }
+
+    if (i_new_pop < population.size()) {
+        std::cerr << "Warning: Only "
+                  << i_new_pop << " individuals were available for population size "
+                  << population.size() << ". Filling remaining "
+                  << (population.size() - i_new_pop) << " slots." << std::endl;
+        while (i_new_pop < population.size()) {
+            new_population[i_new_pop] = new_population[0];
             i_new_pop++;
         }
     }
@@ -330,9 +397,6 @@ void run_ga(const ProblemInstance& problem, GAParams& params, std::function<void
     const std::size_t half_bytes = half_pop * bytes_per_ind;
 
     std::vector<Individual> initial_population = build_initial_population(problem, pop_size, new_seed());
-    std::sort(initial_population.begin(), initial_population.end(), [](const Individual &a, const Individual &b) {
-        return a.fitness < b.fitness;
-    });
     const std::vector<std::uint8_t> encoded_population = encode_population_fixed(problem, initial_population);
     const std::size_t n_bytes = encoded_population.size();
 
@@ -353,8 +417,11 @@ void run_ga(const ProblemInstance& problem, GAParams& params, std::function<void
     std::uint8_t *buffer_src_rnd = params.buffer_src_rnd;
     std::uint8_t *pop_buffer = params.buffer_pop;
 
-    std::memcpy(pop_buffer, encoded_population.data(), n_bytes);
-    population_from_buffer(pop_buffer, pop_size, population, problem.dimension);
+    // Individuals of current population must be sorted on the buffer
+    std::memcpy(buffer_src, encoded_population.data(), n_bytes);
+    population_from_buffer(buffer_src, pop_size, population, problem.dimension);
+    std::sort(population.get().begin(), population.get().end());
+    population_to_buffer(population, pop_buffer, problem.dimension);
 
     const std::size_t n_keep = std::min(pop_size, static_cast<std::size_t>(std::round(pop_size * (params.n_best_keep / 100.0))));
 

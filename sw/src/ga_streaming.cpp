@@ -187,6 +187,8 @@ void population_from_buffer(
     const int beats_per_individual = get_total_beats(problem_dimension - 1);
     // return a the population of ecoded individuals, each with a pointer to its bytes, read the fitness from the offset, see constants. make it as efficent as possible
     const std::size_t bytes_per_individual = beats_per_individual * AXI_BYTES;
+    const std::size_t genome_bytes = bytes_per_individual > sizeof(std::uint32_t)
+                                   ? bytes_per_individual - sizeof(std::uint32_t) : 0;
     for (std::size_t i = 0; i < num_individuals; ++i) {
         const std::uint8_t *ind_bytes = buffer + (i * bytes_per_individual);
         std::uint32_t fitness;
@@ -194,6 +196,7 @@ void population_from_buffer(
         fitness = fitness & ((1ul << FIELD_BITS) - 1u);
         population[i].fitness=fitness;
         population[i].bytes=ind_bytes;
+        population[i].hash = hash_genome(ind_bytes + sizeof(std::uint32_t), genome_bytes);
     }
 }
 
@@ -204,13 +207,13 @@ void population_to_buffer(std::vector<EncodedIndividual> &population, std::uint8
             // Serialize each individual and write to bytes
             std::uint8_t *dest = bytes + (i * beats_per_individual * AXI_BYTES);
             std::memcpy(dest, population[i].bytes, beats_per_individual * AXI_BYTES);
-            population[i] = EncodedIndividual{dest, population[i].fitness};
+            population[i] = EncodedIndividual{dest, population[i].fitness, population[i].hash};
         }
     } else {
         for (int i=0; i<population.size(); ++i) {
             // Serialize each individual and write to bytes
             std::memcpy(bytes, population[i].bytes, beats_per_individual * AXI_BYTES);
-            population[i] = EncodedIndividual{bytes, population[i].fitness};
+            population[i] = EncodedIndividual{bytes, population[i].fitness, population[i].hash};
             bytes += beats_per_individual * AXI_BYTES;
         }
     }

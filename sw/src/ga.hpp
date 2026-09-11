@@ -33,6 +33,8 @@
 #define CVRP_INDIVIDUAL_HPP
 
 #include <cstdint>
+#include <cstddef>
+#include <cstring>
 #include <iosfwd>
 #include <string>
 #include <vector>
@@ -104,12 +106,35 @@ struct Individual {
     }
 };
 
+/**
+ * Fast genome hasher: computes a 64-bit hash of an individual's tour bytes (excluding fitness).
+ * Uses hardware CRC32 (SSE 4.2) when supported by the CPU, with fallback to 64-bit FNV-1a.
+ */
+std::uint64_t hash_genome(const std::uint8_t *bytes, std::size_t length);
+
+/**
+ * Returns a human-readable description of the hashing backend in use.
+ */
+const char *get_hash_backend_name();
+
 struct EncodedIndividual {
-    const std::uint8_t* bytes;
+    const std::uint8_t* bytes = nullptr;
     std::uint32_t fitness = 0;
+    std::uint64_t hash = 0;
 
     bool operator<(const EncodedIndividual& other) const {
-        return fitness < other.fitness;
+        if (fitness != other.fitness) {
+            return fitness < other.fitness;
+        }
+        return hash < other.hash;
+    }
+
+    bool operator==(const EncodedIndividual& other) const {
+        return fitness == other.fitness && hash == other.hash;
+    }
+
+    bool operator!=(const EncodedIndividual& other) const {
+        return !(*this == other);
     }
 };
 

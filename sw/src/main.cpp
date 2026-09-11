@@ -111,6 +111,7 @@ int main(int argc, char *argv[]) {
     std::cout << "Percentage of best individuals to keep: " << n_best_keep << "%" << std::endl;
     std::cout << "Seed: " << seed << std::endl;
     std::cout << "Smoke test mode: " << (smoke_test ? "ENABLED" : "DISABLED") << std::endl;
+    std::cout << "Genome hasher: " << get_hash_backend_name() << std::endl;
     std::cout << "VRP file: " << vrp_file << std::endl << std::endl;
 
     const ProblemInstance problem = parse_vrp(vrp_file);
