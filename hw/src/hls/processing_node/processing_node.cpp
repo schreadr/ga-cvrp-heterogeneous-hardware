@@ -122,6 +122,11 @@ static void process_stream(
     hls::stream_of_blocks<IndividualAsBeats> stream_repaired_0;
     hls::stream_of_blocks<IndividualAsBeats> stream_repaired_1;
 
+    #pragma HLS BIND_STORAGE variable=stream_cx_0 type=ram_2p impl=bram latency=2
+    #pragma HLS BIND_STORAGE variable=stream_cx_1 type=ram_2p impl=bram latency=2
+    #pragma HLS BIND_STORAGE variable=stream_repaired_0 type=ram_2p impl=bram latency=2
+    #pragma HLS BIND_STORAGE variable=stream_repaired_1 type=ram_2p impl=bram latency=2
+
     hls::stream<CityPair> crossover_pairs("crossover_pairs");
     hls::stream<CityPair> mutate_pairs("mutate_pairs");
 
