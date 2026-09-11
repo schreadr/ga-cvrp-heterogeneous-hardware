@@ -182,8 +182,7 @@ int main(int argc, char *argv[]) {
         coyote_thread.invoke(coyote::CoyoteOper::LOCAL_TRANSFER, src_sg_1, dst_sg_1);
 
         // Wait for transfers to complete
-        while (coyote_thread.checkCompleted(coyote::CoyoteOper::LOCAL_TRANSFER) != 2 ||
-               coyote_thread.checkCompleted(coyote::CoyoteOper::LOCAL_READ) != 1) {}
+        while (coyote_thread.checkCompleted(coyote::CoyoteOper::LOCAL_TRANSFER) != 2) {}
     };
 
     if (smoke_test) {
