@@ -174,9 +174,68 @@ std::vector<Individual> build_initial_population(const ProblemInstance &problem,
  */
 void update_population(std::vector<EncodedIndividual> &population, std::vector<EncodedIndividual> &new_generation, std::vector<EncodedIndividual> &new_population, int n_keep_best);
 
+struct GATimings {
+    double init_time_ms = 0.0;
+    double parent_selection_ms = 0.0;
+    double offspring_generation_ms = 0.0;
+    double population_update_ms = 0.0;
+    double total_time_ms = 0.0;
+
+    double generational_time_ms() const {
+        return parent_selection_ms + offspring_generation_ms + population_update_ms;
+    }
+
+    double avg_parent_selection_ms(std::size_t n_generations) const {
+        return n_generations > 0 ? (parent_selection_ms / n_generations) : 0.0;
+    }
+
+    double avg_offspring_generation_ms(std::size_t n_generations) const {
+        return n_generations > 0 ? (offspring_generation_ms / n_generations) : 0.0;
+    }
+
+    double avg_population_update_ms(std::size_t n_generations) const {
+        return n_generations > 0 ? (population_update_ms / n_generations) : 0.0;
+    }
+
+    double avg_generational_time_ms(std::size_t n_generations) const {
+        return n_generations > 0 ? (generational_time_ms() / n_generations) : 0.0;
+    }
+};
+
+struct GASummary {
+    // --- Part 1: Solution & Run Information ---
+    std::size_t n_generations = 0;
+    std::size_t pop_size = 0;
+    Individual best_individual;
+
+    // --- Part 2: Execution Timing ---
+    GATimings timings;
+
+    // Convenience forwarders
+    double generational_time_ms() const {
+        return timings.generational_time_ms();
+    }
+    double avg_parent_selection_ms() const {
+        return timings.avg_parent_selection_ms(n_generations);
+    }
+    double avg_offspring_generation_ms() const {
+        return timings.avg_offspring_generation_ms(n_generations);
+    }
+    double avg_population_update_ms() const {
+        return timings.avg_population_update_ms(n_generations);
+    }
+    double avg_generational_time_ms() const {
+        return timings.avg_generational_time_ms(n_generations);
+    }
+
+    void print() const;
+    void print(std::ostream &os) const;
+    friend std::ostream& operator<<(std::ostream &os, const GASummary &summary);
+};
+
 void create_parent_pairs(const std::vector<EncodedIndividual> &population, std::vector<EncodedIndividual> &parents1, std::vector<EncodedIndividual> &parents2, std::uint32_t seed);
 
-void run_ga(const ProblemInstance& problem, GAParams& params, std::function<void()> create_new_generation);
+GASummary run_ga(const ProblemInstance& problem, GAParams& params, std::function<void()> create_new_generation);
 
 bool validate_encoding_constants(const ProblemInstance &problem, bool throw_on_error = true);
 

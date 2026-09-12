@@ -14,6 +14,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -422,7 +423,7 @@ bool test_run_ga_in_place_buffer_shift() {
         std::memcpy(params.buffer_dst + half_bytes, enc_1.data(), enc_1.size());
     };
 
-    run_ga(problem, params, mock_new_gen);
+    GASummary summary = run_ga(problem, params, mock_new_gen);
 
     if (!mock_called) {
         std::cerr << "FAIL [run_ga_in_place_buffer_shift]: mock_new_gen was not called\n";

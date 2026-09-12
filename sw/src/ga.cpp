@@ -28,10 +28,13 @@
 #include "ga_streaming.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <cstring>
+#include <iomanip>
+#include <iostream>
 #include <random>
 #include <stdexcept>
-#include <cstring>
 
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
 #define HAS_X86_CRC32 1
@@ -195,6 +198,77 @@ bool validate_encoding_constants(const ProblemInstance &problem, bool throw_on_e
     }
 
     return true;
+}
+
+void GASummary::print() const {
+    print(std::cout);
+}
+
+void GASummary::print(std::ostream &os) const {
+    const double gen_total = generational_time_ms();
+    const double pct_parents = gen_total > 0.0 ? (timings.parent_selection_ms / gen_total * 100.0) : 0.0;
+    const double pct_offspring = gen_total > 0.0 ? (timings.offspring_generation_ms / gen_total * 100.0) : 0.0;
+    const double pct_update = gen_total > 0.0 ? (timings.population_update_ms / gen_total * 100.0) : 0.0;
+
+    auto old_flags = os.flags();
+    auto old_prec = os.precision();
+
+    os << "\n============================== GA EXECUTION SUMMARY ==============================\n";
+    os << "--- Solution Overview --------------------------------------------------------\n";
+    os << "  Generations:          " << n_generations << "\n";
+    os << "  Population Size:      " << pop_size << "\n";
+    if (!best_individual.tour.empty() || best_individual.fitness > 0) {
+        os << "  Best Fitness:         " << best_individual.fitness << "\n";
+    }
+    os << "----------------------------------------------------------------------------------\n";
+    os << "\n--- Execution Timing ---------------------------------------------------------\n";
+    os << "  " << std::left << std::setw(28) << "Phase"
+       << std::right << std::setw(16) << "Total (ms)"
+       << std::right << std::setw(16) << "Avg/Gen (ms)"
+       << std::right << std::setw(14) << "Share (%)" << "\n";
+    os << "  --------------------------------------------------------------------------------\n";
+    os << std::fixed << std::setprecision(3);
+    os << "  " << std::left << std::setw(28) << "Parents Selection"
+       << std::right << std::setw(16) << timings.parent_selection_ms
+       << std::right << std::setw(16) << avg_parent_selection_ms()
+       << std::right << std::setw(13) << std::setprecision(1) << pct_parents << " %\n";
+    os << std::fixed << std::setprecision(3);
+    os << "  " << std::left << std::setw(28) << "Offspring Generation"
+       << std::right << std::setw(16) << timings.offspring_generation_ms
+       << std::right << std::setw(16) << avg_offspring_generation_ms()
+       << std::right << std::setw(13) << std::setprecision(1) << pct_offspring << " %\n";
+    os << std::fixed << std::setprecision(3);
+    os << "  " << std::left << std::setw(28) << "Population Update"
+       << std::right << std::setw(16) << timings.population_update_ms
+       << std::right << std::setw(16) << avg_population_update_ms()
+       << std::right << std::setw(13) << std::setprecision(1) << pct_update << " %\n";
+    os << "  --------------------------------------------------------------------------------\n";
+    os << std::fixed << std::setprecision(3);
+    os << "  " << std::left << std::setw(28) << "Generational Total"
+       << std::right << std::setw(16) << gen_total
+       << std::right << std::setw(16) << avg_generational_time_ms()
+       << std::right << std::setw(13) << std::setprecision(1) << 100.0 << " %\n";
+    if (timings.init_time_ms > 0.0) {
+        os << std::fixed << std::setprecision(3);
+        os << "  " << std::left << std::setw(28) << "Initialization"
+           << std::right << std::setw(16) << timings.init_time_ms
+           << std::right << std::setw(16) << "-"
+           << std::right << std::setw(14) << "-\n";
+    }
+    os << std::fixed << std::setprecision(3);
+    os << "  " << std::left << std::setw(28) << "Total Wall Time"
+       << std::right << std::setw(16) << timings.total_time_ms
+       << std::right << std::setw(16) << "-"
+       << std::right << std::setw(14) << "-\n";
+    os << "==================================================================================\n";
+
+    os.flags(old_flags);
+    os.precision(old_prec);
+}
+
+std::ostream& operator<<(std::ostream &os, const GASummary &summary) {
+    summary.print(os);
+    return os;
 }
 
 std::uint32_t floor_euclidean_distance(const ProblemNode &lhs, const ProblemNode &rhs) {
@@ -386,8 +460,13 @@ void create_parent_pairs(const std::vector<EncodedIndividual> &population, std::
     }
 }
 
+GASummary run_ga(const ProblemInstance& problem, GAParams& params, std::function<void()> create_new_generation){
+    auto wall_start = std::chrono::steady_clock::now();
+    GASummary summary;
+    summary.n_generations = params.n_generations;
+    summary.pop_size = params.pop_size;
 
-void run_ga(const ProblemInstance& problem, GAParams& params, std::function<void()> create_new_generation){
+    auto init_start = std::chrono::steady_clock::now();
     std::mt19937 new_seed(params.seed);
 
     const std::size_t pop_size = params.pop_size;
@@ -417,6 +496,8 @@ void run_ga(const ProblemInstance& problem, GAParams& params, std::function<void
     std::uint8_t *buffer_src_rnd = params.buffer_src_rnd;
     std::uint8_t *pop_buffer = params.buffer_pop;
 
+    const std::size_t print_interval = std::max<std::size_t>(1, params.n_generations / 10);
+
     // Individuals of current population must be sorted on the buffer
     std::memcpy(buffer_src, encoded_population.data(), n_bytes);
     population_from_buffer(buffer_src, pop_size, population, problem.dimension);
@@ -424,23 +505,41 @@ void run_ga(const ProblemInstance& problem, GAParams& params, std::function<void
     population_to_buffer(population, pop_buffer, problem.dimension);
 
     const std::size_t n_keep = std::min(pop_size, static_cast<std::size_t>(std::round(pop_size * (params.n_best_keep / 100.0))));
+    auto init_end = std::chrono::steady_clock::now();
+    summary.timings.init_time_ms = std::chrono::duration<double, std::milli>(init_end - init_start).count();
 
     for (int i=0; i< params.n_generations; i++){
+        auto t0 = std::chrono::steady_clock::now();
         create_parent_pairs(population, parents1, parents2, new_seed());
         population_to_buffer(parents1, buffer_src, problem.dimension);
         population_to_buffer(parents2, buffer_src + half_bytes, problem.dimension);
         generate_random_numbers(half_pop, buffer_src_rnd, problem.dimension - 1, new_seed());
+        auto t1 = std::chrono::steady_clock::now();
         
         create_new_generation();
+        auto t2 = std::chrono::steady_clock::now();
 
         population_from_buffer(buffer_dst, pop_size, next_generation, problem.dimension);
         update_population(population, next_generation, next_population, n_keep);
         std::swap(population, next_population);
         population_to_buffer(population, pop_buffer, problem.dimension, true);
+        auto t3 = std::chrono::steady_clock::now();
 
-        std::cout << "Best fitness in iteration " << i << ": " << population.get()[0].fitness << std::endl;
+        summary.timings.parent_selection_ms += std::chrono::duration<double, std::milli>(t1 - t0).count();
+        summary.timings.offspring_generation_ms += std::chrono::duration<double, std::milli>(t2 - t1).count();
+        summary.timings.population_update_ms += std::chrono::duration<double, std::milli>(t3 - t2).count();
+
+        if (i % print_interval == 0) {
+            std::cout << "Iteration " << i << " completed. Best fitness: " << population.get()[0].fitness << std::endl;
+        }
     }
 
-    std::cout << "Best solution found:\n" << decode_individual_fixed(problem, population.get()[0].bytes) << std::endl;
+    if (!population.get().empty() && population.get()[0].bytes != nullptr) {
+        summary.best_individual = decode_individual_fixed(problem, population.get()[0].bytes);
+    }
+
+    auto wall_end = std::chrono::steady_clock::now();
+    summary.timings.total_time_ms = std::chrono::duration<double, std::milli>(wall_end - wall_start).count();
+    return summary;
 }
 

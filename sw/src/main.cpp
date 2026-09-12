@@ -239,7 +239,8 @@ int main(int argc, char *argv[]) {
         params.buffer_dst = dst_mem;
         params.buffer_pop = pop_mem;
 
-        run_ga(problem, params, create_new_generation);
+        GASummary summary = run_ga(problem, params, create_new_generation);
+        summary.print();
     }
 
     return EXIT_SUCCESS;
