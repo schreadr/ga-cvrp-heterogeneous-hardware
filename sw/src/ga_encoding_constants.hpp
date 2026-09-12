@@ -31,11 +31,9 @@
 // Random number stream constants
 #define RANDOM_BITS              32
 #define RANDOM_BITS_LOG2          5 // log2(RANDOM_BITS)
-#define RANDOMS_PER_INDIV         4 // 2 cut points for crossover, 2 cut points for mutation
+#define RANDOMS_PER_INDIV         6 // 2 cut points for crossover, 2 for stream 0 mutate, 2 for stream 1 mutate
 #define RANDOMS_PER_BEAT         16 // AXI_WIDTH / RANDOM_BITS
 #define RANDOMS_PER_BEAT_LOG2     4 // log2(RANDOMS_PER_BEAT)
-#define INDIVS_PER_RANDOM_BEAT    4 // RANDOMS_PER_BEAT / RANDOMS_PER_INDIV
-#define INDIVS_PER_RANDOM_BEAT_LOG2 2 // log2(INDIVS_PER_RANDOM_BEAT)
 
 static void assert_power_of_two(int x) {
     assert(x && !(x & (x - 1)));
@@ -63,15 +61,11 @@ static_block {
     assert(BEAT_WIDTH == FIELDS_PER_BEAT * FIELD_BITS);
 
     assert_power_of_two(RANDOM_BITS);
-    assert_power_of_two(RANDOMS_PER_INDIV);
     assert_power_of_two(RANDOMS_PER_BEAT);
-    assert_power_of_two(INDIVS_PER_RANDOM_BEAT);
 
     assert(RANDOMS_PER_BEAT * RANDOM_BITS == AXI_WIDTH);
     assert((1ULL << RANDOM_BITS_LOG2) == RANDOM_BITS);
     assert((1ULL << RANDOMS_PER_BEAT_LOG2) == RANDOMS_PER_BEAT);
-    assert(INDIVS_PER_RANDOM_BEAT * RANDOMS_PER_INDIV == RANDOMS_PER_BEAT);
-    assert((1ULL << INDIVS_PER_RANDOM_BEAT_LOG2) == INDIVS_PER_RANDOM_BEAT);
 }
 
 // inlined for hw side

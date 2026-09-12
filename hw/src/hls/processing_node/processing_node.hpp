@@ -20,7 +20,8 @@ void processing_node(
 void random_number_converter(
     hls::stream<axi_word_t> &in_random,
     hls::stream<CityPair> &crossover_pairs,
-    hls::stream<CityPair> &mutate_pairs,
+    hls::stream<CityPair> &mutate_pairs_0,
+    hls::stream<CityPair> &mutate_pairs_1,
     int num_individuals
 );
 

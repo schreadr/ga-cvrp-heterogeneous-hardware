@@ -107,11 +107,16 @@ void mutate_core(
 
 void mutate(
     hls::stream_of_blocks<IndividualAsBeats> &in,
-    CityPair cut_points,
+    hls::stream<CityPair> &mutate_pairs,
     hls::stream_of_blocks<IndividualAsBeats> &out,
+    int num_individuals,
     int num_cities
 ) {
-    hls::read_lock<IndividualAsBeats> p(in);
-    hls::write_lock<IndividualAsBeats> c(out);
-    mutate_core(p, cut_points, c, num_cities);
+    MUTATE_INDIV_LOOP: for (int i = 0; i < num_individuals; i++) {
+        hls::read_lock<IndividualAsBeats> p(in);
+        hls::write_lock<IndividualAsBeats> c(out);
+        CityPair cut_points = mutate_pairs.read();
+        mutate_core(p, cut_points, c, num_cities);
+    }
 }
+

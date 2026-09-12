@@ -14,8 +14,9 @@ void mutate_core(
 
 void mutate(
     hls::stream_of_blocks<IndividualAsBeats> &in,
-    CityPair cut_points,
+    hls::stream<CityPair> &mutate_pairs,
     hls::stream_of_blocks<IndividualAsBeats> &out,
+    int num_individuals,
     int num_cities
 );
 

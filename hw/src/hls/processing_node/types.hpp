@@ -23,6 +23,7 @@ typedef ap_uint<BEAT_WIDTH> Beat;
 
 // TODO use it where indicated
 typedef ap_uint<FIELDS_PER_BEAT_LOG2 + 1> BeatFieldIndex;
+typedef ap_uint<RANDOMS_PER_BEAT_LOG2 + 1> BeatRandomIndex;
 typedef ap_uint<MAX_FIELDS_LOG2 + 1> FieldIndex;
 typedef ap_uint<MAX_BEATS_LOG2 + 1> BeatIndex;
 

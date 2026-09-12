@@ -69,22 +69,26 @@ int test_random_number_converter() {
     std::cout << "Random Number Converter Unit Test" << std::endl;
     hls::stream<axi_word_t> in_random("in_random");
     hls::stream<CityPair> cx_pairs("cx_pairs");
-    hls::stream<CityPair> mut_pairs("mut_pairs");
+    hls::stream<CityPair> mut_pairs_0("mut_pairs_0");
+    hls::stream<CityPair> mut_pairs_1("mut_pairs_1");
 
     const int test_individuals = 5;
     std::vector<uint32_t> raw_randoms = {
-        15, 3, 8, 20,
-        2, 2, 30, 1,
-        25, 40, 14, 12,
-        19, 11, 5, 9,
-        39, 4, 7, 18
+        15, 3, 8, 20, 10, 5,
+        2, 2, 30, 1, 16, 22,
+        25, 40, 14, 12, 1, 35,
+        19, 11, 5, 9, 28, 4,
+        39, 4, 7, 18, 13, 13
     };
 
     std::vector<std::pair<FieldIndex, FieldIndex>> exp_cx = {
         {3, 15}, {2, 2}, {25, 40}, {11, 19}, {4, 39}
     };
-    std::vector<std::pair<FieldIndex, FieldIndex>> exp_mut = {
+    std::vector<std::pair<FieldIndex, FieldIndex>> exp_mut_0 = {
         {8, 20}, {1, 30}, {12, 14}, {5, 9}, {7, 18}
+    };
+    std::vector<std::pair<FieldIndex, FieldIndex>> exp_mut_1 = {
+        {5, 10}, {16, 22}, {1, 35}, {4, 28}, {13, 13}
     };
 
     const std::size_t payload_bytes = raw_randoms.size() * sizeof(uint32_t);
@@ -94,12 +98,13 @@ int test_random_number_converter() {
 
     tb_push_bytes(in_random, beat_bytes.data(), total_bytes, true);
 
-    random_number_converter(in_random, cx_pairs, mut_pairs, test_individuals);
+    random_number_converter(in_random, cx_pairs, mut_pairs_0, mut_pairs_1, test_individuals);
 
     int errors = 0;
     for (int i = 0; i < test_individuals; ++i) {
         CityPair got_cx = cx_pairs.read();
-        CityPair got_mut = mut_pairs.read();
+        CityPair got_mut_0 = mut_pairs_0.read();
+        CityPair got_mut_1 = mut_pairs_1.read();
 
         if (got_cx.start != exp_cx[i].first || got_cx.end != exp_cx[i].second) {
             std::cout << "Mismatch in cx_pair[" << i << "]: got ("
@@ -107,10 +112,16 @@ int test_random_number_converter() {
                       << exp_cx[i].first << ", " << exp_cx[i].second << ")\n";
             errors++;
         }
-        if (got_mut.start != exp_mut[i].first || got_mut.end != exp_mut[i].second) {
-            std::cout << "Mismatch in mut_pair[" << i << "]: got ("
-                      << got_mut.start << ", " << got_mut.end << ") expected ("
-                      << exp_mut[i].first << ", " << exp_mut[i].second << ")\n";
+        if (got_mut_0.start != exp_mut_0[i].first || got_mut_0.end != exp_mut_0[i].second) {
+            std::cout << "Mismatch in mut_pair_0[" << i << "]: got ("
+                      << got_mut_0.start << ", " << got_mut_0.end << ") expected ("
+                      << exp_mut_0[i].first << ", " << exp_mut_0[i].second << ")\n";
+            errors++;
+        }
+        if (got_mut_1.start != exp_mut_1[i].first || got_mut_1.end != exp_mut_1[i].second) {
+            std::cout << "Mismatch in mut_pair_1[" << i << "]: got ("
+                      << got_mut_1.start << ", " << got_mut_1.end << ") expected ("
+                      << exp_mut_1[i].first << ", " << exp_mut_1[i].second << ")\n";
             errors++;
         }
     }
@@ -142,9 +153,9 @@ int run_integration_test(){
     // kOxStart = 2, kOxEnd = 34; kMutateStart = 2, kMutateEnd = 34
     // Pass them in mixed order to verify the converter sorts smaller first.
     std::vector<uint32_t> rnd_nums = {
-        34, 2, 2, 34,
-        2, 34, 34, 2,
-        34, 2, 34, 2
+        34, 2, 2, 34, 2, 34,
+        2, 34, 34, 2, 2, 34,
+        34, 2, 34, 2, 34, 2
     };
     const std::size_t payload_bytes_rnd = rnd_nums.size() * sizeof(uint32_t);
     const std::size_t total_bytes_rnd = get_random_bytes(kNumIndividuals);
@@ -166,6 +177,7 @@ int run_integration_test(){
                     (problem.depot.x << COORD_BITS) | problem.depot.y,
                     &dbg_indiv0, &dbg_cities);
 
+    std::cout << "Processing Node finished. Reading outputs from stream..." << std::endl;
     std::vector<std::uint8_t> got_0(total_bytes_0);
     std::vector<std::uint8_t> got_1(total_bytes_1);
     tb_pull_bytes(out0, got_0.data(), total_bytes_0);
@@ -264,8 +276,8 @@ int run_integration_test_border_cases() {
     const std::size_t total_bytes_1 = enc_1.size();
 
     std::vector<uint32_t> rnd_nums = {
-        6, 10, 1, 1,
-        5, 15, 1, 1
+        6, 10, 1, 1, 1, 1,
+        5, 15, 1, 1, 1, 1
     };
     const std::size_t payload_bytes_rnd = rnd_nums.size() * sizeof(uint32_t);
     const std::size_t total_bytes_rnd = get_random_bytes(kNumIndividuals_border_cases);
@@ -287,6 +299,7 @@ int run_integration_test_border_cases() {
                     (problem.depot.x << COORD_BITS) | problem.depot.y,
                     &dbg_indiv0, &dbg_cities);
 
+    std::cout << "Processing Node (border cases) finished. Reading outputs from stream..." << std::endl;
     std::vector<std::uint8_t> got_0(total_bytes_0);
     std::vector<std::uint8_t> got_1(total_bytes_1);
     tb_pull_bytes(out0, got_0.data(), total_bytes_0);

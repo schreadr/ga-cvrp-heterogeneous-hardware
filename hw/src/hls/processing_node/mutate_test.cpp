@@ -69,9 +69,7 @@ int run_mutate_test() {
     }
 
     std::cout << "Executing Mutate..." << std::endl;
-    for (std::size_t i = 0; i < kNumIndividuals; ++i) {
-        mutate(in0, mutate_pairs.read(), out0, kNumCities);
-    }
+    mutate(in0, mutate_pairs, out0, static_cast<int>(kNumIndividuals), kNumCities);
 
     std::cout << "Reading children from block streams..." << std::endl;
     const std::vector<Individual> child_0 = tb_pull_individuals(out0, problem, kNumIndividuals);
@@ -154,9 +152,7 @@ int run_mutate_test_border_cases() {
     }
 
     std::cout << "Executing Mutate (border cases)..." << std::endl;
-    for (std::size_t i = 0; i < kNumIndividuals_border_cases; ++i) {
-        mutate(in0, mutate_pairs.read(), out0, kNumCities_border_cases);
-    }
+    mutate(in0, mutate_pairs, out0, static_cast<int>(kNumIndividuals_border_cases), kNumCities_border_cases);
 
     std::cout << "Reading children from block streams..." << std::endl;
     int errors = 0;
