@@ -12,6 +12,7 @@
 #include "ga_encoding_constants.hpp"
 #include "ga.hpp"
 #include "ga_streaming.hpp"
+#include "problem_parser.hpp"
 
 static int kNumCities = 40;
 static std::size_t kNumIndividuals = 3;
@@ -344,6 +345,93 @@ int run_integration_test_border_cases() {
     return errors;
 }
 
+int run_integration_test_big_instance() {
+    std::cout << "Running Integration Test (Big Instance: X-n1001-k43)..." << std::endl;
+    hls::stream<axi_word_t> in0("in0_big"), out0("out0_big");
+    hls::stream<axi_word_t> in1("in1_big"), out1("out1_big");
+    hls::stream<axi_word_t> in_random("in_random_big");
+
+    const std::string vrp_path = "X-n1001-k43.vrp";
+    std::cout << "Loading problem from: " << vrp_path << std::endl;
+    const ProblemInstance problem = parse_vrp(vrp_path);
+    validate_encoding_constants(problem);
+
+    const std::size_t num_ind = 2;
+    const uint32_t seed = 12648430;
+
+    std::cout << "Generating initial population (" << num_ind << " individuals per stream)..." << std::endl;
+    const std::vector<Individual> pop_0 = build_initial_population(problem, num_ind, seed);
+    const std::vector<Individual> pop_1 = build_initial_population(problem, num_ind, seed ^ 0xBEEF);
+
+    const std::vector<std::uint8_t> enc_0 = encode_population_fixed(problem, pop_0);
+    const std::vector<std::uint8_t> enc_1 = encode_population_fixed(problem, pop_1);
+
+    const std::size_t total_bytes_0 = enc_0.size();
+    const std::size_t total_bytes_1 = enc_1.size();
+
+    const std::size_t total_bytes_rnd = get_random_bytes(num_ind);
+    std::vector<uint8_t> enc_rnd(total_bytes_rnd, 0);
+    generate_random_numbers(num_ind, enc_rnd.data(), problem.dimension - 1, seed ^ 0xDEADBEEF);
+
+    int dbg_indiv0 = 0, dbg_cities = 0;
+
+    std::cout << "Streaming encoded populations and random numbers (big instance)..." << std::endl;
+    tb_push_bytes(in0, enc_0.data(), total_bytes_0, true);
+    tb_push_bytes(in1, enc_1.data(), total_bytes_1, true);
+    tb_push_bytes(in_random, enc_rnd.data(), total_bytes_rnd, true);
+
+    std::cout << "Executing Processing Node (big instance)..." << std::endl;
+    processing_node(in0, out0, in1, out1, in_random,
+                    static_cast<int>(num_ind),
+                    problem.dimension - 1,
+                    problem.capacity,
+                    (problem.depot.x << COORD_BITS) | problem.depot.y,
+                    &dbg_indiv0, &dbg_cities);
+
+    std::cout << "Processing Node (big instance) finished. Reading outputs from stream..." << std::endl;
+    std::vector<std::uint8_t> got_0(total_bytes_0);
+    std::vector<std::uint8_t> got_1(total_bytes_1);
+    tb_pull_bytes(out0, got_0.data(), total_bytes_0);
+    tb_pull_bytes(out1, got_1.data(), total_bytes_1);
+
+    std::cout << "Decoding and verifying output individuals (big instance)..." << std::endl;
+    std::vector<Individual> got_child_0;
+    std::vector<Individual> got_child_1;
+    try {
+        got_child_0 = decode_population_fixed(problem, got_0.data(), num_ind);
+        got_child_1 = decode_population_fixed(problem, got_1.data(), num_ind);
+    } catch (const std::exception &e) {
+        std::cout << "Exception decoding output population in big instance test: "
+                  << e.what() << std::endl;
+        std::cout << "BIG INSTANCE INTEGRATION TEST FAILED with exception." << std::endl;
+        return 1;
+    }
+
+    int errors = 0;
+    for (std::size_t i = 0; i < num_ind; ++i) {
+        uint32_t exp_fit_0 = compute_fitness(problem, got_child_0[i]);
+        if (got_child_0[i].fitness != exp_fit_0) {
+            std::cout << "Stream 0 indiv " << i << " fitness mismatch: got "
+                      << got_child_0[i].fitness << ", expected " << exp_fit_0 << std::endl;
+            errors++;
+        }
+        uint32_t exp_fit_1 = compute_fitness(problem, got_child_1[i]);
+        if (got_child_1[i].fitness != exp_fit_1) {
+            std::cout << "Stream 1 indiv " << i << " fitness mismatch: got "
+                      << got_child_1[i].fitness << ", expected " << exp_fit_1 << std::endl;
+            errors++;
+        }
+    }
+
+    if (errors == 0) {
+        std::cout << "BIG INSTANCE INTEGRATION TEST PASSED!" << std::endl;
+    } else {
+        std::cout << "BIG INSTANCE INTEGRATION TEST FAILED with " << errors << " errors." << std::endl;
+    }
+
+    return errors;
+}
+
 int main() {
     int errors = 0;
     int cur_err = 0;
@@ -396,6 +484,11 @@ int main() {
     std::cout << "\nRunning Integration Border Cases Test..." << std::endl;
     cur_err = run_integration_test_border_cases();
     if (cur_err != 0) std::cout << "Integration Border Cases Test failed with " << cur_err << " errors." << std::endl;
+    errors += cur_err;
+
+    std::cout << "\nRunning Integration Big Instance Test..." << std::endl;
+    cur_err = run_integration_test_big_instance();
+    if (cur_err != 0) std::cout << "Integration Big Instance Test failed with " << cur_err << " errors." << std::endl;
     errors += cur_err;
 
     if (errors == 0) {
