@@ -38,16 +38,15 @@ static void copyAndStream(IndividualAsBeats &p, hls::stream<BeatPacket> &reverse
             }
 
             FieldIndex n_fields = high_field - low_field + 1;
-
             reverse_buffer.write(BeatPacket{pb, n_fields});
         }
     }
 }
 
-static void write(IndividualAsBeats &c, hls::stream<BeatPacket> &reverse_buffer, hls::stream<Beat> &buffer, FieldIndex num_cities, BeatIndex total_beats, FieldIndex n_cities_to_copy, StartEndDataWithBeats &data) {
+static void write(IndividualAsBeats &c, hls::stream<BeatPacket> &reverse_buffer, hls::stream<Beat> &buffer, FieldIndex num_cities, BeatIndex total_beats, FieldIndex start_idx, FieldIndex n_cities_to_copy, StartEndDataWithBeats &data) {
     BeatConsumerState state(
         n_cities_to_copy,
-        data.start_end_data.start_field + (data.start_end_data.start_beat << FIELDS_PER_BEAT_LOG2),
+        start_idx,
         data
     );
 
@@ -75,13 +74,13 @@ static void write(IndividualAsBeats &c, hls::stream<BeatPacket> &reverse_buffer,
     flush_accumulated_beat(state, c);
 }
 
-static void reverse_order(IndividualAsBeats &p, IndividualAsBeats &c, FieldIndex num_cities, BeatIndex total_beats, FieldIndex n_cities_to_copy, StartEndDataWithBeats &start_end_data) {
+static void reverse_order(IndividualAsBeats &p, IndividualAsBeats &c, FieldIndex num_cities, BeatIndex total_beats, FieldIndex start_idx, FieldIndex n_cities_to_copy, StartEndDataWithBeats &start_end_data) {
     #pragma HLS DATAFLOW
     hls::stream<BeatPacket> reverse_buffer;
     hls::stream<Beat> buffer;
 
     copyAndStream(p, reverse_buffer, buffer, num_cities, total_beats, start_end_data.start_end_data);
-    write(c, reverse_buffer, buffer, num_cities, total_beats, n_cities_to_copy, start_end_data);
+    write(c, reverse_buffer, buffer, num_cities, total_beats, start_idx, n_cities_to_copy, start_end_data);
 }
 
 
@@ -102,7 +101,7 @@ void mutate_core(
 
     FieldIndex n_cities_to_copy = end_idx - start_idx + 1;
     BeatIndex total_beats = get_total_beats(num_cities);
-    reverse_order(p, c, num_cities, total_beats, n_cities_to_copy, start_end_data_with_beats);
+    reverse_order(p, c, num_cities, total_beats, start_idx, n_cities_to_copy, start_end_data_with_beats);
 }
 
 void mutate(
