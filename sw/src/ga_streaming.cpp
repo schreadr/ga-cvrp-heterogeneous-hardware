@@ -178,7 +178,8 @@ void population_from_buffer(
     const std::uint8_t *buffer,
     std::size_t num_individuals,
     std::vector<EncodedIndividual> &population,
-    int problem_dimension
+    int problem_dimension,
+    std::size_t pop_offset
 ) {
     const int beats_per_individual = get_total_beats(problem_dimension - 1);
     const std::size_t bytes_per_individual = beats_per_individual * AXI_BYTES;
@@ -192,9 +193,9 @@ void population_from_buffer(
         std::uint64_t raw_fitness = 0;
         std::memcpy(&raw_fitness, ind_bytes, std::min(sizeof(raw_fitness), fitness_bytes));
         raw_fitness &= fitness_mask;
-        population[i].fitness = static_cast<std::uint32_t>(raw_fitness);
-        population[i].bytes = ind_bytes;
-        population[i].hash = hash_genome(ind_bytes + fitness_bytes, genome_bytes);
+        population[pop_offset + i].fitness = static_cast<std::uint32_t>(raw_fitness);
+        population[pop_offset + i].bytes = ind_bytes;
+        population[pop_offset + i].hash = hash_genome(ind_bytes + fitness_bytes, genome_bytes);
     }
 }
 

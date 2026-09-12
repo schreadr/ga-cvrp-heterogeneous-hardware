@@ -379,9 +379,11 @@ bool test_run_ga_in_place_buffer_shift() {
     const std::size_t half_bytes = half_pop * bytes_per_ind;
 
     const std::size_t rnd_bytes = get_random_bytes(half_pop);
-    std::vector<std::uint8_t> src(total_bytes, 0);
+    std::vector<std::uint8_t> src_0(half_bytes, 0);
+    std::vector<std::uint8_t> src_1(half_bytes, 0);
     std::vector<std::uint8_t> src_rnd(rnd_bytes, 0);
-    std::vector<std::uint8_t> dst(total_bytes, 0);
+    std::vector<std::uint8_t> dst_0(half_bytes, 0);
+    std::vector<std::uint8_t> dst_1(half_bytes, 0);
     std::vector<std::uint8_t> pop_buf(total_bytes, 0);
 
     GAParams params;
@@ -389,9 +391,11 @@ bool test_run_ga_in_place_buffer_shift() {
     params.n_generations = 1;
     params.n_best_keep = 33.333333; // 2 out of 6 individuals = 33.33%
     params.seed = 42;
-    params.buffer_src = src.data();
+    params.buffer_src_0 = src_0.data();
+    params.buffer_src_1 = src_1.data();
     params.buffer_src_rnd = src_rnd.data();
-    params.buffer_dst = dst.data();
+    params.buffer_dst_0 = dst_0.data();
+    params.buffer_dst_1 = dst_1.data();
     params.buffer_pop   = pop_buf.data();
 
     Individual parent0_before;
@@ -405,7 +409,7 @@ bool test_run_ga_in_place_buffer_shift() {
         parent0_before = decode_individual_fixed(problem, params.buffer_pop + 0 * bytes_per_ind);
         parent1_before = decode_individual_fixed(problem, params.buffer_pop + 1 * bytes_per_ind);
 
-        // 2. Supply offspring across stream 0 (first half) and stream 1 (second half in middle)
+        // 2. Supply offspring across stream 0 and stream 1
         // Parent 0 has fitness 131, Parent 1 has fitness 142.
         std::vector<Individual> offspring_0 = {
             build_individual(problem, {4, 3, 2, 1, 0}), // fitness 102 (< 131)
@@ -419,8 +423,8 @@ bool test_run_ga_in_place_buffer_shift() {
         };
         auto enc_0 = encode_population_fixed(problem, offspring_0);
         auto enc_1 = encode_population_fixed(problem, offspring_1);
-        std::memcpy(params.buffer_dst, enc_0.data(), enc_0.size());
-        std::memcpy(params.buffer_dst + half_bytes, enc_1.data(), enc_1.size());
+        std::memcpy(params.buffer_dst_0, enc_0.data(), enc_0.size());
+        std::memcpy(params.buffer_dst_1, enc_1.data(), enc_1.size());
     };
 
     GASummary summary = run_ga(problem, params, mock_new_gen);

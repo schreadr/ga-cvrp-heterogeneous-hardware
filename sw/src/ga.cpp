@@ -477,7 +477,6 @@ GASummary run_ga(const ProblemInstance& problem, GAParams& params, std::function
 
     std::vector<Individual> initial_population = build_initial_population(problem, pop_size, new_seed());
     const std::vector<std::uint8_t> encoded_population = encode_population_fixed(problem, initial_population);
-    const std::size_t n_bytes = encoded_population.size();
 
     std::vector<EncodedIndividual> vec1 = std::vector<EncodedIndividual>(pop_size);
     std::reference_wrapper<std::vector<EncodedIndividual>> population = vec1;
@@ -491,16 +490,20 @@ GASummary run_ga(const ProblemInstance& problem, GAParams& params, std::function
     std::vector<EncodedIndividual> parents1(half_pop);
     std::vector<EncodedIndividual> parents2(half_pop);
 
-    std::uint8_t *buffer_src = params.buffer_src;
-    std::uint8_t *buffer_dst = params.buffer_dst;
+    std::uint8_t *buffer_src_0 = params.buffer_src_0;
+    std::uint8_t *buffer_src_1 = params.buffer_src_1;
+    std::uint8_t *buffer_dst_0 = params.buffer_dst_0;
+    std::uint8_t *buffer_dst_1 = params.buffer_dst_1;
     std::uint8_t *buffer_src_rnd = params.buffer_src_rnd;
     std::uint8_t *pop_buffer = params.buffer_pop;
 
     const std::size_t print_interval = std::max<std::size_t>(1, params.n_generations / 10);
 
     // Individuals of current population must be sorted on the buffer
-    std::memcpy(buffer_src, encoded_population.data(), n_bytes);
-    population_from_buffer(buffer_src, pop_size, population, problem.dimension);
+    std::memcpy(buffer_src_0, encoded_population.data(), half_bytes);
+    std::memcpy(buffer_src_1, encoded_population.data() + half_bytes, half_bytes);
+    population_from_buffer(buffer_src_0, half_pop, population, problem.dimension, 0);
+    population_from_buffer(buffer_src_1, half_pop, population, problem.dimension, half_pop);
     std::sort(population.get().begin(), population.get().end());
     population_to_buffer(population, pop_buffer, problem.dimension);
 
@@ -511,15 +514,16 @@ GASummary run_ga(const ProblemInstance& problem, GAParams& params, std::function
     for (int i=0; i< params.n_generations; i++){
         auto t0 = std::chrono::steady_clock::now();
         create_parent_pairs(population, parents1, parents2, new_seed());
-        population_to_buffer(parents1, buffer_src, problem.dimension);
-        population_to_buffer(parents2, buffer_src + half_bytes, problem.dimension);
+        population_to_buffer(parents1, buffer_src_0, problem.dimension);
+        population_to_buffer(parents2, buffer_src_1, problem.dimension);
         generate_random_numbers(half_pop, buffer_src_rnd, problem.dimension - 1, new_seed());
         auto t1 = std::chrono::steady_clock::now();
         
         create_new_generation();
         auto t2 = std::chrono::steady_clock::now();
 
-        population_from_buffer(buffer_dst, pop_size, next_generation, problem.dimension);
+        population_from_buffer(buffer_dst_0, half_pop, next_generation, problem.dimension, 0);
+        population_from_buffer(buffer_dst_1, half_pop, next_generation, problem.dimension, half_pop);
         update_population(population, next_generation, next_population, n_keep);
         std::swap(population, next_population);
         population_to_buffer(population, pop_buffer, problem.dimension, true);

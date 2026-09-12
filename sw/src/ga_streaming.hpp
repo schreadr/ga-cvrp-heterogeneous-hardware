@@ -66,7 +66,8 @@ void population_from_buffer(
     const std::uint8_t *buffer,
     std::size_t num_individuals,
     std::vector<EncodedIndividual> &population,
-    int problem_dimension
+    int problem_dimension,
+    std::size_t pop_offset = 0
 );
 
 void population_to_buffer(std::vector<EncodedIndividual> &population, std::uint8_t* bytes, int problem_dimension, bool reversedOrder=false);

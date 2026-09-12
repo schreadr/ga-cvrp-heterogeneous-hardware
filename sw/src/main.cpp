@@ -37,6 +37,7 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <memory>
 
 #include <boost/program_options.hpp>
 #include <coyote/cBench.hpp>
@@ -70,7 +71,7 @@ std::size_t round_up(std::size_t value, std::size_t alignment) {
 }
 
 std::uint8_t *allocate_buffer(coyote::cThread &coyote_thread, std::size_t bytes) {
-    const std::size_t allocation_bytes = round_up(bytes, coyote::PAGE_SIZE);
+    const std::size_t allocation_bytes = round_up(bytes, coyote::HUGE_PAGE_SIZE);
     return reinterpret_cast<std::uint8_t *>(coyote_thread.getMem({coyote::CoyoteAllocType::HPF, allocation_bytes}));
 }
 
@@ -137,22 +138,35 @@ int main(int argc, char *argv[]) {
     coyote::cThread coyote_thread(DEFAULT_VFPGA_ID, getpid());
 
     // Allocate memory in Coyote style using hugepages (HPF)
-    std::uint8_t *src_mem = allocate_buffer(coyote_thread, pop_bytes);
+    // Stream 0 and Stream 1 have dedicated page-aligned hugepage buffers (Issue 3)
+    std::uint8_t *src_mem_0 = allocate_buffer(coyote_thread, half_pop_bytes);
+    std::uint8_t *src_mem_1 = allocate_buffer(coyote_thread, half_pop_bytes);
     std::uint8_t *src_mem_rnd = allocate_buffer(coyote_thread, random_bytes);
-    std::uint8_t *dst_mem = allocate_buffer(coyote_thread, pop_bytes);
-    std::uint8_t *pop_mem = allocate_buffer(coyote_thread, pop_bytes);
+    std::uint8_t *dst_mem_0 = allocate_buffer(coyote_thread, half_pop_bytes);
+    std::uint8_t *dst_mem_1 = allocate_buffer(coyote_thread, half_pop_bytes);
 
-    if (!src_mem || !src_mem_rnd || !dst_mem || !pop_mem) {
+    if (!src_mem_0 || !src_mem_1 || !src_mem_rnd || !dst_mem_0 || !dst_mem_1) {
         throw std::runtime_error("Could not allocate Coyote hugepage buffers; exiting...");
     }
 
+    // pop_mem is purely a CPU-side host scratchpad; allocate standard 64-byte aligned memory
+    // only when running GA, saving hugepages and FPGA TLB entries (Issue 2)
+    std::unique_ptr<std::uint8_t[], void(*)(void*)> pop_mem(nullptr, std::free);
+    if (!smoke_test) {
+        void *ptr = nullptr;
+        if (posix_memalign(&ptr, AXI_BYTES, pop_bytes) != 0 || !ptr) {
+            throw std::bad_alloc();
+        }
+        pop_mem.reset(reinterpret_cast<std::uint8_t *>(ptr));
+    }
+
     // Setup Scatter-Gather descriptors for Stream 0, Stream 1, and Stream 2 (random numbers)
-    coyote::localSg src_sg_0 = { .addr = src_mem, .len = static_cast<uint32_t>(half_pop_bytes), .stream = true, .dest = 0 };
-    coyote::localSg src_sg_1 = { .addr = src_mem + half_pop_bytes, .len = static_cast<uint32_t>(half_pop_bytes), .stream = true, .dest = 1 };
+    coyote::localSg src_sg_0 = { .addr = src_mem_0, .len = static_cast<uint32_t>(half_pop_bytes), .stream = true, .dest = 0 };
+    coyote::localSg src_sg_1 = { .addr = src_mem_1, .len = static_cast<uint32_t>(half_pop_bytes), .stream = true, .dest = 1 };
     coyote::localSg src_sg_rnd = { .addr = src_mem_rnd, .len = static_cast<uint32_t>(random_bytes), .stream = true, .dest = 2 };
 
-    coyote::localSg dst_sg_0 = { .addr = dst_mem, .len = static_cast<uint32_t>(half_pop_bytes), .stream = true, .dest = 0 };
-    coyote::localSg dst_sg_1 = { .addr = dst_mem + half_pop_bytes, .len = static_cast<uint32_t>(half_pop_bytes), .stream = true, .dest = 1 };
+    coyote::localSg dst_sg_0 = { .addr = dst_mem_0, .len = static_cast<uint32_t>(half_pop_bytes), .stream = true, .dest = 0 };
+    coyote::localSg dst_sg_1 = { .addr = dst_mem_1, .len = static_cast<uint32_t>(half_pop_bytes), .stream = true, .dest = 1 };
 
     // Program kernel configuration registers
     const uint32_t reg_num_ind = static_cast<uint32_t>(num_ind_per_stream);
@@ -195,9 +209,10 @@ int main(int argc, char *argv[]) {
         const std::vector<std::uint8_t> enc_0 = encode_population_fixed(problem, init_pop_0);
         const std::vector<std::uint8_t> enc_1 = encode_population_fixed(problem, init_pop_1);
 
-        std::memcpy(src_mem, enc_0.data(), half_pop_bytes);
-        std::memcpy(src_mem + half_pop_bytes, enc_1.data(), half_pop_bytes);
-        std::memset(dst_mem, 0, pop_bytes);
+        std::memcpy(src_mem_0, enc_0.data(), half_pop_bytes);
+        std::memcpy(src_mem_1, enc_1.data(), half_pop_bytes);
+        std::memset(dst_mem_0, 0, half_pop_bytes);
+        std::memset(dst_mem_1, 0, half_pop_bytes);
 
         generate_random_numbers(num_ind_per_stream, src_mem_rnd, reg_num_cities, seed ^ 0xDEADBEEF);
 
@@ -208,7 +223,13 @@ int main(int argc, char *argv[]) {
         std::cout << "Average throughput: " << std::setw(8) << throughput << " MB/s; " << std::endl;
 
         std::cout << "Decoding output individuals and verifying fitness..." << std::endl;
-        const std::vector<Individual> children = decode_population_fixed(problem, dst_mem, pop_size);
+        const std::vector<Individual> children_0 = decode_population_fixed(problem, dst_mem_0, num_ind_per_stream);
+        const std::vector<Individual> children_1 = decode_population_fixed(problem, dst_mem_1, num_ind_per_stream);
+
+        std::vector<Individual> children;
+        children.reserve(pop_size);
+        children.insert(children.end(), children_0.begin(), children_0.end());
+        children.insert(children.end(), children_1.begin(), children_1.end());
 
         int errors = 0;
         for (std::size_t i = 0; i < pop_size; ++i) {
@@ -234,10 +255,12 @@ int main(int argc, char *argv[]) {
         params.n_generations = n_generations;
         params.n_best_keep = n_best_keep;
         params.seed = seed;
-        params.buffer_src = src_mem;
+        params.buffer_src_0 = src_mem_0;
+        params.buffer_src_1 = src_mem_1;
         params.buffer_src_rnd = src_mem_rnd;
-        params.buffer_dst = dst_mem;
-        params.buffer_pop = pop_mem;
+        params.buffer_dst_0 = dst_mem_0;
+        params.buffer_dst_1 = dst_mem_1;
+        params.buffer_pop = pop_mem.get();
 
         GASummary summary = run_ga(problem, params, create_new_generation);
         summary.print();

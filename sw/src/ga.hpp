@@ -144,9 +144,11 @@ struct GAParams {
     double n_best_keep = 0.0;
     std::uint32_t seed = 0;
 
-    std::uint8_t* buffer_src = nullptr;
-    std::uint8_t* buffer_dst = nullptr;
+    std::uint8_t* buffer_src_0 = nullptr;
+    std::uint8_t* buffer_src_1 = nullptr;
     std::uint8_t* buffer_src_rnd = nullptr;
+    std::uint8_t* buffer_dst_0 = nullptr;
+    std::uint8_t* buffer_dst_1 = nullptr;
 
     std::uint8_t* buffer_pop = nullptr;
 };
