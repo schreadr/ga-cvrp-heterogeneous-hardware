@@ -82,6 +82,7 @@ int main(int argc, char *argv[]) {
     std::uint32_t seed = 0;
     bool smoke_test = false;
     std::string vrp_file;
+    int precision = 1;
 
     boost::program_options::options_description runtime_options("Coyote CVRP GA Options");
     runtime_options.add_options()
@@ -91,7 +92,8 @@ int main(int argc, char *argv[]) {
         ("n_best_keep,k", boost::program_options::value<double>(&n_best_keep)->default_value(5.0), "Percentage of best individuals to keep across generations (e.g. 5.0 for 5%)")
         ("seed,s", boost::program_options::value<std::uint32_t>(&seed)->default_value(0xC0FFEEu), "Random seed")
         ("smoke_test,t", boost::program_options::bool_switch(&smoke_test), "Run a single generation smoke test on FPGA and exit")
-        ("vrp_file,f", boost::program_options::value<std::string>(&vrp_file)->default_value(kDefaultProblemFile), "Path to the CVRP instance file");
+        ("vrp_file,f", boost::program_options::value<std::string>(&vrp_file)->default_value(kDefaultProblemFile), "Path to the CVRP instance file")
+        ("precision,r", boost::program_options::value<int>(&precision)->default_value(1), "Coordinate precision scaling factor (higher precision in sqrt calculation)");
 
     boost::program_options::variables_map command_line_arguments;
     boost::program_options::store(boost::program_options::parse_command_line(argc, argv, runtime_options), command_line_arguments);
@@ -106,16 +108,21 @@ int main(int argc, char *argv[]) {
         throw std::invalid_argument("population_size_multiplier must be greater than 0");
     }
 
+    if (precision < 1) {
+        throw std::invalid_argument("precision must not be smaller than 1");
+    }
+
     HEADER("CLI PARAMETERS:");
     std::cout << "Population size multiplier: " << population_size_multiplier << std::endl;
     std::cout << "Number of generations: " << n_generations << std::endl;
     std::cout << "Percentage of best individuals to keep: " << n_best_keep << "%" << std::endl;
     std::cout << "Seed: " << seed << std::endl;
+    std::cout << "Precision: " << precision << std::endl;
     std::cout << "Smoke test mode: " << (smoke_test ? "ENABLED" : "DISABLED") << std::endl;
     std::cout << "Genome hasher: " << get_hash_backend_name() << std::endl;
     std::cout << "VRP file: " << vrp_file << std::endl << std::endl;
 
-    const ProblemInstance problem = parse_vrp(vrp_file);
+    const ProblemInstance problem = parse_vrp(vrp_file, precision);
     validate_encoding_constants(problem);
 
     std::size_t pop_size = problem.dimension * population_size_multiplier;

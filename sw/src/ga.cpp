@@ -217,9 +217,7 @@ void GASummary::print(std::ostream &os) const {
     os << "--- Solution Overview ------------------------------------------------------------\n";
     os << "  Generations:          " << n_generations << "\n";
     os << "  Population Size:      " << pop_size << "\n";
-    if (!best_individual.tour.empty() || best_individual.fitness > 0) {
-        os << "  Best Fitness:         " << best_individual.fitness << "\n";
-    }
+    os << "  Best Fitness:         " << best_fitness << "\n";
     os << "----------------------------------------------------------------------------------\n";
     os << "\n--- Execution Timing -------------------------------------------------------------\n";
     os << "  " << std::left << std::setw(28) << "Phase"
@@ -534,12 +532,14 @@ GASummary run_ga(const ProblemInstance& problem, GAParams& params, std::function
         summary.timings.population_update_ms += std::chrono::duration<double, std::milli>(t3 - t2).count();
 
         if (i % print_interval == 0) {
-            std::cout << "Iteration " << i << " completed. Best fitness: " << population.get()[0].fitness << std::endl;
+            const double current_best = static_cast<double>(population.get()[0].fitness) / static_cast<double>(problem.scaling);
+            std::cout << "Iteration " << i << " completed. Best fitness: " << current_best << std::endl;
         }
     }
 
     if (!population.get().empty() && population.get()[0].bytes != nullptr) {
         summary.best_individual = decode_individual_fixed(problem, population.get()[0].bytes);
+        summary.best_fitness = static_cast<double>(summary.best_individual.fitness) / static_cast<double>(problem.scaling);
     }
 
     auto wall_end = std::chrono::steady_clock::now();

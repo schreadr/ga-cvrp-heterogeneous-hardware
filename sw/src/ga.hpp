@@ -54,6 +54,7 @@ struct ProblemInstance {
     int dimension = 0;
     ProblemNode depot;
     std::vector<ProblemNode> nodes;
+    int scaling = 1;
 };
 
 // Number of customers of a problem instance (all nodes except the depot)
@@ -139,10 +140,10 @@ struct EncodedIndividual {
 };
 
 struct GAParams {
-    std::size_t pop_size = 0;
-    std::size_t n_generations = 0;
-    double n_best_keep = 0.0;
-    std::uint32_t seed = 0;
+    std::size_t pop_size;
+    std::size_t n_generations;
+    double n_best_keep;
+    std::uint32_t seed;
 
     std::uint8_t* buffer_src_0 = nullptr;
     std::uint8_t* buffer_src_1 = nullptr;
@@ -206,9 +207,10 @@ struct GATimings {
 
 struct GASummary {
     // --- Part 1: Solution & Run Information ---
-    std::size_t n_generations = 0;
-    std::size_t pop_size = 0;
+    std::size_t n_generations;
+    std::size_t pop_size;
     Individual best_individual;
+    double best_fitness;
 
     // --- Part 2: Execution Timing ---
     GATimings timings;

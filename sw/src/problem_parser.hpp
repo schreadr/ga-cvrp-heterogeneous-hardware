@@ -37,10 +37,11 @@
 #include "ga.hpp"
 
 /*
- * Parse a CVRP instance file. Coordinates are normalized by subtracting the
- * minimum x / y so that they fit into the kCoordBits-wide encoding fields.
+ * Parse a CVRP instance file. Coordinates are scaled by precision (to allow higher
+ * precision in sqrt distance calculations) and normalized by subtracting the minimum
+ * x / y so that they fit into the COORD_BITS-wide encoding fields.
  */
-ProblemInstance parse_vrp(const std::string &path);
+ProblemInstance parse_vrp(const std::string &path, int precision = 1);
 
 
 #endif

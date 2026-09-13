@@ -53,13 +53,17 @@ std::string value_after_colon(const std::string &line) {
     return trim(line.substr(colon + 1));
 }
 
-ProblemInstance parse_vrp(const std::string &path) {
+ProblemInstance parse_vrp(const std::string &path, int precision) {
+    if (precision < 1) {
+        throw std::invalid_argument("precision must not be smaller than 1");
+    }
     std::ifstream input(path);
     if (!input.is_open()) {
         throw std::runtime_error("Could not open VRP file: " + path);
     }
 
     ProblemInstance problem;
+    problem.scaling = precision;
     std::vector<ProblemNode> all_nodes;
     int expected_dimension = -1;
     int depot_id = -1;
@@ -108,16 +112,18 @@ ProblemInstance parse_vrp(const std::string &path) {
 
         if (section == Section::NodeCoords) {
             std::istringstream iss(line);
-            int id = 0;
-            int x = 0;
-            int y = 0;
+            int id;
+            int x;
+            int y;
             if (!(iss >> id >> x >> y)) {
                 throw std::runtime_error("Failed to parse NODE_COORD_SECTION line: " + line);
             }
             if (all_nodes.empty()) {
                 throw std::runtime_error("DIMENSION must appear before NODE_COORD_SECTION");
             }
-            all_nodes.at(static_cast<std::size_t>(id)) = ProblemNode{id, x, y, 0};
+            int scaled_x = x * precision;
+            int scaled_y = y * precision;
+            all_nodes.at(static_cast<std::size_t>(id)) = ProblemNode{id, scaled_x, scaled_y, 0};
             continue;
         }
 
