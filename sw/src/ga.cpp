@@ -214,14 +214,14 @@ void GASummary::print(std::ostream &os) const {
     auto old_prec = os.precision();
 
     os << "\n============================== GA EXECUTION SUMMARY ==============================\n";
-    os << "--- Solution Overview --------------------------------------------------------\n";
+    os << "--- Solution Overview ------------------------------------------------------------\n";
     os << "  Generations:          " << n_generations << "\n";
     os << "  Population Size:      " << pop_size << "\n";
     if (!best_individual.tour.empty() || best_individual.fitness > 0) {
         os << "  Best Fitness:         " << best_individual.fitness << "\n";
     }
     os << "----------------------------------------------------------------------------------\n";
-    os << "\n--- Execution Timing ---------------------------------------------------------\n";
+    os << "\n--- Execution Timing -------------------------------------------------------------\n";
     os << "  " << std::left << std::setw(28) << "Phase"
        << std::right << std::setw(16) << "Total (ms)"
        << std::right << std::setw(16) << "Avg/Gen (ms)"
