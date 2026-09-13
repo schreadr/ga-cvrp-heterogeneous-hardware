@@ -58,7 +58,7 @@
 // and 0x28 (depot_cords); offsets 0x00-0x0F are reserved by the AXI4-Lite control block.
 // Coyote CSRs are 64-bit wide, so the setCSR index equals byte offset / 8.
 constexpr uint32_t CSR_CONTROL                 = 0x00;
-constexpr uint32_t CSR_CONTROL_AUTORESTART     = 0x81;
+constexpr uint32_t CSR_CONTROL_START           = 0x01;
 constexpr uint32_t CSR_NUM_INDIVIDUALS         = 0x10 / 8;
 constexpr uint32_t CSR_NUM_CITIES              = 0x18 / 8;
 constexpr uint32_t CSR_VEHICLE_CAPACITY        = 0x20 / 8;
@@ -176,7 +176,6 @@ int main(int argc, char *argv[]) {
     coyote_thread.setCSR(reg_num_cities, CSR_NUM_CITIES);
     coyote_thread.setCSR(problem.capacity, CSR_VEHICLE_CAPACITY);
     coyote_thread.setCSR((problem.depot.x << COORD_BITS) | problem.depot.y, CSR_DEPOT_COORDS_CAPACITY);
-    coyote_thread.setCSR(CSR_CONTROL_AUTORESTART, CSR_CONTROL);
 
 
     if(coyote_thread.getCSR(CSR_NUM_INDIVIDUALS) == reg_num_ind &&
@@ -191,6 +190,9 @@ int main(int argc, char *argv[]) {
 
     auto create_new_generation = [&]() {
         coyote_thread.clearCompleted();
+
+        coyote_thread.setCSR(CSR_CONTROL_START, CSR_CONTROL);
+
         // Queue operations on Stream 2 (random numbers), Stream 0 (parents 1), Stream 1 (parents 2)
         coyote_thread.invoke(coyote::CoyoteOper::LOCAL_READ, src_sg_rnd);
         coyote_thread.invoke(coyote::CoyoteOper::LOCAL_TRANSFER, src_sg_0, dst_sg_0);
