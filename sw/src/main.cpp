@@ -64,7 +64,7 @@ constexpr uint32_t CSR_NUM_CITIES              = 0x18 / 8;
 constexpr uint32_t CSR_VEHICLE_CAPACITY        = 0x20 / 8;
 constexpr uint32_t CSR_DEPOT_COORDS_CAPACITY   = 0x28 / 8;
 
-constexpr const char kDefaultProblemFile[] = "../../P-n40-k5_edited.vrp";
+constexpr const char kDefaultProblemFile[] = "../../P-n40-k5.vrp";
 
 std::size_t round_up(std::size_t value, std::size_t alignment) {
     return ((value + alignment - 1) / alignment) * alignment;
