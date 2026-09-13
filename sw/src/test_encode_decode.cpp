@@ -35,7 +35,7 @@
  *
  * Build (standalone, no Coyote dependency):
  *   g++ -std=c++17 -I . test_encode_decode.cpp \
-       ga.cpp ga_streaming.cpp problem_parser.cpp -o test_encode_decode
+       ga.cpp ga_streaming.cpp problem_parser.cpp -o test_encode_decode & & ./test_encode_decode
  */
 
 #include <cstdint>
@@ -53,7 +53,7 @@
 
 namespace {
 
-constexpr const char kDefaultProblemFile[] = "../../P-n16-k8.vrp";
+constexpr const char kDefaultProblemFile[] = "../../P-n40-k5.vrp";
 
 void print_hex_dump(const std::string &label, const std::uint8_t *bytes, std::size_t size) {
     std::cout << label << " (" << size << " B):\n";
@@ -94,7 +94,9 @@ void print_beat_markers(const std::string &label, const std::uint8_t *beat_bytes
             else if (field_idx > 0) {
                 if (bit_in_field == COORD_BITS - 1 || 
                     bit_in_field == (2 * COORD_BITS) - 1 || 
-                    bit_in_field == (2 * COORD_BITS + CAPACITY_BITS) - 1) {
+                    bit_in_field == (2 * COORD_BITS + CAPACITY_BITS) - 1 ||
+                    bit_in_field == (2 * COORD_BITS + CAPACITY_BITS + DEPOT_BITS) - 1 ||
+                    bit_in_field == (2 * COORD_BITS + CAPACITY_BITS + DEPOT_BITS + NODE_ID_BITS) - 1) {
                     std::printf("-");
                 }
             }
@@ -121,6 +123,82 @@ void print_decoded_fields(const std::string &label, Individual& individual, cons
     }
 }
 
+bool test_encode_decode(const ProblemInstance &problem) {
+    const std::size_t population_size = 2;
+    const std::vector<Individual> population = build_initial_population(problem, population_size, 0xC0FFEEu);
+
+    for (std::size_t i = 0; i < population.size(); ++i) {
+        std::cout << "Individual " << i << ": " << population[i] << "\n";
+    }
+    std::cout << "\n";
+
+    const std::vector<std::uint8_t> encoded = encode_population_fixed(problem, population);
+    std::vector<Individual> decoded = decode_population_fixed(problem, encoded.data(), population.size());
+    const std::size_t bytes_per_individual = get_total_beats(problem.dimension - 1) * AXI_BYTES;
+
+    for (std::size_t i = 0; i < population.size(); ++i) {
+        const std::uint8_t *bytes = encoded.data() + i * bytes_per_individual;
+        print_hex_dump("Individual " + std::to_string(i), bytes, bytes_per_individual);
+        print_beat_markers("Individual " + std::to_string(i), bytes);
+        print_decoded_fields("Individual " + std::to_string(i), decoded[i], problem);
+        std::cout << "\n";
+    }
+
+    bool ok = decoded.size() == population.size();
+    for (std::size_t i = 0; ok && i < population.size(); ++i) {
+        if (decoded[i] != population[i]) {
+            std::cerr << "Mismatch at individual " << i << ":\n"
+                      << "  original: " << population[i] << "\n"
+                      << "  decoded:  " << decoded[i] << "\n";
+            ok = false;
+        }
+    }
+
+    if (ok) {
+        std::cout << "PASS: encode/decode round-trip matches for " << population.size() << " individuals.\n";
+        return true;
+    } else {
+        std::cout << "FAIL: round-trip mismatch.\n";
+        return false;
+    }
+}
+
+bool test_generate_random_numbers(const ProblemInstance &problem) {
+    const std::size_t test_rnd_indivs = 5;
+    const std::size_t rnd_bytes = get_random_bytes(test_rnd_indivs);
+    std::vector<std::uint8_t> rnd_buf1(rnd_bytes, 0xFF);
+    std::vector<std::uint8_t> rnd_buf2(rnd_bytes, 0xAA);
+
+    const int num_cities = static_cast<int>(problem.nodes.size());
+    const std::uint64_t seed = 0x12345678ULL;
+    generate_random_numbers(test_rnd_indivs, rnd_buf1.data(), num_cities, seed);
+    generate_random_numbers(test_rnd_indivs, rnd_buf2.data(), num_cities, seed);
+
+    // Verify repeatability
+    if (rnd_buf1 != rnd_buf2) {
+        std::cerr << "FAIL: random number generators with same seed produced different outputs.\n";
+        return false;
+    }
+
+    // Verify values within bounds and padding is zero
+    const uint32_t *words = reinterpret_cast<const uint32_t *>(rnd_buf1.data());
+    const std::size_t total_random_words = test_rnd_indivs * RANDOMS_PER_INDIV;
+    for (std::size_t i = 0; i < total_random_words; ++i) {
+        if (words[i] < 1 || words[i] > static_cast<uint32_t>(num_cities)) {
+            std::cerr << "FAIL: random number out of bounds at index " << i << ": " << words[i] << "\n";
+            return false;
+        }
+    }
+    for (std::size_t b = total_random_words * sizeof(uint32_t); b < rnd_bytes; ++b) {
+        if (rnd_buf1[b] != 0) {
+            std::cerr << "FAIL: non-zero padding byte at index " << b << "\n";
+            return false;
+        }
+    }
+    std::cout << "PASS: generate_random_numbers verified for " << test_rnd_indivs << " individuals.\n";
+    return true;
+}
+
 } // namespace
 
 int main(int argc, char *argv[]) {
@@ -133,43 +211,15 @@ int main(int argc, char *argv[]) {
                   << "  capacity=" << problem.capacity
                   << "  customers=" << numCustomers(problem) << "\n\n";
 
-        const std::size_t population_size = 2;
-        const std::vector<Individual> population = build_initial_population(problem, population_size, 0xC0FFEEu);
-
-        for (std::size_t i = 0; i < population.size(); ++i) {
-            std::cout << "Individual " << i << ": " << population[i] << "\n";
-        }
-        std::cout << "\n";
-
-        const std::vector<std::uint8_t> encoded = encode_population_fixed(problem, population);
-        std::vector<Individual> decoded = decode_population_fixed(problem, encoded.data(), population.size());
-        const std::size_t bytes_per_individual = BEATS_PER_INDIVIDUAL * AXI_BYTES;
-
-        for (std::size_t i = 0; i < population.size(); ++i) {
-            const std::uint8_t *bytes = encoded.data() + i * bytes_per_individual;
-            print_hex_dump("Individual " + std::to_string(i), bytes, bytes_per_individual);
-            print_beat_markers("Individual " + std::to_string(i), bytes);
-            print_decoded_fields("Individual " + std::to_string(i), decoded[i], problem);
-            std::cout << "\n";
-        }
-
-        bool ok = decoded.size() == population.size();
-        for (std::size_t i = 0; ok && i < population.size(); ++i) {
-            if (decoded[i] != population[i]) {
-                std::cerr << "Mismatch at individual " << i << ":\n"
-                          << "  original: " << population[i] << "\n"
-                          << "  decoded:  " << decoded[i] << "\n";
-                ok = false;
-            }
-        }
-
-        if (ok) {
-            std::cout << "PASS: encode/decode round-trip matches for " << population.size() << " individuals.\n";
-            return EXIT_SUCCESS;
-        } else {
-            std::cout << "FAIL: round-trip mismatch.\n";
+        if (!test_encode_decode(problem)) {
             return EXIT_FAILURE;
         }
+
+        if (!test_generate_random_numbers(problem)) {
+            return EXIT_FAILURE;
+        }
+
+        return EXIT_SUCCESS;
     } catch (const std::exception &e) {
         std::cerr << "FAIL: " << e.what() << "\n";
         return EXIT_FAILURE;

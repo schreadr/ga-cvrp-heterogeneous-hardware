@@ -35,16 +35,6 @@
 #include <utility>
 #include <cmath>
 
-template <typename T>
-int bit_width(T n) {
-    if (n == 0) return 0;
-    
-    if constexpr (sizeof(T) <= sizeof(unsigned int)) {
-        return 32 - __builtin_clz(static_cast<unsigned int>(n));
-    } else {
-        return 64 - __builtin_clzll(static_cast<unsigned long long>(n));
-    }
-}
 
 std::string trim(const std::string &text) {
     const auto first = text.find_first_not_of(" \t\r\n");
@@ -63,15 +53,20 @@ std::string value_after_colon(const std::string &line) {
     return trim(line.substr(colon + 1));
 }
 
-ProblemInstance parse_vrp(const std::string &path) {
+ProblemInstance parse_vrp(const std::string &path, int precision) {
+    if (precision < 1) {
+        throw std::invalid_argument("precision must not be smaller than 1");
+    }
     std::ifstream input(path);
     if (!input.is_open()) {
         throw std::runtime_error("Could not open VRP file: " + path);
     }
 
     ProblemInstance problem;
-    std::vector<ProblemNode> nodes;
+    problem.scaling = precision;
+    std::vector<ProblemNode> all_nodes;
     int expected_dimension = -1;
+    int depot_id = -1;
 
     enum class Section {
         Header,
@@ -108,7 +103,7 @@ ProblemInstance parse_vrp(const std::string &path) {
                 problem.name = value_after_colon(line);
             } else if (line.rfind("DIMENSION", 0) == 0) {
                 expected_dimension = std::stoi(value_after_colon(line));
-                nodes.resize(static_cast<std::size_t>(expected_dimension) + 1);
+                all_nodes.resize(static_cast<std::size_t>(expected_dimension) + 1);
             } else if (line.rfind("CAPACITY", 0) == 0) {
                 problem.capacity = std::stoi(value_after_colon(line));
             }
@@ -117,16 +112,18 @@ ProblemInstance parse_vrp(const std::string &path) {
 
         if (section == Section::NodeCoords) {
             std::istringstream iss(line);
-            int id = 0;
-            int x = 0;
-            int y = 0;
+            int id;
+            int x;
+            int y;
             if (!(iss >> id >> x >> y)) {
                 throw std::runtime_error("Failed to parse NODE_COORD_SECTION line: " + line);
             }
-            if (nodes.empty()) {
+            if (all_nodes.empty()) {
                 throw std::runtime_error("DIMENSION must appear before NODE_COORD_SECTION");
             }
-            nodes.at(static_cast<std::size_t>(id)) = ProblemNode{id, x, y, 0};
+            int scaled_x = x * precision;
+            int scaled_y = y * precision;
+            all_nodes.at(static_cast<std::size_t>(id)) = ProblemNode{id, scaled_x, scaled_y, 0};
             continue;
         }
 
@@ -137,77 +134,68 @@ ProblemInstance parse_vrp(const std::string &path) {
             if (!(iss >> id >> demand)) {
                 throw std::runtime_error("Failed to parse DEMAND_SECTION line: " + line);
             }
-            if (nodes.empty()) {
+            if (all_nodes.empty()) {
                 throw std::runtime_error("DIMENSION must appear before DEMAND_SECTION");
             }
-            nodes.at(static_cast<std::size_t>(id)).demand = demand;
+            all_nodes.at(static_cast<std::size_t>(id)).demand = demand;
             continue;
         }
 
         if (section == Section::Depot) {
-            int depot_id = 0;
+            int value = 0;
             std::istringstream iss(line);
-            if (!(iss >> depot_id)) {
+            if (!(iss >> value)) {
                 throw std::runtime_error("Failed to parse DEPOT_SECTION line: " + line);
             }
-            if (depot_id == -1) {
+            if (value == -1) {
                 section = Section::Header;
                 continue;
             }
-            problem.depotId = depot_id;
+            depot_id = value;
             continue;
         }
     }
 
-    if (expected_dimension <= 0 || nodes.size() != static_cast<std::size_t>(expected_dimension) + 1) {
+    if (expected_dimension <= 0 || all_nodes.size() != static_cast<std::size_t>(expected_dimension) + 1) {
         throw std::runtime_error("VRP file did not provide a valid DIMENSION");
     }
     if (problem.capacity <= 0) {
         throw std::runtime_error("VRP file did not provide a valid CAPACITY");
     }
+    if (depot_id <= 0 || depot_id > expected_dimension) {
+        throw std::runtime_error("VRP file did not provide a valid depot ID");
+    }
 
     problem.dimension = expected_dimension;
-    problem.nodes = std::move(nodes);
 
+    // Normalize coordinates by subtracting minimum x / y (including depot)
     int min_x = std::numeric_limits<int>::max();
     int min_y = std::numeric_limits<int>::max();
     for (int id = 1; id <= problem.dimension; ++id) {
-        min_x = std::min(min_x, problem.nodes.at(static_cast<std::size_t>(id)).x);
-        min_y = std::min(min_y, problem.nodes.at(static_cast<std::size_t>(id)).y);
+        min_x = std::min(min_x, all_nodes.at(static_cast<std::size_t>(id)).x);
+        min_y = std::min(min_y, all_nodes.at(static_cast<std::size_t>(id)).y);
     }
 
     int max_trans_x = std::numeric_limits<int>::min();
     int max_trans_y = std::numeric_limits<int>::min();
     for (int id = 1; id <= problem.dimension; ++id) {
-        problem.nodes.at(static_cast<std::size_t>(id)).x -= min_x;
-        problem.nodes.at(static_cast<std::size_t>(id)).y -= min_y;
-        max_trans_x = std::max(max_trans_x, problem.nodes.at(static_cast<std::size_t>(id)).x);
-        max_trans_y = std::max(max_trans_y, problem.nodes.at(static_cast<std::size_t>(id)).y);
+        all_nodes.at(static_cast<std::size_t>(id)).x -= min_x;
+        all_nodes.at(static_cast<std::size_t>(id)).y -= min_y;
+        max_trans_x = std::max(max_trans_x, all_nodes.at(static_cast<std::size_t>(id)).x);
+        max_trans_y = std::max(max_trans_y, all_nodes.at(static_cast<std::size_t>(id)).y);
     }
 
-    int expected_coord_bits = bit_width(std::max(max_trans_x, max_trans_y));
-    if (COORD_BITS < expected_coord_bits) {
-        throw std::runtime_error("COORD_BITS is too small for the given problem instance. Required: " + std::to_string(expected_coord_bits));
-    }
-
-    int expected_capacity_bits = bit_width(problem.capacity);
-    if (CAPACITY_BITS < expected_capacity_bits) {
-        throw std::runtime_error("CAPACITY_BITS is too small for the given problem instance (max capacity must fit in). Required: " + std::to_string(expected_capacity_bits));
-    }
-
-    int max_demand = 0;
+    // Separate depot from customers: depot is stored separately, customers get 0-based indices
+    problem.depot = all_nodes.at(static_cast<std::size_t>(depot_id));
     for (int id = 1; id <= problem.dimension; ++id) {
-        max_demand = std::max(max_demand, problem.nodes.at(static_cast<std::size_t>(id)).demand);
-    }
-    int expected_demand_bits = bit_width(max_demand);
-    if (CAPACITY_BITS < expected_demand_bits) {
-        throw std::runtime_error("CAPACITY_BITS is too small for the given problem instance (max demand must fit in). Required: " + std::to_string(expected_demand_bits));
+        if (id != depot_id) {
+            ProblemNode customer = all_nodes.at(static_cast<std::size_t>(id));
+            customer.id = static_cast<int>(problem.nodes.size());
+            problem.nodes.push_back(customer);
+        }
     }
 
-    int max_fitness = 2 * std::ceil(std::sqrt(max_trans_x*max_trans_x + max_trans_y*max_trans_y)) * (problem.dimension - 1);
-    if (FIELD_BITS < bit_width(max_fitness)) {
-        throw std::runtime_error("FIELD_BITS is too small for the given problem instance (max fitness must fit in). Required: " + std::to_string(bit_width(max_fitness)));
-    }
+    validate_encoding_constants(problem);
 
     return problem;
 }

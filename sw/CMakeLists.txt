@@ -63,3 +63,6 @@ target_link_libraries(${EXEC} PUBLIC Boost::program_options)
 
 # Standalone encode/decode unit test (no Coyote dependency)
 add_executable(test_encode_decode ${TARGET_DIR}/test_encode_decode.cpp ${CVRP_SOURCES})
+
+# Standalone GA unit tests (no Coyote dependency)
+add_executable(ga_test ${TARGET_DIR}/ga_test.cpp ${CVRP_SOURCES})

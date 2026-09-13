@@ -35,9 +35,9 @@ find_package(CoyoteHW REQUIRED)
 project(ga-cvrp-heterogeneous-hardware)
 message("*** GA for CVRP on FPGA ***")
 
-# Enables streams from host memory (CPU DDR), two streams and card memory (FPGA HBM or DDR, TODO disable?) and t
+# Enables streams from host memory (CPU DDR): streams 0 and 1 for population, stream 2 for random numbers
 set(EN_STRM 1)
-set(N_STRM_AXI 2)
+set(N_STRM_AXI 3)
 
 set(EN_MEM 0)
 
@@ -45,7 +45,7 @@ set(EN_MEM 0)
 set(N_REGIONS 1)
 
 # Since timing closure with HBM can be difficult, run place and route with optimizations 
-# set(BUILD_OPT 1)
+set(BUILD_OPT 1)
 
 # Confirm that the selected options are allowed
 validation_checks_hw()
@@ -56,6 +56,13 @@ validation_checks_hw()
 # The macro load_apps(...) will look for a file vfgpa_top.svh in the specified folder (in this case src/)
 load_apps (
     VFPGA_C0_0 "src"
+)
+
+set(HLS_SW_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../sw/src")
+file(COPY
+    "${HLS_SW_INCLUDE_DIR}/ga_encoding_constants.hpp"
+    "${HLS_SW_INCLUDE_DIR}/static_block.hpp"
+    DESTINATION "${CMAKE_CURRENT_SOURCE_DIR}/src/hls/processing_node"
 )
 
 # Create the hardware project

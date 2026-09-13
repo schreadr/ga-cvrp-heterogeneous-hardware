@@ -1,0 +1,518 @@
+/**
+ * Standalone unit tests for update_population and create_parent_pairs in ga.cpp.
+ *
+ * Requirements:
+ * - Bytes in EncodedIndividual are NOT set (set to nullptr).
+ * - Explicitly creates input instances and expected output instances.
+ * - No external dependencies.
+ *
+ * Build & Run:
+ *   g++ -std=c++17 -I . ga_test.cpp ga.cpp ga_streaming.cpp -o ga_test && ./ga_test
+ */
+
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
+#include <iostream>
+#include <sstream>
+#include <string>
+#include <vector>
+
+#include "ga.hpp"
+#include "ga_streaming.hpp"
+
+namespace {
+
+void print_population(const std::string &label, const std::vector<EncodedIndividual> &pop) {
+    std::cout << label << " [size=" << pop.size() << "]: ";
+    for (std::size_t i = 0; i < pop.size(); ++i) {
+        std::cout << pop[i].fitness;
+        if (i + 1 < pop.size()) std::cout << ", ";
+    }
+    std::cout << "\n";
+}
+
+bool check_population_equal(const std::string &test_name,
+                            const std::vector<EncodedIndividual> &actual,
+                            const std::vector<EncodedIndividual> &expected) {
+    if (actual.size() != expected.size()) {
+        std::cerr << "FAIL [" << test_name << "]: size mismatch. Actual: "
+                  << actual.size() << ", Expected: " << expected.size() << "\n";
+        print_population("  Actual  ", actual);
+        print_population("  Expected", expected);
+        return false;
+    }
+
+    bool match = true;
+    for (std::size_t i = 0; i < actual.size(); ++i) {
+        if (actual[i].fitness != expected[i].fitness) {
+            std::cerr << "FAIL [" << test_name << "]: mismatch at index " << i
+                      << ": actual fitness=" << actual[i].fitness
+                      << ", expected fitness=" << expected[i].fitness << "\n";
+            match = false;
+        } else if (actual[i].bytes != expected[i].bytes && 
+            !(actual[i].bytes != nullptr && expected[i].bytes != nullptr && *actual[i].bytes == *expected[i].bytes)) {
+            std::cerr << "FAIL [" << test_name << "]: mismatch at index " << i
+                      << ": actual bytes=" << static_cast<const void*>(actual[i].bytes);
+            if (actual[i].bytes) std::cerr << " (*=" << static_cast<int>(*actual[i].bytes) << ")";
+            std::cerr << ", expected bytes=" << static_cast<const void*>(expected[i].bytes);
+            if (expected[i].bytes) std::cerr << " (*=" << static_cast<int>(*expected[i].bytes) << ")";
+            std::cerr << "\n";
+            match = false;
+        }
+    }
+
+    if (!match) {
+        print_population("  Actual  ", actual);
+        print_population("  Expected", expected);
+        return false;
+    }
+
+    std::cout << "PASS [" << test_name << "]\n";
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// Tests for create_parent_pairs
+// ---------------------------------------------------------------------------
+
+bool test_create_parent_pairs_seed_42() {
+    // Explicit input instance: 4 individuals (bytes NOT set)
+    const std::vector<EncodedIndividual> input_population = {
+        {nullptr, 10},
+        {nullptr, 20},
+        {nullptr, 30},
+        {nullptr, 40}
+    };
+    const std::uint32_t seed = 42;
+
+    std::vector<EncodedIndividual> actual_parents1(input_population.size());
+    std::vector<EncodedIndividual> actual_parents2(input_population.size());
+
+    create_parent_pairs(input_population, actual_parents1, actual_parents2, seed);
+
+    const std::vector<EncodedIndividual> expected_parents1 = {
+        {nullptr, 20},
+        {nullptr, 30},
+        {nullptr, 10},
+        {nullptr, 10}
+    };
+    const std::vector<EncodedIndividual> expected_parents2 = {
+        {nullptr, 10},
+        {nullptr, 30},
+        {nullptr, 10},
+        {nullptr, 20}
+    };
+
+    bool ok1 = check_population_equal("create_parent_pairs_seed_42 (parents1)", actual_parents1, expected_parents1);
+    bool ok2 = check_population_equal("create_parent_pairs_seed_42 (parents2)", actual_parents2, expected_parents2);
+    return ok1 && ok2;
+}
+
+bool test_create_parent_pairs_seed_12345() {
+    const std::vector<EncodedIndividual> input_population = {
+        {nullptr, 10},
+        {nullptr, 20},
+        {nullptr, 30},
+        {nullptr, 40}
+    };
+    const std::uint32_t seed = 12345;
+
+    std::vector<EncodedIndividual> actual_parents1(input_population.size());
+    std::vector<EncodedIndividual> actual_parents2(input_population.size());
+
+    create_parent_pairs(input_population, actual_parents1, actual_parents2, seed);
+
+    const std::vector<EncodedIndividual> expected_parents1 = {
+        {nullptr, 40},
+        {nullptr, 10},
+        {nullptr, 30},
+        {nullptr, 20}
+    };
+    const std::vector<EncodedIndividual> expected_parents2 = {
+        {nullptr, 10},
+        {nullptr, 10},
+        {nullptr, 30},
+        {nullptr, 30}
+    };
+
+    bool ok1 = check_population_equal("create_parent_pairs_seed_12345 (parents1)", actual_parents1, expected_parents1);
+    bool ok2 = check_population_equal("create_parent_pairs_seed_12345 (parents2)", actual_parents2, expected_parents2);
+    return ok1 && ok2;
+}
+
+bool test_create_parent_pairs_homogeneous() {
+    const std::vector<EncodedIndividual> input_population = {
+        {nullptr, 50},
+        {nullptr, 50},
+        {nullptr, 50},
+        {nullptr, 50}
+    };
+    const std::uint32_t seed = 999;
+
+    std::vector<EncodedIndividual> actual_parents1(input_population.size());
+    std::vector<EncodedIndividual> actual_parents2(input_population.size());
+
+    create_parent_pairs(input_population, actual_parents1, actual_parents2, seed);
+
+    const std::vector<EncodedIndividual> expected_parents1 = {
+        {nullptr, 50},
+        {nullptr, 50},
+        {nullptr, 50},
+        {nullptr, 50}
+    };
+    const std::vector<EncodedIndividual> expected_parents2 = {
+        {nullptr, 50},
+        {nullptr, 50},
+        {nullptr, 50},
+        {nullptr, 50}
+    };
+
+    bool ok1 = check_population_equal("create_parent_pairs_homogeneous (parents1)", actual_parents1, expected_parents1);
+    bool ok2 = check_population_equal("create_parent_pairs_homogeneous (parents2)", actual_parents2, expected_parents2);
+    return ok1 && ok2;
+}
+
+// ---------------------------------------------------------------------------
+// Tests for update_population
+// ---------------------------------------------------------------------------
+
+bool test_update_population_better_new_generation() {
+    // Explicit input instances (bytes NOT set)
+    std::vector<EncodedIndividual> input_population = {
+        {nullptr, 100},
+        {nullptr, 200},
+        {nullptr, 300},
+        {nullptr, 400}
+    };
+    std::vector<EncodedIndividual> input_new_generation = {
+        {nullptr, 50},
+        {nullptr, 150},
+        {nullptr, 250},
+        {nullptr, 350}
+    };
+    const int n_keep_best = 2;
+
+    std::vector<EncodedIndividual> actual_new_population(input_population.size());
+    update_population(input_population, input_new_generation, actual_new_population, n_keep_best);
+
+    const std::vector<EncodedIndividual> expected_new_population = {
+        {nullptr, 50},
+        {nullptr, 100},
+        {nullptr, 150},
+        {nullptr, 250}
+    };
+
+    return check_population_equal("update_population_better_new_generation",
+                                  actual_new_population, expected_new_population);
+}
+
+bool test_update_population_with_duplicates() {
+    std::vector<EncodedIndividual> input_population = {
+        {nullptr, 10},
+        {nullptr, 20},
+        {nullptr, 30},
+        {nullptr, 40}
+    };
+    std::vector<EncodedIndividual> input_new_generation = {
+        {nullptr, 15},
+        {nullptr, 15},
+        {nullptr, 25},
+        {nullptr, 25}
+    };
+    const int n_keep_best = 2;
+
+    std::vector<EncodedIndividual> actual_new_population(input_population.size());
+    update_population(input_population, input_new_generation, actual_new_population, n_keep_best);
+
+    const std::vector<EncodedIndividual> expected_new_population = {
+        {nullptr, 10},
+        {nullptr, 15},
+        {nullptr, 20},
+        {nullptr, 25}
+    };
+
+    return check_population_equal("update_population_with_duplicates",
+                                  actual_new_population, expected_new_population);
+}
+
+bool test_update_population_equal_fitness_prefers_new() {
+    const std::uint8_t byte_old = 2;
+    const std::uint8_t byte_new = 1;
+
+    std::vector<EncodedIndividual> input_population = {
+        {&byte_old, 10},
+        {nullptr, 20},
+        {nullptr, 30}
+    };
+    std::vector<EncodedIndividual> input_new_generation = {
+        {&byte_new, 10},
+        {nullptr, 25},
+        {nullptr, 35}
+    };
+    const int n_keep_best = 1;
+
+    std::vector<EncodedIndividual> actual_new_population(input_population.size());
+    update_population(input_population, input_new_generation, actual_new_population, n_keep_best);
+
+    const std::vector<EncodedIndividual> expected_new_population = {
+        {&byte_new, 10},
+        {nullptr, 25},
+        {nullptr, 35}
+    };
+
+    return check_population_equal("update_population_equal_fitness_prefers_new",
+                                  actual_new_population, expected_new_population);
+}
+
+bool test_update_population_all_keep_best() {
+    std::vector<EncodedIndividual> input_population = {
+        {nullptr, 10},
+        {nullptr, 30},
+        {nullptr, 50},
+        {nullptr, 70}
+    };
+    std::vector<EncodedIndividual> input_new_generation = {
+        {nullptr, 20},
+        {nullptr, 40},
+        {nullptr, 60},
+        {nullptr, 80}
+    };
+    const int n_keep_best = 4;
+
+    std::vector<EncodedIndividual> actual_new_population(input_population.size());
+    update_population(input_population, input_new_generation, actual_new_population, n_keep_best);
+
+    // Keeps the best 4 across both: 10, 20, 30, 40.
+    const std::vector<EncodedIndividual> expected_new_population = {
+        {nullptr, 10},
+        {nullptr, 20},
+        {nullptr, 30},
+        {nullptr, 40}
+    };
+
+    return check_population_equal("update_population_all_keep_best",
+                                  actual_new_population, expected_new_population);
+}
+
+// Test 8: Zero elitism (n_keep_best = 0), entire population replaced by new generation
+bool test_update_population_zero_keep_best() {
+    std::vector<EncodedIndividual> input_population = {
+        {nullptr, 10},
+        {nullptr, 20},
+        {nullptr, 30},
+        {nullptr, 40}
+    };
+    std::vector<EncodedIndividual> input_new_generation = {
+        {nullptr, 5},
+        {nullptr, 15},
+        {nullptr, 25},
+        {nullptr, 35}
+    };
+    const int n_keep_best = 0;
+
+    std::vector<EncodedIndividual> actual_new_population(input_population.size());
+    update_population(input_population, input_new_generation, actual_new_population, n_keep_best);
+
+    const std::vector<EncodedIndividual> expected_new_population = {
+        {nullptr, 5},
+        {nullptr, 15},
+        {nullptr, 25},
+        {nullptr, 35}
+    };
+
+    return check_population_equal("update_population_zero_keep_best",
+                                  actual_new_population, expected_new_population);
+}
+
+bool test_update_population_unsorted_new_generation() {
+    std::vector<EncodedIndividual> input_population = {
+        {nullptr, 100},
+        {nullptr, 200},
+        {nullptr, 300},
+        {nullptr, 400}
+    };
+    // new_generation provided in unsorted order
+    std::vector<EncodedIndividual> input_new_generation = {
+        {nullptr, 350},
+        {nullptr, 50},
+        {nullptr, 250},
+        {nullptr, 150}
+    };
+    const int n_keep_best = 2;
+
+    std::vector<EncodedIndividual> actual_new_population(input_population.size());
+    update_population(input_population, input_new_generation, actual_new_population, n_keep_best);
+
+    const std::vector<EncodedIndividual> expected_new_population = {
+        {nullptr, 50},
+        {nullptr, 100},
+        {nullptr, 150},
+        {nullptr, 250}
+    };
+
+    return check_population_equal("update_population_unsorted_new_generation",
+                                  actual_new_population, expected_new_population);
+}
+
+bool test_run_ga_in_place_buffer_shift() {
+    ProblemInstance problem;
+    problem.name = "Test5";
+    problem.capacity = 100;
+    problem.dimension = 5;
+    problem.depot = ProblemNode{0, 0, 0, 0};
+    problem.nodes = {
+        ProblemNode{0, 0, 0, 0},
+        ProblemNode{1, 10, 0, 10},
+        ProblemNode{2, 25, 20, 10},
+        ProblemNode{3, 10, 40, 10},
+        ProblemNode{4, 0, 20, 10}
+    };
+
+    const std::size_t multiplier = 1;
+    std::size_t pop_size = problem.dimension * multiplier; // 5 -> 6 (even)
+    if (pop_size % 2 != 0) pop_size += 1;
+    const std::size_t half_pop = pop_size / 2; // 3
+    const int beats_per_ind = get_total_beats(problem.dimension - 1);
+    const std::size_t bytes_per_ind = beats_per_ind * AXI_BYTES;
+    const std::size_t total_bytes = pop_size * bytes_per_ind;
+    const std::size_t half_bytes = half_pop * bytes_per_ind;
+
+    const std::size_t rnd_bytes = get_random_bytes(half_pop);
+    std::vector<std::uint8_t> src_0(half_bytes, 0);
+    std::vector<std::uint8_t> src_1(half_bytes, 0);
+    std::vector<std::uint8_t> src_rnd(rnd_bytes, 0);
+    std::vector<std::uint8_t> dst_0(half_bytes, 0);
+    std::vector<std::uint8_t> dst_1(half_bytes, 0);
+    std::vector<std::uint8_t> pop_buf(total_bytes, 0);
+
+    GAParams params;
+    params.pop_size = pop_size;
+    params.n_generations = 1;
+    params.n_best_keep = 33.333333; // 2 out of 6 individuals = 33.33%
+    params.seed = 42;
+    params.buffer_src_0 = src_0.data();
+    params.buffer_src_1 = src_1.data();
+    params.buffer_src_rnd = src_rnd.data();
+    params.buffer_dst_0 = dst_0.data();
+    params.buffer_dst_1 = dst_1.data();
+    params.buffer_pop   = pop_buf.data();
+
+    Individual parent0_before;
+    Individual parent1_before;
+    bool mock_called = false;
+
+    auto mock_new_gen = [&]() {
+        mock_called = true;
+
+        // 1. Capture initial parents 0 and 1 from pop_buf before any update happens
+        parent0_before = decode_individual_fixed(problem, params.buffer_pop + 0 * bytes_per_ind);
+        parent1_before = decode_individual_fixed(problem, params.buffer_pop + 1 * bytes_per_ind);
+
+        // 2. Supply offspring across stream 0 and stream 1
+        // Parent 0 has fitness 131, Parent 1 has fitness 142.
+        std::vector<Individual> offspring_0 = {
+            build_individual(problem, {4, 3, 2, 1, 0}), // fitness 102 (< 131)
+            build_individual(problem, {0, 1, 4, 3, 2}), // fitness 111 (< 131)
+            build_individual(problem, {1, 3, 2, 0, 4})  // fitness 147 (> 142)
+        };
+        std::vector<Individual> offspring_1 = {
+            build_individual(problem, {1, 3, 4, 0, 2}), // fitness 156
+            build_individual(problem, {2, 0, 3, 1, 4}), // fitness 187
+            build_individual(problem, {2, 0, 3, 1, 4})  // fitness 187 (duplicate)
+        };
+        auto enc_0 = encode_population_fixed(problem, offspring_0);
+        auto enc_1 = encode_population_fixed(problem, offspring_1);
+        std::memcpy(params.buffer_dst_0, enc_0.data(), enc_0.size());
+        std::memcpy(params.buffer_dst_1, enc_1.data(), enc_1.size());
+    };
+
+    GASummary summary = run_ga(problem, params, mock_new_gen);
+
+    if (!mock_called) {
+        std::cerr << "FAIL [run_ga_in_place_buffer_shift]: mock_new_gen was not called\n";
+        return false;
+    }
+
+    // Verify initial parents had the expected fitnesses
+    if (parent0_before.fitness != 131 || parent1_before.fitness != 142) {
+        std::cerr << "FAIL [run_ga_in_place_buffer_shift]: initial parent fitness mismatch: p0="
+                  << parent0_before.fitness << ", p1=" << parent1_before.fitness << "\n";
+        return false;
+    }
+
+    // Expected final layout in pop_buf:
+    // Slot 0: Offspring (fitness 102)
+    // Slot 1: Offspring (fitness 111)
+    // Slot 2: Parent 0 (fitness 131)  <- Shifted from slot 0 to slot 2 (j=2 > i=0)
+    // Slot 3: Offspring (fitness 147)
+    // Slot 4: Offspring (fitness 156)
+    // Slot 5: Offspring (fitness 187)
+    const std::vector<std::uint32_t> expected_fitnesses = {102, 111, 131, 147, 156, 187};
+
+    for (std::size_t i = 0; i < pop_size; ++i) {
+        Individual ind = decode_individual_fixed(problem, params.buffer_pop + i * bytes_per_ind);
+        if (ind.fitness != expected_fitnesses[i]) {
+            std::cerr << "FAIL [run_ga_in_place_buffer_shift]: slot " << i << " fitness="
+                      << ind.fitness << ", expected=" << expected_fitnesses[i] << "\n";
+            return false;
+        }
+        if (compute_fitness(problem, ind) != ind.fitness) {
+            std::cerr << "FAIL [run_ga_in_place_buffer_shift]: slot " << i << " fitness mismatch with tour\n";
+            return false;
+        }
+    }
+
+    // Check that Parent 0 shifted from slot 0 to slot 2 and preserved its exact tour
+    Individual slot2 = decode_individual_fixed(problem, params.buffer_pop + 2 * bytes_per_ind);
+    if (!(slot2 == parent0_before)) {
+        std::cerr << "FAIL [run_ga_in_place_buffer_shift]: slot 2 corrupted, does not match Parent 0\n";
+        return false;
+    }
+
+    std::cout << "PASS [run_ga_in_place_buffer_shift]\n";
+    return true;
+}
+
+} // namespace
+
+int main() {
+    std::cout << "========================================\n";
+    std::cout << "Running GA Unit Tests (ga_test.cpp)\n";
+    std::cout << "========================================\n\n";
+
+    int passed = 0;
+    int total = 0;
+
+    auto run = [&](const std::string &name, bool (*fn)()) {
+        total++;
+        std::cout << "Test " << total << ": " << name << "\n";
+        if (fn()) {
+            passed++;
+        }
+        std::cout << "\n";
+    };
+
+    // create_parent_pairs tests
+    run("create_parent_pairs (seed 42)", test_create_parent_pairs_seed_42);
+    run("create_parent_pairs (seed 12345)", test_create_parent_pairs_seed_12345);
+    run("create_parent_pairs (homogeneous population)", test_create_parent_pairs_homogeneous);
+
+    // update_population tests
+    run("update_population (better new generation)", test_update_population_better_new_generation);
+    run("update_population (duplicate elimination & fallback)", test_update_population_with_duplicates);
+    run("update_population (equal fitness preference)", test_update_population_equal_fitness_prefers_new);
+    run("update_population (all keep best)", test_update_population_all_keep_best);
+    run("update_population (zero keep best)", test_update_population_zero_keep_best);
+    run("update_population (unsorted new generation)", test_update_population_unsorted_new_generation);
+
+    // run_ga tests
+    run("run_ga (in-place pop_buffer shift integrity)", test_run_ga_in_place_buffer_shift);
+
+    std::cout << "========================================\n";
+    std::cout << "Result: " << passed << " / " << total << " tests passed.\n";
+    std::cout << "========================================\n";
+
+    return (passed == total) ? EXIT_SUCCESS : EXIT_FAILURE;
+}
+
