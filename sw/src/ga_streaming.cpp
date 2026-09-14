@@ -14,39 +14,62 @@ void write_bits_le(std::uint8_t *word_bytes, std::size_t start_bit, unsigned wid
     }
 }
 
+std::vector<uint8_t> encode_node_cache(const ProblemInstance &problem) {
+    const int num_cities = static_cast<int>(problem.nodes.size());
+    const int total_beats = get_total_cache_beats(num_cities);
+    std::vector<uint8_t> buffer(total_beats * AXI_BYTES, 0);
+
+    const uint64_t coord_mask = (1ULL << COORD_BITS) - 1ULL;
+    const uint64_t demand_mask = (1ULL << CAPACITY_BITS) - 1ULL;
+
+    auto encode_entry = [&](int idx, uint64_t x_val, uint64_t y_val, uint64_t demand_val) {
+        int beat_idx = idx >> NODE_CACHE_ENTRIES_PER_BEAT_LOG2;
+        int word_idx = idx & (NODE_CACHE_ENTRIES_PER_BEAT - 1);
+
+        uint64_t *words = reinterpret_cast<uint64_t *>(buffer.data() + beat_idx * AXI_BYTES);
+        uint64_t x = x_val & coord_mask;
+        uint64_t y = y_val & coord_mask;
+        uint64_t demand = demand_val & demand_mask;
+
+        words[word_idx] = (x << NODE_CACHE_COORD_X_OFFSET) |
+                          (y << NODE_CACHE_COORD_Y_OFFSET) |
+                          (demand << NODE_CACHE_DEMAND_OFFSET);
+    };
+
+    for (int i = 0; i < num_cities; ++i) {
+        const ProblemNode &node = problem.nodes[i];
+        encode_entry(i, node.x, node.y, node.demand);
+    }
+
+    // Depot coordinates stored at index num_cities
+    encode_entry(num_cities, problem.depot.x, problem.depot.y, 0);
+
+    return buffer;
+}
+
 std::vector<std::array<uint64_t, 8>> encode_individual_fixed(
     const ProblemInstance &problem,
     const Individual &individual
 ) {
     std::vector<uint64_t> fields;
-    fields.reserve(problem.dimension);
+    fields.reserve(problem.dimension + FITNESS_FIELDS);
 
-    // 1. Fitness field: LSB placed at bit 0 of field 0
-    uint64_t fitness_mask = (FIELD_BITS >= 64) ? ~0ULL : ((1ULL << FIELD_BITS) - 1ULL);
-    fields.push_back(static_cast<uint64_t>(individual.fitness) & fitness_mask);
-
-    // 2. City fields: each integer LSB-aligned to its starting offset L
-    const uint64_t id_mask    = (1ULL << NODE_ID_BITS) - 1ULL;
-    const uint64_t coord_mask = (1ULL << COORD_BITS) - 1ULL;
-    const uint64_t cap_mask   = (1ULL << CAPACITY_BITS) - 1ULL;
+    // 1. City fields: each integer contains only node_id (and depot_after if set)
+    const uint64_t id_mask = (1ULL << NODE_ID_BITS) - 1ULL;
 
     for (const auto &gene : individual.tour) {
-        const ProblemNode &node = problem.nodes.at(static_cast<std::size_t>(gene.node_id));
-
         uint64_t id_val    = static_cast<uint64_t>(gene.node_id) & id_mask;
-        uint64_t x_val     = static_cast<uint64_t>(node.x) & coord_mask;
-        uint64_t y_val     = static_cast<uint64_t>(node.y) & coord_mask;
-        uint64_t cap_val   = static_cast<uint64_t>(node.demand) & cap_mask;
         uint64_t depot_val = gene.depot_after ? 1ULL : 0ULL;
 
-        uint64_t city = 0;
-        city |= (x_val << 0);                                              // Interval [COORD_BITS-1 : 0]
-        city |= (y_val << COORD_BITS);                                     // Interval [2*COORD_BITS-1 : COORD_BITS]
-        city |= (cap_val << (2 * COORD_BITS));                             // Interval [2*COORD_BITS+CAPACITY_BITS-1 : 2*COORD_BITS]
-        city |= (depot_val << (2 * COORD_BITS + CAPACITY_BITS));           // Interval [2*COORD_BITS+CAPACITY_BITS]
-        city |= (id_val << (2 * COORD_BITS + CAPACITY_BITS + DEPOT_BITS)); // Interval [2 * COORD_BITS + CAPACITY_BITS + DEPOT_BITS + NODE_ID_BITS - 1 : 2 * COORD_BITS + CAPACITY_BITS + DEPOT_BITS]
-
+        uint64_t city = id_val | (depot_val << DEPOT_FLAG_FIELD_OFFSET);
         fields.push_back(city);
+    }
+
+    // 2. Fitness fields: stored across FITNESS_FIELDS fields at indices num_cities .. num_cities + FITNESS_FIELDS - 1
+    const uint64_t field_mask = (FIELD_BITS >= 64) ? ~0ULL : ((1ULL << FIELD_BITS) - 1ULL);
+    uint64_t fitness_val = individual.fitness;
+    for (int k = 0; k < FITNESS_FIELDS; ++k) {
+        fields.push_back((fitness_val >> (k * FIELD_BITS)) & field_mask);
     }
 
     const int beats_per_individual = get_total_beats(static_cast<int>(problem.nodes.size()));
@@ -115,41 +138,27 @@ Individual decode_individual_fixed(
         }
     }
 
-    individual.fitness = static_cast<uint32_t>(fields[0] & field_mask);
-
-    const std::uint64_t coord_mask    = (1ULL << COORD_BITS) - 1ULL;
-    const std::uint64_t capacity_mask = (1ULL << CAPACITY_BITS) - 1ULL;
-    const std::uint64_t id_mask       = (1ULL << NODE_ID_BITS) - 1ULL;
-    const std::size_t num_cities       = problem.nodes.size();
+    const std::uint64_t id_mask = (1ULL << NODE_ID_BITS) - 1ULL;
+    const std::size_t num_cities = problem.nodes.size();
 
     individual.tour.reserve(num_cities);
-    for (std::size_t i = 1; i <= num_cities; ++i) {
+    for (std::size_t i = 0; i < num_cities; ++i) {
         std::uint64_t city = fields[i];
+        int node_id = static_cast<int>(city & id_mask);
+        bool depot_after = ((city >> DEPOT_FLAG_FIELD_OFFSET) & 1ULL) != 0ULL;
 
-        // Extract using exact lower bounds
-        std::uint32_t x      = static_cast<uint32_t>((city >> 0) & coord_mask);
-        std::uint32_t y      = static_cast<uint32_t>((city >> COORD_BITS) & coord_mask);
-        std::uint32_t demand = static_cast<uint32_t>((city >> (2 * COORD_BITS)) & capacity_mask);
-        bool depot_after     = ((city >> (2 * COORD_BITS + CAPACITY_BITS)) & 1ULL) != 0ULL;
-        std::uint32_t node_id_enc = static_cast<uint32_t>((city >> (2 * COORD_BITS + CAPACITY_BITS + DEPOT_BITS)) & id_mask);
-
-        // Validate the encoded node_id matches the problem node
-        int node_id = static_cast<int>(node_id_enc);
-        if (node_id >= 0 && node_id < static_cast<int>(problem.nodes.size())) {
-            const auto &node = problem.nodes.at(static_cast<std::size_t>(node_id));
-            if (node.x != static_cast<int>(x) || node.y != static_cast<int>(y)) {
-                std::cout << "Decoded node_id: " << node_id << ", x: " << x << ", y: " << y
-                          << ", demand: " << demand << ", depot_after: " << depot_after
-                          << " but ProblemInstance has x: " << node.x << ", y: " << node.y
-                          << std::endl;
-                throw std::runtime_error("Decoded node_id does not match coordinates in ProblemInstance. ");
-            }
+        if (node_id >= 0 && node_id < static_cast<int>(num_cities)) {
+            individual.tour.push_back(TourGene{node_id, depot_after});
         } else {
             throw std::runtime_error("Decoded node_id is out of range.");
         }
-
-        individual.tour.push_back(TourGene{node_id, depot_after});
     }
+
+    uint64_t fit = 0;
+    for (int k = 0; k < FITNESS_FIELDS; ++k) {
+        fit |= (fields[num_cities + k] & field_mask) << (k * FIELD_BITS);
+    }
+    individual.fitness = static_cast<uint32_t>(fit);
 
     return individual;
 }
@@ -181,21 +190,19 @@ void population_from_buffer(
     int problem_dimension,
     std::size_t pop_offset
 ) {
-    const int beats_per_individual = get_total_beats(problem_dimension - 1);
+    const int num_cities = problem_dimension - 1;
+    const int beats_per_individual = get_total_beats(num_cities);
     const std::size_t bytes_per_individual = beats_per_individual * AXI_BYTES;
-    const std::size_t fitness_bytes = FIELD_BITS / 8;
-    const std::size_t genome_bytes = bytes_per_individual > fitness_bytes
-                                   ? bytes_per_individual - fitness_bytes : 0;
-    const uint64_t fitness_mask = (FIELD_BITS >= 64) ? ~0ULL : ((1ULL << FIELD_BITS) - 1ULL);
+    const std::size_t city_bytes = (num_cities * FIELD_BITS) / 8;
+    const std::size_t fitness_bytes = (FITNESS_FIELDS * FIELD_BITS) / 8;
 
     for (std::size_t i = 0; i < num_individuals; ++i) {
         const std::uint8_t *ind_bytes = buffer + (i * bytes_per_individual);
         std::uint64_t raw_fitness = 0;
-        std::memcpy(&raw_fitness, ind_bytes, std::min(sizeof(raw_fitness), fitness_bytes));
-        raw_fitness &= fitness_mask;
+        std::memcpy(&raw_fitness, ind_bytes + city_bytes, std::min(sizeof(raw_fitness), fitness_bytes));
         population[pop_offset + i].fitness = static_cast<std::uint32_t>(raw_fitness);
         population[pop_offset + i].bytes = ind_bytes;
-        population[pop_offset + i].hash = hash_genome(ind_bytes + fitness_bytes, genome_bytes);
+        population[pop_offset + i].hash = hash_genome(ind_bytes, city_bytes);
     }
 }
 
@@ -229,7 +236,7 @@ void generate_random_numbers(
 
     const std::size_t num_rnd = num_individuals * RANDOMS_PER_INDIV;
     std::mt19937_64 rng(seed);
-    std::uniform_int_distribution<uint32_t> dist(1, num_cities);
+    std::uniform_int_distribution<uint32_t> dist(0, num_cities - 1);
 
     uint32_t *words = reinterpret_cast<uint32_t *>(buffer);
     for (std::size_t i = 0; i < num_rnd; ++i) {

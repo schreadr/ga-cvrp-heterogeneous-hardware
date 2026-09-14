@@ -163,9 +163,9 @@ static int test3(){
     int n_beats = get_total_beats(num_cities);
 
     // Define test parameters with an unaligned start index
-    int dst_start_idx = FIELDS_PER_BEAT - 1; // Start at the second last field of the first beat
+    int dst_start_idx = FIELDS_PER_BEAT - 2; // Start at the second last field of the first beat
     int n_cities_to_copy = 5; // This will require reading from two packets
-    int dst_end_idx = 3;
+    int dst_end_idx = 2;
 
     // Populate mock stream packets using field-setting utilities
     BeatPacket pkt1;
@@ -192,7 +192,7 @@ static int test3(){
     // Execute the HLS component
     stream_beats_to_individual<4>(in_stream, dst_ind, dst_start_idx, n_cities_to_copy, StartEndDataWithBeats(get_start_end_data(dst_start_idx, dst_end_idx), 0, 0), n_beats, num_cities);
 
-    std::vector<int> indices = {dst_start_idx, dst_start_idx + 1, 1, 2, 3};
+    std::vector<int> indices = {dst_start_idx, dst_start_idx + 1, 0, 1, 2};
     std::vector<int> expected_values = {0x111, 0x222, 0x333, 0x444, 0x555};
 
     bool success = true;
@@ -360,9 +360,9 @@ static int test_border_cases() {
     int num_cities = 15;
     int n_beats = get_total_beats(num_cities);
 
-    int dst_start_idx = 14;
+    int dst_start_idx = 13;
     int n_cities_to_copy = 4;
-    int dst_end_idx = 2;
+    int dst_end_idx = 1;
 
     BeatPacket pkt1;
     pkt1.beat = 0;
@@ -383,12 +383,12 @@ static int test_border_cases() {
                                   StartEndDataWithBeats(get_start_end_data(dst_start_idx, dst_end_idx), 0, 0),
                                   n_beats, num_cities);
 
-    std::vector<int> indices = {14, 15, 1, 2};
+    std::vector<int> indices = {13, 14, 0, 1};
     std::vector<int> expected_values = {0x111, 0x222, 0x333, 0x444};
 
     bool success = true;
     success &= validate(indices, expected_values, dst_ind);
-    success &= validate_expect(indices, 0, dst_ind, 16);
+    success &= validate_expect(indices, 0, dst_ind, num_cities);
 
     if (success) {
         std::cout << "Test Border Cases (Util) PASSED successfully!" << std::endl;

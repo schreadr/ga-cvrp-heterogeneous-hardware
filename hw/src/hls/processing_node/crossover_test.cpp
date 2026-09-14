@@ -78,8 +78,8 @@ int run_crossover_test() {
     tb_push_individuals(in0, problem, pop_0);
     tb_push_individuals(in1, problem, pop_1);
 
-    const FieldIndex kOxStart = 2;
-    const FieldIndex kOxEnd = 34;
+    const FieldIndex kOxStart = 1;
+    const FieldIndex kOxEnd = 33;
     hls::stream<CityPair> crossover_pairs("crossover_pairs");
 
     for (std::size_t i = 0; i < kNumIndividuals; ++i) {
@@ -192,10 +192,10 @@ int run_crossover_test_border_cases() {
 
     hls::stream<CityPair> crossover_pairs("crossover_pairs_border_cases");
     const std::vector<CityPair> cut_points = {
-        CityPair{6, 10},
-        CityPair{5, 15},
-        CityPair{1, 5},
-        CityPair{1, 15}
+        CityPair{5, 9},
+        CityPair{4, 14},
+        CityPair{0, 4},
+        CityPair{0, 14}
     };
 
     for (std::size_t i = 0; i < kNumIndividuals_border_cases; ++i) {

@@ -474,6 +474,155 @@ bool test_run_ga_in_place_buffer_shift() {
     return true;
 }
 
+// ---------------------------------------------------------------------------
+// Tests for validate_encoding_constants ("validate the validation")
+// ---------------------------------------------------------------------------
+
+static ProblemInstance make_test_problem(int num_cities, int max_coord, int capacity, int max_demand) {
+    ProblemInstance p;
+    p.name = "test_problem";
+    p.dimension = num_cities + 1;
+    p.capacity = capacity;
+    p.depot = ProblemNode{0, max_coord / 2, max_coord / 2, 0};
+    p.nodes.resize(num_cities);
+    for (int i = 0; i < num_cities; ++i) {
+        p.nodes[i] = ProblemNode{i, max_coord, max_coord, max_demand};
+    }
+    return p;
+}
+
+bool test_validate_constants_valid() {
+    ProblemInstance p = make_test_problem(20, 500, 100, 10);
+    if (!validate_encoding_constants(p, false)) {
+        std::cerr << "FAIL [test_validate_constants_valid]: expected true for valid problem\n";
+        return false;
+    }
+    try {
+        validate_encoding_constants(p, true);
+    } catch (...) {
+        std::cerr << "FAIL [test_validate_constants_valid]: threw exception for valid problem\n";
+        return false;
+    }
+    std::cout << "PASS [test_validate_constants_valid]\n";
+    return true;
+}
+
+bool test_validate_constants_coord_overflow() {
+    ProblemInstance p = make_test_problem(20, 1 << COORD_BITS, 100, 10);
+    std::ostringstream oss;
+    auto *old_buf = std::cout.rdbuf(oss.rdbuf());
+    bool ok = !validate_encoding_constants(p, false);
+    bool threw = false;
+    try {
+        validate_encoding_constants(p, true);
+    } catch (const std::runtime_error &) {
+        threw = true;
+    }
+    std::cout.rdbuf(old_buf);
+
+    if (!ok) {
+        std::cerr << "FAIL [test_validate_constants_coord_overflow]: expected false\n";
+        return false;
+    }
+    if (!threw) {
+        std::cerr << "FAIL [test_validate_constants_coord_overflow]: expected throw\n";
+        return false;
+    }
+    if (oss.str().find("COORD_BITS") == std::string::npos) {
+        std::cerr << "FAIL [test_validate_constants_coord_overflow]: missing COORD_BITS in message\n";
+        return false;
+    }
+    std::cout << "PASS [test_validate_constants_coord_overflow]\n";
+    return true;
+}
+
+bool test_validate_constants_capacity_overflow() {
+    ProblemInstance p = make_test_problem(20, 500, 1 << CAPACITY_BITS, 10);
+    std::ostringstream oss;
+    auto *old_buf = std::cout.rdbuf(oss.rdbuf());
+    bool ok = !validate_encoding_constants(p, false);
+    bool threw = false;
+    try {
+        validate_encoding_constants(p, true);
+    } catch (const std::runtime_error &) {
+        threw = true;
+    }
+    std::cout.rdbuf(old_buf);
+
+    if (!ok) {
+        std::cerr << "FAIL [test_validate_constants_capacity_overflow]: expected false\n";
+        return false;
+    }
+    if (!threw) {
+        std::cerr << "FAIL [test_validate_constants_capacity_overflow]: expected throw\n";
+        return false;
+    }
+    if (oss.str().find("CAPACITY_BITS") == std::string::npos) {
+        std::cerr << "FAIL [test_validate_constants_capacity_overflow]: missing CAPACITY_BITS in message\n";
+        return false;
+    }
+    std::cout << "PASS [test_validate_constants_capacity_overflow]\n";
+    return true;
+}
+
+bool test_validate_constants_demand_overflow() {
+    ProblemInstance p = make_test_problem(20, 500, 100, 1 << CAPACITY_BITS);
+    std::ostringstream oss;
+    auto *old_buf = std::cout.rdbuf(oss.rdbuf());
+    bool ok = !validate_encoding_constants(p, false);
+    bool threw = false;
+    try {
+        validate_encoding_constants(p, true);
+    } catch (const std::runtime_error &) {
+        threw = true;
+    }
+    std::cout.rdbuf(old_buf);
+
+    if (!ok) {
+        std::cerr << "FAIL [test_validate_constants_demand_overflow]: expected false\n";
+        return false;
+    }
+    if (!threw) {
+        std::cerr << "FAIL [test_validate_constants_demand_overflow]: expected throw\n";
+        return false;
+    }
+    if (oss.str().find("CAPACITY_BITS") == std::string::npos) {
+        std::cerr << "FAIL [test_validate_constants_demand_overflow]: missing CAPACITY_BITS in message\n";
+        return false;
+    }
+    std::cout << "PASS [test_validate_constants_demand_overflow]\n";
+    return true;
+}
+
+bool test_validate_constants_max_cities_overflow() {
+    ProblemInstance p = make_test_problem(MAX_CITIES + 1, 50, 100, 10);
+    std::ostringstream oss;
+    auto *old_buf = std::cout.rdbuf(oss.rdbuf());
+    bool ok = !validate_encoding_constants(p, false);
+    bool threw = false;
+    try {
+        validate_encoding_constants(p, true);
+    } catch (const std::runtime_error &) {
+        threw = true;
+    }
+    std::cout.rdbuf(old_buf);
+
+    if (!ok) {
+        std::cerr << "FAIL [test_validate_constants_max_cities_overflow]: expected false\n";
+        return false;
+    }
+    if (!threw) {
+        std::cerr << "FAIL [test_validate_constants_max_cities_overflow]: expected throw\n";
+        return false;
+    }
+    if (oss.str().find("MAX_CITIES") == std::string::npos && oss.str().find("MAX_CACHE_ENTRIES") == std::string::npos) {
+        std::cerr << "FAIL [test_validate_constants_max_cities_overflow]: missing MAX_CITIES/MAX_CACHE_ENTRIES in message\n";
+        return false;
+    }
+    std::cout << "PASS [test_validate_constants_max_cities_overflow]\n";
+    return true;
+}
+
 } // namespace
 
 int main() {
@@ -508,6 +657,13 @@ int main() {
 
     // run_ga tests
     run("run_ga (in-place pop_buffer shift integrity)", test_run_ga_in_place_buffer_shift);
+
+    // validate_encoding_constants tests ("validate the validation")
+    run("validate_encoding_constants (valid instance)", test_validate_constants_valid);
+    run("validate_encoding_constants (coord overflow)", test_validate_constants_coord_overflow);
+    run("validate_encoding_constants (capacity overflow)", test_validate_constants_capacity_overflow);
+    run("validate_encoding_constants (demand overflow)", test_validate_constants_demand_overflow);
+    run("validate_encoding_constants (max_cities overflow)", test_validate_constants_max_cities_overflow);
 
     std::cout << "========================================\n";
     std::cout << "Result: " << passed << " / " << total << " tests passed.\n";

@@ -21,7 +21,7 @@ void inline process_next_packet(
     FieldIndex dst_offset = state.curr_dst_idx & (FIELDS_PER_BEAT - 1);
 
     FieldIndex space_in_beat = FIELDS_PER_BEAT - dst_offset;
-    FieldIndex cities_until_wrap = num_cities - state.curr_dst_idx + 1;
+    FieldIndex cities_until_wrap = num_cities - state.curr_dst_idx;
 
     FieldIndex fields_this_beat = space_in_beat;
     if (fields_this_beat > cities_until_wrap) fields_this_beat = cities_until_wrap;
@@ -61,9 +61,7 @@ void inline process_next_packet(
 
     // Advance destination index and handle wrap-around
     state.curr_dst_idx += fields_this_beat;
-    if (state.curr_dst_idx > num_cities) {
-        state.curr_dst_idx = get_first_city_index(0);
-    }
+    state.curr_dst_idx = wrap_city_index(state.curr_dst_idx, num_cities);
 
     state.window >>= (fields_this_beat << FIELD_BITS_LOG2);
     state.current_valid_fields -= fields_this_beat;

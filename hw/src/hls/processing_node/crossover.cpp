@@ -4,10 +4,10 @@
 #include <cassert>
 #include <hls_stream.h>
 
-void find_unsued_cities(IndividualAsBeats &p, hls::stream<BeatPacket> &out, StartEndData &start_end_data_unused_city_search, FieldIndex num_cities, BeatIndex total_beats, FieldIndex n_cities_to_find, ap_uint<MAX_CITIES> &taken){
+void find_unsued_cities(IndividualAsBeats &p, hls::stream<BeatPacket> &out, StartEndData &start_end_data_unused_city_search, FieldIndex num_cities, BeatIndex total_city_beats, FieldIndex n_cities_to_find, ap_uint<MAX_CITIES> &taken){
     bool wraps_same_beat = (start_end_data_unused_city_search.start_beat == start_end_data_unused_city_search.end_beat &&
                             start_end_data_unused_city_search.start_field > start_end_data_unused_city_search.end_field);
-    BeatIndex fill_beats_to_go = wraps_same_beat ? BeatIndex(total_beats + BeatIndex(1)) : BeatIndex(total_beats);
+    BeatIndex fill_beats_to_go = wraps_same_beat ? BeatIndex(total_city_beats + BeatIndex(1)) : BeatIndex(total_city_beats);
 
     BeatProducerState out_state;
     FieldIndex found = 0;
@@ -16,7 +16,7 @@ void find_unsued_cities(IndividualAsBeats &p, hls::stream<BeatPacket> &out, Star
     FIND_UNSED_CITIES_LOOP: for (BeatIndex step = 0; step < fill_beats_to_go && found < n_cities_to_find; step++) {
         #pragma HLS PIPELINE II=6
         BeatIndex read_b = (start_end_data_unused_city_search.start_beat + step);
-        if (read_b >= total_beats) read_b -= total_beats;
+        if (read_b >= total_city_beats) read_b -= total_city_beats;
 
         FieldIndex f_start = (step == 0) ? start_end_data_unused_city_search.start_field : get_first_city_index(read_b);
         FieldIndex f_end = (step == fill_beats_to_go - 1) ? start_end_data_unused_city_search.end_field : get_last_field_index(num_cities, read_b);
@@ -41,16 +41,16 @@ void find_unsued_cities(IndividualAsBeats &p, hls::stream<BeatPacket> &out, Star
 }
 
 // TODO if resources are required consider processing individuals sequentially.
-void fill_up_in_circle(StartEndData &start_end_data_unused_city_search, StartEndDataWithBeats &start_end_data_with_beats0, StartEndDataWithBeats &start_end_data_with_beats1, IndividualAsBeats &p0, IndividualAsBeats &p1, IndividualAsBeats &c0, IndividualAsBeats &c1, BeatIndex total_beats, FieldIndex num_cities, FieldIndex start_idx, FieldIndex n_cities_to_insert, ap_uint<MAX_CITIES> &taken0, ap_uint<MAX_CITIES> &taken1){
+void fill_up_in_circle(StartEndData &start_end_data_unused_city_search, StartEndDataWithBeats &start_end_data_with_beats0, StartEndDataWithBeats &start_end_data_with_beats1, IndividualAsBeats &p0, IndividualAsBeats &p1, IndividualAsBeats &c0, IndividualAsBeats &c1, BeatIndex total_city_beats, FieldIndex num_cities, FieldIndex start_idx, FieldIndex n_cities_to_insert, ap_uint<MAX_CITIES> &taken0, ap_uint<MAX_CITIES> &taken1){
     #pragma HLS DATAFLOW
     hls::stream<BeatPacket> beat_stream_0;
     hls::stream<BeatPacket> beat_stream_1;
 
-    find_unsued_cities(p1, beat_stream_0, start_end_data_unused_city_search, num_cities, total_beats, n_cities_to_insert, taken0);
-    find_unsued_cities(p0, beat_stream_1, start_end_data_unused_city_search, num_cities, total_beats, n_cities_to_insert, taken1);
+    find_unsued_cities(p1, beat_stream_0, start_end_data_unused_city_search, num_cities, total_city_beats, n_cities_to_insert, taken0);
+    find_unsued_cities(p0, beat_stream_1, start_end_data_unused_city_search, num_cities, total_city_beats, n_cities_to_insert, taken1);
 
-    stream_beats_to_individual<4>(beat_stream_0, c0, start_idx, n_cities_to_insert, start_end_data_with_beats0, total_beats, num_cities);
-    stream_beats_to_individual<4>(beat_stream_1, c1, start_idx, n_cities_to_insert, start_end_data_with_beats1, total_beats, num_cities);
+    stream_beats_to_individual<4>(beat_stream_0, c0, start_idx, n_cities_to_insert, start_end_data_with_beats0, total_city_beats, num_cities);
+    stream_beats_to_individual<4>(beat_stream_1, c1, start_idx, n_cities_to_insert, start_end_data_with_beats1, total_city_beats, num_cities);
 }
 
 
@@ -63,7 +63,7 @@ void crossover(
     int num_individuals,
     int num_cities
 ) {
-    BeatIndex total_beats = get_total_beats(num_cities);
+    BeatIndex total_city_beats = get_total_city_beats(num_cities);
     CROSSOVER_INDIV_LOOP: for (int i = 0; i < num_individuals; i++) {
         hls::read_lock<IndividualAsBeats> p0(in0);
         hls::write_lock<IndividualAsBeats> c0(out0);
@@ -73,8 +73,8 @@ void crossover(
         CityPair cut_points = crossover_pairs.read();
 
         // Copy fitness verbatim
-        set_fitness(c0, get_fitness(p0));
-        set_fitness(c1, get_fitness(p1));
+        set_fitness(c0, get_fitness(p0, num_cities), num_cities);
+        set_fitness(c1, get_fitness(p1, num_cities), num_cities);
 
         // Mark nodes already present in the slice
         ap_uint<MAX_CITIES> taken0 = 0;
@@ -111,14 +111,14 @@ void crossover(
             }
         }
 
-        FieldIndex next_city = (end_idx == num_cities) ? FieldIndex(1) : FieldIndex(end_idx + 1);
-        FieldIndex prev_city = (start_idx == 1) ? FieldIndex(num_cities) : FieldIndex(start_idx - 1);
+        FieldIndex next_city = (end_idx == num_cities - 1) ? FieldIndex(0) : FieldIndex(end_idx + 1);
+        FieldIndex prev_city = (start_idx == 0) ? FieldIndex(num_cities - 1) : FieldIndex(start_idx - 1);
 
         StartEndData start_end_data_unused_city_search = get_start_end_data(next_city, end_idx);
         StartEndData start_end_data_circle = get_start_end_data(next_city, prev_city);
         StartEndDataWithBeats start_end_data_with_beats0(start_end_data_circle, p0[start_end_data_circle.start_beat], p0[start_end_data_circle.end_beat]);
         StartEndDataWithBeats start_end_data_with_beats1(start_end_data_circle, p1[start_end_data_circle.start_beat], p1[start_end_data_circle.end_beat]);
 
-        fill_up_in_circle(start_end_data_unused_city_search, start_end_data_with_beats0, start_end_data_with_beats1, p0, p1, c0, c1, total_beats, num_cities, next_city, num_cities - (end_idx - start_idx + 1), taken0, taken1);
+        fill_up_in_circle(start_end_data_unused_city_search, start_end_data_with_beats0, start_end_data_with_beats1, p0, p1, c0, c1, total_city_beats, num_cities, next_city, num_cities - (end_idx - start_idx + 1), taken0, taken1);
     }
 }

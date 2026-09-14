@@ -55,14 +55,14 @@
 // by Vitis HLS for the scalar configuration arguments of the processing_node kernel
 // (see hw/src/hls/processing_node/processing_node.cpp). The byte offsets of the
 // kernel registers are 0x10 (num_individuals), 0x18 (num_cities), 0x20 (vehicle_capacity),
-// and 0x28 (depot_cords); offsets 0x00-0x0F are reserved by the AXI4-Lite control block.
+// and 0x28 (init_city_cache); offsets 0x00-0x0F are reserved by the AXI4-Lite control block.
 // Coyote CSRs are 64-bit wide, so the setCSR index equals byte offset / 8.
 constexpr uint32_t CSR_CONTROL                 = 0x00;
 constexpr uint32_t CSR_CONTROL_START           = 0x01;
 constexpr uint32_t CSR_NUM_INDIVIDUALS         = 0x10 / 8;
 constexpr uint32_t CSR_NUM_CITIES              = 0x18 / 8;
 constexpr uint32_t CSR_VEHICLE_CAPACITY        = 0x20 / 8;
-constexpr uint32_t CSR_DEPOT_COORDS_CAPACITY   = 0x28 / 8;
+constexpr uint32_t CSR_INIT_CITY_CACHE         = 0x28 / 8;
 
 constexpr const char kDefaultProblemFile[] = "../../P-n40-k5.vrp";
 
@@ -179,16 +179,39 @@ int main(int argc, char *argv[]) {
     const uint32_t reg_num_ind = static_cast<uint32_t>(num_ind_per_stream);
     const uint32_t reg_num_cities = problem.dimension - 1;
 
+    // Initialize node cache on FPGA via Stream 0 beforehand
+    std::cout << "Initializing node cache on FPGA beforehand via stream 0..." << std::endl;
+    const std::vector<uint8_t> cache_bytes = encode_node_cache(problem);
+    std::uint8_t *cache_mem = allocate_buffer(coyote_thread, cache_bytes.size());
+    if (!cache_mem) {
+        throw std::runtime_error("Could not allocate Coyote hugepage buffer for cache; exiting...");
+    }
+    std::memcpy(cache_mem, cache_bytes.data(), cache_bytes.size());
+
+    coyote::localSg cache_sg = {
+        .addr = cache_mem,
+        .len = static_cast<uint32_t>(cache_bytes.size()),
+        .stream = true,
+        .dest = 0
+    };
+
+    coyote_thread.setCSR(1, CSR_INIT_CITY_CACHE); // Dedicated register to trigger cache initialization
+    coyote_thread.setCSR(CSR_CONTROL_START, CSR_CONTROL);
+
+    coyote_thread.invoke(coyote::CoyoteOper::LOCAL_READ, cache_sg);
+    while (coyote_thread.checkCompleted(coyote::CoyoteOper::LOCAL_READ) != 1) {}
+    
+    std::cout << "Node cache successfully initialized on FPGA." << std::endl;
+
     coyote_thread.setCSR(reg_num_ind, CSR_NUM_INDIVIDUALS);
     coyote_thread.setCSR(reg_num_cities, CSR_NUM_CITIES);
     coyote_thread.setCSR(problem.capacity, CSR_VEHICLE_CAPACITY);
-    coyote_thread.setCSR((problem.depot.x << COORD_BITS) | problem.depot.y, CSR_DEPOT_COORDS_CAPACITY);
-
+    coyote_thread.setCSR(0, CSR_INIT_CITY_CACHE);
 
     if(coyote_thread.getCSR(CSR_NUM_INDIVIDUALS) == reg_num_ind &&
        coyote_thread.getCSR(CSR_NUM_CITIES) == reg_num_cities &&
        coyote_thread.getCSR(CSR_VEHICLE_CAPACITY) == problem.capacity &&
-       coyote_thread.getCSR(CSR_DEPOT_COORDS_CAPACITY) == ((problem.depot.x << COORD_BITS) | problem.depot.y)) {
+       coyote_thread.getCSR(CSR_INIT_CITY_CACHE) == 0) {
         std::cout << "Successfully programmed vFPGA kernel configuration registers." << std::endl;
     } else {
         std::cerr << "Error: Failed to program vFPGA kernel configuration registers." << std::endl;

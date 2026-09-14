@@ -151,12 +151,12 @@ int run_integration_test(){
     const std::size_t total_bytes_1 = enc_1.size();
 
     // Stream the cut points corresponding to the hardcoded test values
-    // kOxStart = 2, kOxEnd = 34; kMutateStart = 2, kMutateEnd = 34
+    // kOxStart = 1, kOxEnd = 33; kMutateStart = 1, kMutateEnd = 33
     // Pass them in mixed order to verify the converter sorts smaller first.
     std::vector<uint32_t> rnd_nums = {
-        34, 2, 2, 34, 2, 34,
-        2, 34, 34, 2, 2, 34,
-        34, 2, 34, 2, 34, 2
+        33, 1, 1, 33, 1, 33,
+        1, 33, 33, 1, 1, 33,
+        33, 1, 33, 1, 33, 1
     };
     const std::size_t payload_bytes_rnd = rnd_nums.size() * sizeof(uint32_t);
     const std::size_t total_bytes_rnd = get_random_bytes(kNumIndividuals);
@@ -164,6 +164,16 @@ int run_integration_test(){
     std::memcpy(enc_rnd.data(), rnd_nums.data(), payload_bytes_rnd);
 
     int dbg_indiv0, dbg_cities;
+
+    std::cout << "Sending node cache to FPGA (Stream 0)..." << std::endl;
+    const std::vector<std::uint8_t> cache_bytes = encode_node_cache(problem);
+    tb_push_bytes(in0, cache_bytes.data(), cache_bytes.size(), true);
+    processing_node(in0, out0, in1, out1, in_random,
+                    kNumIndividuals,
+                    kNumCities,
+                    problem.capacity,
+                    1,
+                    &dbg_indiv0, &dbg_cities);
 
     std::cout << "Streaming encoded populations and random numbers..." << std::endl;
     tb_push_bytes(in0, enc_0.data(), total_bytes_0, true);
@@ -175,7 +185,7 @@ int run_integration_test(){
                     kNumIndividuals,
                     kNumCities,
                     problem.capacity,
-                    (problem.depot.x << COORD_BITS) | problem.depot.y,
+                    0,
                     &dbg_indiv0, &dbg_cities);
 
     std::cout << "Processing Node finished. Reading outputs from stream..." << std::endl;
@@ -277,8 +287,8 @@ int run_integration_test_border_cases() {
     const std::size_t total_bytes_1 = enc_1.size();
 
     std::vector<uint32_t> rnd_nums = {
-        6, 10, 1, 1, 1, 1,
-        5, 15, 1, 1, 1, 1
+        5, 9, 0, 0, 0, 0,
+        4, 14, 0, 0, 0, 0
     };
     const std::size_t payload_bytes_rnd = rnd_nums.size() * sizeof(uint32_t);
     const std::size_t total_bytes_rnd = get_random_bytes(kNumIndividuals_border_cases);
@@ -286,6 +296,16 @@ int run_integration_test_border_cases() {
     std::memcpy(enc_rnd.data(), rnd_nums.data(), payload_bytes_rnd);
 
     int dbg_indiv0, dbg_cities;
+
+    std::cout << "Sending node cache to FPGA (Stream 0, border cases)..." << std::endl;
+    const std::vector<std::uint8_t> cache_bytes = encode_node_cache(problem);
+    tb_push_bytes(in0, cache_bytes.data(), cache_bytes.size(), true);
+    processing_node(in0, out0, in1, out1, in_random,
+                    static_cast<int>(kNumIndividuals_border_cases),
+                    kNumCities_border_cases,
+                    problem.capacity,
+                    1,
+                    &dbg_indiv0, &dbg_cities);
 
     std::cout << "Streaming encoded populations and random numbers (border cases)..." << std::endl;
     tb_push_bytes(in0, enc_0.data(), total_bytes_0, true);
@@ -297,7 +317,7 @@ int run_integration_test_border_cases() {
                     static_cast<int>(kNumIndividuals_border_cases),
                     kNumCities_border_cases,
                     problem.capacity,
-                    (problem.depot.x << COORD_BITS) | problem.depot.y,
+                    0,
                     &dbg_indiv0, &dbg_cities);
 
     std::cout << "Processing Node (border cases) finished. Reading outputs from stream..." << std::endl;
@@ -375,6 +395,16 @@ int run_integration_test_big_instance() {
 
     int dbg_indiv0 = 0, dbg_cities = 0;
 
+    std::cout << "Sending node cache to FPGA (Stream 0, big instance)..." << std::endl;
+    const std::vector<std::uint8_t> cache_bytes = encode_node_cache(problem);
+    tb_push_bytes(in0, cache_bytes.data(), cache_bytes.size(), true);
+    processing_node(in0, out0, in1, out1, in_random,
+                    static_cast<int>(num_ind),
+                    problem.dimension - 1,
+                    problem.capacity,
+                    1,
+                    &dbg_indiv0, &dbg_cities);
+
     std::cout << "Streaming encoded populations and random numbers (big instance)..." << std::endl;
     tb_push_bytes(in0, enc_0.data(), total_bytes_0, true);
     tb_push_bytes(in1, enc_1.data(), total_bytes_1, true);
@@ -385,7 +415,7 @@ int run_integration_test_big_instance() {
                     static_cast<int>(num_ind),
                     problem.dimension - 1,
                     problem.capacity,
-                    (problem.depot.x << COORD_BITS) | problem.depot.y,
+                    0,
                     &dbg_indiv0, &dbg_cities);
 
     std::cout << "Processing Node (big instance) finished. Reading outputs from stream..." << std::endl;

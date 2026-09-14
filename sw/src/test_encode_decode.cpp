@@ -35,7 +35,7 @@
  *
  * Build (standalone, no Coyote dependency):
  *   g++ -std=c++17 -I . test_encode_decode.cpp \
-       ga.cpp ga_streaming.cpp problem_parser.cpp -o test_encode_decode & & ./test_encode_decode
+       ga.cpp ga_streaming.cpp problem_parser.cpp -o test_encode_decode && ./test_encode_decode
  */
 
 #include <cstdint>
@@ -91,18 +91,15 @@ void print_beat_markers(const std::string &label, const std::uint8_t *beat_bytes
                 std::printf("|");
             } 
             // Sub-field boundaries inside city fields (-)
-            else if (field_idx > 0) {
-                if (bit_in_field == COORD_BITS - 1 || 
-                    bit_in_field == (2 * COORD_BITS) - 1 || 
-                    bit_in_field == (2 * COORD_BITS + CAPACITY_BITS) - 1 ||
-                    bit_in_field == (2 * COORD_BITS + CAPACITY_BITS + DEPOT_BITS) - 1 ||
-                    bit_in_field == (2 * COORD_BITS + CAPACITY_BITS + DEPOT_BITS + NODE_ID_BITS) - 1) {
+            else {
+                if (bit_in_field == NODE_ID_BITS - 1 || 
+                    bit_in_field == DEPOT_FLAG_FIELD_OFFSET) {
                     std::printf("-");
                 }
             }
 
             // New line formatting at field boundaries for readability
-            if (bit_in_field == FIELD_BITS - 1 && (field_idx + 1) % (64/FIELD_BITS + 1) == 0) {
+            if (bit_in_field == FIELD_BITS - 1 && (field_idx + 1) % 8 == 0) {
                 std::printf("\n  ");
             }
         }
@@ -113,14 +110,20 @@ void print_beat_markers(const std::string &label, const std::uint8_t *beat_bytes
 void print_decoded_fields(const std::string &label, Individual& individual, const ProblemInstance &problem) {
     std::cout << label << " decoded fields:\n";
 
-    std::printf("  field  0 [bits %3d..%3d]  fitness=%u\n",
-                0, FIELD_BITS - 1, individual.fitness);
-
-    for(std::size_t  i = 0; i < individual.tour.size(); ++i) {
+    for(std::size_t i = 0; i < individual.tour.size(); ++i) {
         const auto &city = individual.tour[i];
-        std::printf("  field %2zu [bits %3zu..%3zu] x=%3u y=%3u demand=%2u depot_after=%u node_id=%d\n",
-                    i+1, (i+1) * FIELD_BITS, (i + 2) * FIELD_BITS - 1, problem.nodes[city.node_id].x, problem.nodes[city.node_id].y, problem.nodes[city.node_id].demand, city.depot_after, city.node_id);
+        std::printf("  field %2zu [bits %3zu..%3zu] depot_after=%u node_id=%d\n",
+                    i, i * FIELD_BITS, (i + 1) * FIELD_BITS - 1, city.depot_after, city.node_id);
     }
+
+    std::size_t num_cities = individual.tour.size();
+    for (int f = 0; f < FITNESS_FIELDS; ++f) {
+        std::size_t f_idx = num_cities + f;
+        std::printf("  field %2zu [bits %3zu..%3zu]  fitness_slice[%d]=0x%04x\n",
+                    f_idx, f_idx * FIELD_BITS, (f_idx + 1) * FIELD_BITS - 1,
+                    f, (individual.fitness >> (f * FIELD_BITS)) & ((1u << FIELD_BITS) - 1));
+    }
+    std::printf("  total fitness=%u\n", individual.fitness);
 }
 
 bool test_encode_decode(const ProblemInstance &problem) {
@@ -184,7 +187,7 @@ bool test_generate_random_numbers(const ProblemInstance &problem) {
     const uint32_t *words = reinterpret_cast<const uint32_t *>(rnd_buf1.data());
     const std::size_t total_random_words = test_rnd_indivs * RANDOMS_PER_INDIV;
     for (std::size_t i = 0; i < total_random_words; ++i) {
-        if (words[i] < 1 || words[i] > static_cast<uint32_t>(num_cities)) {
+        if (words[i] >= static_cast<uint32_t>(num_cities)) {
             std::cerr << "FAIL: random number out of bounds at index " << i << ": " << words[i] << "\n";
             return false;
         }
@@ -199,6 +202,42 @@ bool test_generate_random_numbers(const ProblemInstance &problem) {
     return true;
 }
 
+bool test_node_cache_encode(const ProblemInstance &problem) {
+    std::vector<uint8_t> cache = encode_node_cache(problem);
+    const uint64_t coord_mask = (1ULL << COORD_BITS) - 1ULL;
+    const uint64_t demand_mask = (1ULL << CAPACITY_BITS) - 1ULL;
+
+    auto check_entry = [&](int idx, uint64_t exp_x, uint64_t exp_y, uint64_t exp_demand, const std::string &label) {
+        int beat_idx = idx >> NODE_CACHE_ENTRIES_PER_BEAT_LOG2;
+        int word_idx = idx & (NODE_CACHE_ENTRIES_PER_BEAT - 1);
+        const uint64_t *words = reinterpret_cast<const uint64_t *>(cache.data() + beat_idx * AXI_BYTES);
+        uint64_t val = words[word_idx];
+        uint64_t x = (val >> NODE_CACHE_COORD_X_OFFSET) & coord_mask;
+        uint64_t y = (val >> NODE_CACHE_COORD_Y_OFFSET) & coord_mask;
+        uint64_t demand = (val >> NODE_CACHE_DEMAND_OFFSET) & demand_mask;
+        if (x != (exp_x & coord_mask) || y != (exp_y & coord_mask) || demand != (exp_demand & demand_mask)) {
+            std::cerr << "Mismatch in node cache at " << label << " (index " << idx << ")\n";
+            return false;
+        }
+        return true;
+    };
+
+    for (std::size_t i = 0; i < problem.nodes.size(); ++i) {
+        if (!check_entry(static_cast<int>(i), problem.nodes[i].x, problem.nodes[i].y, problem.nodes[i].demand, "node " + std::to_string(i))) {
+            return false;
+        }
+    }
+
+    // Verify depot entry at index problem.nodes.size()
+    int depot_idx = static_cast<int>(problem.nodes.size());
+    if (!check_entry(depot_idx, problem.depot.x, problem.depot.y, 0, "depot")) {
+        return false;
+    }
+
+    std::cout << "PASS: encode_node_cache verified for " << problem.nodes.size() << " nodes + depot.\n";
+    return true;
+}
+
 } // namespace
 
 int main(int argc, char *argv[]) {
@@ -210,6 +249,10 @@ int main(int argc, char *argv[]) {
                   << "  dimension=" << problem.dimension
                   << "  capacity=" << problem.capacity
                   << "  customers=" << numCustomers(problem) << "\n\n";
+
+        if (!test_node_cache_encode(problem)) {
+            return EXIT_FAILURE;
+        }
 
         if (!test_encode_decode(problem)) {
             return EXIT_FAILURE;

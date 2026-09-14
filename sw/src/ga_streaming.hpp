@@ -46,6 +46,10 @@
 #include "ga.hpp"
 
 
+std::vector<uint8_t> encode_node_cache(
+    const ProblemInstance &problem
+);
+
 std::vector<uint8_t> encode_population_fixed(
     const ProblemInstance &problem,
     const std::vector<Individual> &population
