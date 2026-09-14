@@ -137,14 +137,13 @@ bool validate_encoding_constants(const ProblemInstance &problem, bool throw_on_e
 
     int max_fitness = 2 * std::ceil(std::sqrt(max_trans_x * max_trans_x + max_trans_y * max_trans_y)) * (problem.dimension - 1);
     int expected_fitness_bits = bit_width(max_fitness);
-    if (FITNESS_FIELDS * FIELD_BITS < expected_fitness_bits) {
-        std::cout << "FITNESS_FIELDS * FIELD_BITS is too small for the given problem instance (max fitness must fit in). Required: " + std::to_string(expected_fitness_bits) << std::endl;
+    if (FITNESS_BITS < expected_fitness_bits) {
+        std::cout << "FITNESS_BITS is too small for the given problem instance (max fitness must fit in). Required: " + std::to_string(expected_fitness_bits) << std::endl;
         failed = true;
     }
 
-    int total_fields = num_cities + FITNESS_FIELDS;
-    if (MAX_FIELDS < total_fields) {
-        std::cout << "MAX_FIELDS is too small for the given problem instance. Required: " + std::to_string(total_fields) << std::endl;
+    if (MAX_CITIES < num_cities) {
+        std::cout << "MAX_CITIES is too small for the given problem instance. Required: " + std::to_string(num_cities) << std::endl;
         failed = true;
     }
 
@@ -152,8 +151,8 @@ bool validate_encoding_constants(const ProblemInstance &problem, bool throw_on_e
     int req_capacity_bits = std::max({(int)CAPACITY_BITS, expected_capacity_bits, expected_demand_bits});
     int req_coord_bits = std::max<int>(COORD_BITS, expected_coord_bits);
     int req_packed_bits = DEPOT_BITS + req_node_id_bits;
-    if (FIELD_BITS < req_packed_bits) {
-        std::cout << "FIELD_BITS is too small for packed city field. Required: " + std::to_string(req_packed_bits) << std::endl;
+    if (CITY_BITS < req_packed_bits) {
+        std::cout << "CITY_BITS is too small for packed city field. Required: " + std::to_string(req_packed_bits) << std::endl;
         failed = true;
     }
 
@@ -169,22 +168,21 @@ bool validate_encoding_constants(const ProblemInstance &problem, bool throw_on_e
         int new_node_id_bits = std::max<int>(NODE_ID_BITS, req_node_id_bits);
         int new_max_cities = std::max<int>(MAX_CITIES, (1 << new_node_id_bits) - 1);
 
-        int new_field_bits = FIELD_BITS;
-        while (new_field_bits < DEPOT_BITS + new_node_id_bits) {
-            new_field_bits *= 2;
+        int new_city_bits = CITY_BITS;
+        while (new_city_bits < DEPOT_BITS + new_node_id_bits) {
+            new_city_bits *= 2;
         }
-        int new_fitness_fields = std::max<int>(FITNESS_FIELDS, (expected_fitness_bits + new_field_bits - 1) / new_field_bits);
+        int new_fitness_bits = std::max<int>(FITNESS_BITS, expected_fitness_bits);
 
-        int new_field_bits_log2 = static_cast<int>(std::log2(new_field_bits));
+        int new_city_bits_log2 = static_cast<int>(std::log2(new_city_bits));
         int new_axi_width = AXI_WIDTH;
         int new_axi_bytes = new_axi_width / 8;
-        int new_fields_per_beat = new_axi_width / new_field_bits;
-        int new_fields_per_beat_log2 = static_cast<int>(std::log2(new_fields_per_beat));
-        int new_max_fields = new_max_cities + new_fitness_fields;
-        int new_max_fields_log2 = static_cast<int>(std::ceil(std::log2(new_max_fields)));
-        int new_max_beats = (new_max_fields + new_fields_per_beat - 1) / new_fields_per_beat;
+        int new_cities_per_beat = new_axi_width / new_city_bits;
+        int new_cities_per_beat_log2 = static_cast<int>(std::log2(new_cities_per_beat));
+        int new_max_city_beats = (new_max_cities + new_cities_per_beat - 1) / new_cities_per_beat;
+        int new_max_beats = new_max_city_beats + FITNESS_BEATS;
         int new_max_beats_log2 = static_cast<int>(std::ceil(std::log2(new_max_beats)));
-        int new_beat_width = new_fields_per_beat * new_field_bits;
+        int new_beat_width = new_cities_per_beat * new_city_bits;
 
         int new_cache_entry_bits = NODE_CACHE_ENTRY_BITS;
         while (new_cache_entry_bits < 2 * new_coord_bits + new_capacity_bits) {
@@ -203,21 +201,24 @@ bool validate_encoding_constants(const ProblemInstance &problem, bool throw_on_e
         std::cout << "#define COORD_BITS       " << new_coord_bits << "\n";
         std::cout << "#define CAPACITY_BITS    " << new_capacity_bits << "\n";
         std::cout << "#define MAX_CITIES       " << new_max_cities << "\n\n";
-        std::cout << "// Encoding constants\n";
+        std::cout << "// Fitness constants\n";
+        std::cout << "#define FITNESS_BITS     " << new_fitness_bits << "\n";
+        std::cout << "#define FITNESS_BEATS    1\n\n";
+        std::cout << "// City encoding constants\n";
         std::cout << "#define NODE_ID_BITS     " << new_node_id_bits << " // ceil(log2(MAX_CITIES))\n";
         std::cout << "#define DEPOT_BITS        1\n";
-        std::cout << "#define FIELD_BITS       " << new_field_bits << " // next power of two of (DEPOT_BITS + NODE_ID_BITS)\n";
-        std::cout << "#define FIELD_BITS_LOG2   " << new_field_bits_log2 << " // log2(FIELD_BITS)\n\n";
-        std::cout << "#define FITNESS_FIELDS    " << new_fitness_fields << " // Number of FIELD_BITS fields for fitness\n\n";
+        std::cout << "#define DEPOT_FLAG_OFFSET (NODE_ID_BITS)\n";
+        std::cout << "#define CITY_BITS        " << new_city_bits << " // next power of two of (DEPOT_BITS + NODE_ID_BITS)\n";
+        std::cout << "#define CITY_BITS_LOG2   " << new_city_bits_log2 << " // log2(CITY_BITS)\n\n";
         std::cout << "#define AXI_WIDTH        512\n";
         std::cout << "#define AXI_BYTES         64 // AXI_WIDTH / 8\n";
-        std::cout << "#define FIELDS_PER_BEAT   " << new_fields_per_beat << " // AXI_WIDTH / FIELD_BITS\n";
-        std::cout << "#define FIELDS_PER_BEAT_LOG2  " << new_fields_per_beat_log2 << " // log2(FIELDS_PER_BEAT)\n";
-        std::cout << "#define MAX_FIELDS       (MAX_CITIES + FITNESS_FIELDS) // " << new_max_fields << "\n";
-        std::cout << "#define MAX_FIELDS_LOG2  " << new_max_fields_log2 << " // log2(MAX_FIELDS)\n";
-        std::cout << "#define MAX_BEATS        " << new_max_beats << " // MAX_FIELDS + FIELDS_PER_BEAT - 1) / FIELDS_PER_BEAT\n";
+        std::cout << "#define CITIES_PER_BEAT   " << new_cities_per_beat << " // AXI_WIDTH / CITY_BITS\n";
+        std::cout << "#define CITIES_PER_BEAT_LOG2  " << new_cities_per_beat_log2 << " // log2(CITIES_PER_BEAT)\n";
+        std::cout << "#define MAX_CITY_BEATS   " << new_max_city_beats << "\n";
+        std::cout << "#define MAX_BEATS        " << new_max_beats << " // MAX_CITY_BEATS + FITNESS_BEATS\n";
         std::cout << "#define MAX_BEATS_LOG2   " << new_max_beats_log2 << " // log2(MAX_BEATS)\n";
-        std::cout << "#define BEAT_WIDTH       512 // FIELDS_PER_BEAT * FIELD_BITS\n\n";
+        std::cout << "#define BEAT_WIDTH       512 // CITIES_PER_BEAT * CITY_BITS\n\n";
+
         std::cout << "// Node cache encoding constants\n";
         std::cout << "#define NODE_CACHE_ENTRY_BITS        " << new_cache_entry_bits << "\n";
         std::cout << "#define NODE_CACHE_ENTRY_BITS_LOG2    " << new_cache_entry_bits_log2 << "\n";

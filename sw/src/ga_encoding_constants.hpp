@@ -9,26 +9,29 @@
 
 #define COORD_BITS       16
 #define CAPACITY_BITS    16
-#define MAX_CITIES       1022
+#define MAX_CITIES       1023
+#define MAX_CITIES_LOG2  10
 
-// Encoding constants
+// Fitness constants
+#define FITNESS_BITS     32
+#define FITNESS_BEATS     1
+
+// City encoding constants
 #define NODE_ID_BITS     10 // ceil(log2(MAX_CITIES))
 #define DEPOT_BITS        1
-#define DEPOT_FLAG_FIELD_OFFSET (NODE_ID_BITS)
-#define FIELD_BITS       16 // next power of two of (DEPOT_BITS + NODE_ID_BITS)
-#define FIELD_BITS_LOG2   4 // log2(FIELD_BITS)
-
-#define FITNESS_FIELDS    2 // Number of FIELD_BITS fields to store fitness (2 * 16 = 32 bits)
+#define DEPOT_FLAG_OFFSET (NODE_ID_BITS)
+#define CITY_BITS        16 // next power of two of (DEPOT_BITS + NODE_ID_BITS)
+#define CITY_BITS_LOG2    4 // log2(CITY_BITS)
 
 #define AXI_WIDTH        512
 #define AXI_BYTES         64 // AXI_WIDTH / 8
-#define FIELDS_PER_BEAT   32 // AXI_WIDTH / FIELD_BITS
-#define FIELDS_PER_BEAT_LOG2  5 // log2(FIELDS_PER_BEAT)
-#define MAX_FIELDS       (MAX_CITIES + FITNESS_FIELDS) // 1022 + 2 = 1024
-#define MAX_FIELDS_LOG2  10 // ceil(log2(MAX_FIELDS))
-#define MAX_BEATS        ((MAX_FIELDS + FIELDS_PER_BEAT - 1) / FIELDS_PER_BEAT) // (1024 + 31) / 32 = 32
-#define MAX_BEATS_LOG2   5 // ceil(log2(MAX_BEATS))
-#define BEAT_WIDTH       512 // FIELDS_PER_BEAT * FIELD_BITS
+#define CITIES_PER_BEAT   32 // AXI_WIDTH / CITY_BITS
+#define CITIES_PER_BEAT_LOG2  5 // log2(CITIES_PER_BEAT)
+
+#define MAX_CITY_BEATS   ((MAX_CITIES + CITIES_PER_BEAT - 1) / CITIES_PER_BEAT) // (1022 + 31) / 32 = 32
+#define MAX_BEATS        (MAX_CITY_BEATS + FITNESS_BEATS) // 32 + 1 = 33
+#define MAX_BEATS_LOG2   6 // ceil(log2(MAX_BEATS)) -> ceil(log2(33)) = 6
+#define BEAT_WIDTH       512 // CITIES_PER_BEAT * CITY_BITS
 
 // Node cache encoding constants (for streaming static coordinates and demands)
 #define NODE_CACHE_ENTRY_BITS        64
@@ -44,7 +47,6 @@
 #define MAX_CACHE_ENTRIES            (MAX_CITIES + 1) // MAX_CITIES customers + 1 depot
 #define MAX_CACHE_BEATS              ((MAX_CACHE_ENTRIES + NODE_CACHE_ENTRIES_PER_BEAT - 1) / NODE_CACHE_ENTRIES_PER_BEAT)
 
-
 // Random number stream constants
 #define RANDOM_BITS              32
 #define RANDOM_BITS_LOG2          5 // log2(RANDOM_BITS)
@@ -57,26 +59,25 @@ static void assert_power_of_two(int x) {
 }
 
 static_block {
-    assert_power_of_two(FIELD_BITS);
-    assert_power_of_two(FIELDS_PER_BEAT);
+    assert_power_of_two(CITY_BITS);
+    assert_power_of_two(CITIES_PER_BEAT);
     assert_power_of_two(AXI_WIDTH);
     assert_power_of_two(AXI_BYTES);
 
     assert(NODE_ID_BITS == std::ceil(std::log2(MAX_CITIES)));
-    assert(FIELD_BITS >= DEPOT_BITS + NODE_ID_BITS);
+    assert(CITY_BITS >= DEPOT_BITS + NODE_ID_BITS);
 
     assert(AXI_BYTES * 8 == AXI_WIDTH);
-    assert(FIELDS_PER_BEAT * FIELD_BITS == AXI_WIDTH);
+    assert(CITIES_PER_BEAT * CITY_BITS == AXI_WIDTH);
 
-    assert((1ULL << FIELD_BITS_LOG2) == FIELD_BITS);
-    assert((1ULL << FIELDS_PER_BEAT_LOG2) == FIELDS_PER_BEAT);
+    assert((1ULL << CITY_BITS_LOG2) == CITY_BITS);
+    assert((1ULL << CITIES_PER_BEAT_LOG2) == CITIES_PER_BEAT);
 
-    assert(FITNESS_FIELDS * FIELD_BITS >= 32);
-    assert(MAX_FIELDS == MAX_CITIES + FITNESS_FIELDS);
-    assert(MAX_FIELDS_LOG2 == std::ceil(std::log2(MAX_FIELDS)));
-
-    assert(MAX_BEATS == (MAX_FIELDS + FIELDS_PER_BEAT - 1) / FIELDS_PER_BEAT);
-    assert(BEAT_WIDTH == FIELDS_PER_BEAT * FIELD_BITS);
+    assert(FITNESS_BITS <= AXI_WIDTH);
+    assert(MAX_CITY_BEATS == (MAX_CITIES + CITIES_PER_BEAT - 1) / CITIES_PER_BEAT);
+    assert(MAX_BEATS == MAX_CITY_BEATS + FITNESS_BEATS);
+    assert(MAX_BEATS_LOG2 == std::ceil(std::log2(MAX_BEATS)));
+    assert(BEAT_WIDTH == CITIES_PER_BEAT * CITY_BITS);
 
     assert_power_of_two(RANDOM_BITS);
     assert_power_of_two(RANDOMS_PER_BEAT);
@@ -99,13 +100,12 @@ static_block {
 }
 
 // inlined for hw side
-static inline int get_total_beats(int num_cities) {
-    int total_fields = num_cities + FITNESS_FIELDS;
-    return (total_fields + FIELDS_PER_BEAT - 1) >> FIELDS_PER_BEAT_LOG2; // ... / FIELDS_PER_BEAT
+static inline int get_total_city_beats(int num_cities) {
+    return (num_cities + CITIES_PER_BEAT - 1) >> CITIES_PER_BEAT_LOG2;
 }
 
-static inline int get_total_city_beats(int num_cities) {
-    return (num_cities + FIELDS_PER_BEAT - 1) >> FIELDS_PER_BEAT_LOG2;
+static inline int get_total_beats(int num_cities) {
+    return get_total_city_beats(num_cities) + FITNESS_BEATS;
 }
 
 static inline int get_total_cache_beats(int num_cities) {

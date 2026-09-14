@@ -71,7 +71,7 @@ void print_hex_dump(const std::string &label, const std::uint8_t *bytes, std::si
 }
 
 void print_beat_markers(const std::string &label, const std::uint8_t *beat_bytes) {
-    std::cout << label << " bit layout (Memory Stream Order LSB->MSB, '|' field, '-' sub-field):\n  ";
+    std::cout << label << " bit layout (Memory Stream Order LSB->MSB, '|' city/field, '-' sub-field):\n  ";
 
     for (int abs_bit = 0; abs_bit < AXI_WIDTH; ++abs_bit) {
         // Sample bits LSB-first within each byte
@@ -81,25 +81,25 @@ void print_beat_markers(const std::string &label, const std::uint8_t *beat_bytes
         bool set = (beat_bytes[byte_idx] >> bit_in_byte) & 1;
         std::printf("%c", set ? '1' : '0');
 
-        int field_idx = abs_bit / FIELD_BITS;
-        int bit_in_field = abs_bit % FIELD_BITS;
+        int city_idx = abs_bit / CITY_BITS;
+        int bit_in_city = abs_bit % CITY_BITS;
 
         // Print dividers (except after the very last bit of the AXI beat)
         if (abs_bit + 1 < AXI_WIDTH) {
-            // End of field boundary (|)
-            if (bit_in_field == FIELD_BITS - 1) {
+            // End of city boundary (|)
+            if (bit_in_city == CITY_BITS - 1) {
                 std::printf("|");
             } 
-            // Sub-field boundaries inside city fields (-)
+            // Sub-field boundaries inside city (-)
             else {
-                if (bit_in_field == NODE_ID_BITS - 1 || 
-                    bit_in_field == DEPOT_FLAG_FIELD_OFFSET) {
+                if (bit_in_city == NODE_ID_BITS - 1 || 
+                    bit_in_city == DEPOT_FLAG_OFFSET) {
                     std::printf("-");
                 }
             }
 
-            // New line formatting at field boundaries for readability
-            if (bit_in_field == FIELD_BITS - 1 && (field_idx + 1) % 8 == 0) {
+            // New line formatting at city boundaries for readability
+            if (bit_in_city == CITY_BITS - 1 && (city_idx + 1) % 8 == 0) {
                 std::printf("\n  ");
             }
         }
@@ -108,22 +108,17 @@ void print_beat_markers(const std::string &label, const std::uint8_t *beat_bytes
 }
 
 void print_decoded_fields(const std::string &label, Individual& individual, const ProblemInstance &problem) {
-    std::cout << label << " decoded fields:\n";
+    std::cout << label << " decoded tour & fitness:\n";
 
     for(std::size_t i = 0; i < individual.tour.size(); ++i) {
         const auto &city = individual.tour[i];
-        std::printf("  field %2zu [bits %3zu..%3zu] depot_after=%u node_id=%d\n",
-                    i, i * FIELD_BITS, (i + 1) * FIELD_BITS - 1, city.depot_after, city.node_id);
+        std::printf("  city %2zu [beat %zu, slot %2zu] depot_after=%u node_id=%d\n",
+                    i, i / CITIES_PER_BEAT, i % CITIES_PER_BEAT, city.depot_after, city.node_id);
     }
 
-    std::size_t num_cities = individual.tour.size();
-    for (int f = 0; f < FITNESS_FIELDS; ++f) {
-        std::size_t f_idx = num_cities + f;
-        std::printf("  field %2zu [bits %3zu..%3zu]  fitness_slice[%d]=0x%04x\n",
-                    f_idx, f_idx * FIELD_BITS, (f_idx + 1) * FIELD_BITS - 1,
-                    f, (individual.fitness >> (f * FIELD_BITS)) & ((1u << FIELD_BITS) - 1));
-    }
-    std::printf("  total fitness=%u\n", individual.fitness);
+    std::size_t total_city_beats = get_total_city_beats(individual.tour.size());
+    std::printf("  fitness beat %zu [bits 0..%d] fitness=%u\n",
+                total_city_beats, FITNESS_BITS - 1, individual.fitness);
 }
 
 bool test_encode_decode(const ProblemInstance &problem) {
@@ -137,12 +132,18 @@ bool test_encode_decode(const ProblemInstance &problem) {
 
     const std::vector<std::uint8_t> encoded = encode_population_fixed(problem, population);
     std::vector<Individual> decoded = decode_population_fixed(problem, encoded.data(), population.size());
-    const std::size_t bytes_per_individual = get_total_beats(problem.dimension - 1) * AXI_BYTES;
+    const int beats_per_individual = get_total_beats(problem.dimension - 1);
+    const std::size_t bytes_per_individual = beats_per_individual * AXI_BYTES;
 
     for (std::size_t i = 0; i < population.size(); ++i) {
         const std::uint8_t *bytes = encoded.data() + i * bytes_per_individual;
         print_hex_dump("Individual " + std::to_string(i), bytes, bytes_per_individual);
-        print_beat_markers("Individual " + std::to_string(i), bytes);
+        for (int b = 0; b < beats_per_individual; ++b) {
+            std::string beat_label = "Individual " + std::to_string(i) + " Beat " + std::to_string(b);
+            if (b == beats_per_individual - 1) beat_label += " (Fitness Beat)";
+            else beat_label += " (City Beat)";
+            print_beat_markers(beat_label, bytes + b * AXI_BYTES);
+        }
         print_decoded_fields("Individual " + std::to_string(i), decoded[i], problem);
         std::cout << "\n";
     }

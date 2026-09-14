@@ -18,7 +18,7 @@ static void producer(
     hls::stream<axi_word_t> &in_stream,
     hls::stream_of_blocks<IndividualAsBeats> &out,
     int num_individuals,
-    FieldIndex num_cities
+    CityIndex num_cities
 ) {
     BeatIndex total_beats = get_total_beats(num_cities);
 
@@ -37,7 +37,7 @@ static void consumer(
     hls::stream_of_blocks<IndividualAsBeats> &in,
     hls::stream<axi_word_t> &out_stream,
     int num_individuals,
-    FieldIndex num_cities
+    CityIndex num_cities
 ) {
     BeatIndex total_beats = get_total_beats(num_cities);
 
@@ -168,7 +168,7 @@ static void process_stream(
     hls::stream<axi_word_t> &out1,
     hls::stream<axi_word_t> &in_random,
     int num_individuals,
-    FieldIndex num_cities,
+    CityIndex num_cities,
     Capacity vehicle_capacity
 ) {
     #pragma HLS DATAFLOW
@@ -253,6 +253,6 @@ void processing_node(
     if (init_city_cache) {
         init_node_cache(in0, num_cities);
     } else {
-        process_stream(in0, out0, in1, out1, in_random, num_individuals, FieldIndex(num_cities), Capacity(vehicle_capacity));
+        process_stream(in0, out0, in1, out1, in_random, num_individuals, CityIndex(num_cities), Capacity(vehicle_capacity));
     }
 }

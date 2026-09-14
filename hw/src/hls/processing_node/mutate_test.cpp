@@ -60,8 +60,8 @@ int run_mutate_test() {
     std::cout << "Streaming parents into block streams..." << std::endl;
     tb_push_individuals(in0, problem, pop_0);
 
-    const FieldIndex kMutateStart = 1;
-    const FieldIndex kMutateEnd = 33;
+    const CityIndex kMutateStart = 1;
+    const CityIndex kMutateEnd = 33;
     hls::stream<CityPair> mutate_pairs("mutate_pairs");
 
     for (std::size_t i = 0; i < kNumIndividuals; ++i) {

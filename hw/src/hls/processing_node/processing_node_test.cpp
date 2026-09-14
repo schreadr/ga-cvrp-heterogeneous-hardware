@@ -82,13 +82,13 @@ int test_random_number_converter() {
         39, 4, 7, 18, 13, 13
     };
 
-    std::vector<std::pair<FieldIndex, FieldIndex>> exp_cx = {
+    std::vector<std::pair<CityIndex, CityIndex>> exp_cx = {
         {3, 15}, {2, 2}, {25, 40}, {11, 19}, {4, 39}
     };
-    std::vector<std::pair<FieldIndex, FieldIndex>> exp_mut_0 = {
+    std::vector<std::pair<CityIndex, CityIndex>> exp_mut_0 = {
         {8, 20}, {1, 30}, {12, 14}, {5, 9}, {7, 18}
     };
-    std::vector<std::pair<FieldIndex, FieldIndex>> exp_mut_1 = {
+    std::vector<std::pair<CityIndex, CityIndex>> exp_mut_1 = {
         {5, 10}, {16, 22}, {1, 35}, {4, 28}, {13, 13}
     };
 

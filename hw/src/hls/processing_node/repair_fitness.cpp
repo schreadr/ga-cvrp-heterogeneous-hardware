@@ -3,14 +3,14 @@
 
 #include <hls_stream.h>
 
-// Static mask to clear all depot flags (bit 20 = 2*COORD_BITS+CAPACITY_BITS)
+// Static mask to clear all depot flags
 static inline ap_uint<BEAT_WIDTH> get_clear_depots_mask() {
     #pragma HLS INLINE
     ap_uint<BEAT_WIDTH> mask = ~(ap_uint<BEAT_WIDTH>(0));
-    for (int i = 0; i < FIELDS_PER_BEAT; ++i) {
+    for (int i = 0; i < CITIES_PER_BEAT; ++i) {
         #pragma HLS UNROLL
-        // Clear the specific depot bit for each field
-        mask &= ~(ap_uint<BEAT_WIDTH>(1) << (i * FIELD_BITS + DEPOT_FLAG_FIELD_OFFSET));
+        // Clear the specific depot bit for each city
+        mask &= ~(ap_uint<BEAT_WIDTH>(1) << (i * CITY_BITS + DEPOT_FLAG_OFFSET));
     }
     return mask;
 }
@@ -62,7 +62,7 @@ static void stream_input_beats(
 
 static void repair_depots(
     hls::stream<Beat> &input_beats,
-    FieldIndex num_cities,
+    CityIndex num_cities,
     Capacity vehicle_capacity,
     const CityData city_cache[MAX_CACHE_ENTRIES],
     hls::stream<NodePairElement> &node_pairs,
@@ -76,21 +76,21 @@ static void repair_depots(
     BeatProducerState out_state;
 
     bool have_prev = false;
-    FitnessOrCity prev_city = 0;
+    City prev_city = 0;
 
-    FieldIndex field_idx = 0;
+    CityIndex city_idx = 0;
     
     Beat active_beat = input_beats.read();
-    BeatFieldIndex cities_in_beat = FIELDS_PER_BEAT;
+    CityIndex cities_in_beat = CITIES_PER_BEAT;
 
-    REPAIR_FIELD_LOOP: while (field_idx < num_cities) {
+    REPAIR_CITY_LOOP: while (city_idx < num_cities) {
         #pragma HLS PIPELINE II=1
         
         if (cities_in_beat == 0) {
             active_beat = input_beats.read();
-            cities_in_beat = FIELDS_PER_BEAT;
+            cities_in_beat = CITIES_PER_BEAT;
         } else {
-            FitnessOrCity current_city = active_beat.range(FIELD_BITS - 1, 0);
+            City current_city = active_beat.range(CITY_BITS - 1, 0);
             NodeId current_node = get_node_id(current_city);
             CityData cdata = city_cache[current_node];
             Capacity demand = cdata.demand;
@@ -103,12 +103,12 @@ static void repair_depots(
                 prev_node = depot_id;
                 remaining_capacity = vehicle_capacity;
                 
-                send_field(out_state, prev_city, beat_stream);
+                send_city(out_state, prev_city, beat_stream);
                 
                 have_prev = false;
             } else {
                 if (have_prev) {
-                    send_field(out_state, prev_city, beat_stream);
+                    send_city(out_state, prev_city, beat_stream);
                 }
                 
                 stream_node_pair(node_pairs, prev_node, current_node, false);
@@ -118,9 +118,9 @@ static void repair_depots(
                 prev_city = current_city;
                 have_prev = true;
 
-                active_beat >>= FIELD_BITS;
+                active_beat >>= CITY_BITS;
                 cities_in_beat--;
-                field_idx++;
+                city_idx++;
             }
         }
     }
@@ -130,7 +130,7 @@ static void repair_depots(
         set_is_depot(prev_city, true);
         stream_node_pair(node_pairs, prev_node, depot_id, true);
         
-        send_field(out_state, prev_city, beat_stream);
+        send_city(out_state, prev_city, beat_stream);
         finalizeStream(out_state, beat_stream);
     }
 }
@@ -138,7 +138,7 @@ static void repair_depots(
 static Fitness calculate_fitness(
     hls::stream<NodePairElement> &node_pairs,
     const CityData city_cache[MAX_CACHE_ENTRIES],
-    FieldIndex num_cities
+    CityIndex num_cities
 ) {
     Fitness total = 0;
     NodePairElement elem;
@@ -159,7 +159,7 @@ static Fitness calculate_fitness(
 static void repair_and_calculate(
     const IndividualAsBeats &input,
     IndividualAsBeats &output,
-    FieldIndex num_cities,
+    CityIndex num_cities,
     BeatIndex total_city_beats,
     Capacity vehicle_capacity,
     const CityData city_cache[MAX_CACHE_ENTRIES],
@@ -181,11 +181,11 @@ void repair_fitness(
     hls::stream_of_blocks<IndividualAsBeats> &in,
     hls::stream_of_blocks<IndividualAsBeats> &out,
     int num_individuals,
-    FieldIndex num_cities,
+    CityIndex num_cities,
     Capacity vehicle_capacity,
     const CityData city_cache[MAX_CACHE_ENTRIES]
 ) {
-    FieldIndex city_count = FieldIndex(num_cities);
+    CityIndex city_count = CityIndex(num_cities);
     BeatIndex total_city_beats = get_total_city_beats(num_cities);
 
     StartEndData start_end_data = get_start_end_data(0, num_cities - 1);

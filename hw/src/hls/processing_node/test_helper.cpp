@@ -56,15 +56,19 @@ void tb_pull_bytes(hls::stream<axi_word_t> &stream,
 
 void make_individual_beats(const ProblemInstance &problem, const Individual &individual, IndividualAsBeats &out) {
     const int num_cities = static_cast<int>(individual.tour.size());
+    const int total_beats = get_total_beats(num_cities);
+    for (int b = 0; b < total_beats; ++b) {
+        out[b] = 0;
+    }
 
     for (std::size_t i = 0; i < individual.tour.size(); ++i) {
         const auto &gene = individual.tour[i];
 
-        FitnessOrCity field = 0;
-        set_is_depot(field, gene.depot_after);
-        set_node_id(field, gene.node_id);
+        City city = 0;
+        set_is_depot(city, gene.depot_after);
+        set_node_id(city, gene.node_id);
 
-        set_field(out, static_cast<int>(i), field);
+        set_city(out, static_cast<int>(i), city);
     }
 
     set_fitness(out, Fitness(individual.fitness), num_cities);
@@ -75,9 +79,9 @@ Individual decode_individual(const ProblemInstance &problem, const IndividualAsB
     individual.fitness = static_cast<uint32_t>(get_fitness(ind, num_cities));
 
     for (int i = 0; i < num_cities; ++i) {
-        FitnessOrCity field = get_field(ind, i);
-        int node_id = static_cast<int>(get_node_id(field));
-        bool depot_after = get_is_depot(field);
+        City city = get_city(ind, i);
+        int node_id = static_cast<int>(get_node_id(city));
+        bool depot_after = get_is_depot(city);
         individual.tour.push_back(TourGene{node_id, depot_after});
     }
 

@@ -6,21 +6,21 @@
 
 struct BeatPacket {
     Beat beat;
-    FieldIndex n;
+    CityIndex n;
 };
 
 struct BeatProducerState {
     Beat beat;
-    FieldIndex count;
+    CityIndex count;
 
     BeatProducerState() : beat(0), count(0) {}
 };
 
-void append_field(BeatProducerState &state, FitnessOrCity field);
+void append_city(BeatProducerState &state, City city);
 
-void send_field(
+void send_city(
     BeatProducerState &state,
-    FitnessOrCity field,
+    City city,
     hls::stream<BeatPacket> &beat_stream
 );
 
@@ -32,7 +32,7 @@ void finalizeStream(
 struct StartEndDataWithBeats {
     const StartEndData start_end_data;
     const Beat initial_start_beat;
-    // chagnes if end_beat is the same as start_beat
+    // changes if end_beat is the same as start_beat
     Beat end_beat;
 
     StartEndDataWithBeats(const StartEndData &start_end_data, const Beat &start_beat, Beat end_beat)
@@ -40,9 +40,9 @@ struct StartEndDataWithBeats {
 };
 
 struct BeatConsumerState {
-    FieldIndex current_valid_fields;
-    FieldIndex cities_left;
-    FieldIndex curr_dst_idx;
+    CityIndex current_valid_cities;
+    CityIndex cities_left;
+    CityIndex curr_dst_idx;
     BeatIndex current_beat_idx;
 
     Beat accum_beat;
@@ -51,11 +51,11 @@ struct BeatConsumerState {
     StartEndDataWithBeats data;
 
     BeatConsumerState(
-        FieldIndex n_cities_to_copy,
-        FieldIndex dst_start_idx,
+        CityIndex n_cities_to_copy,
+        CityIndex dst_start_idx,
         StartEndDataWithBeats data
     )
-        : current_valid_fields(0),
+        : current_valid_cities(0),
           cities_left(n_cities_to_copy),
           curr_dst_idx(dst_start_idx),
           current_beat_idx(MAX_BEATS),
@@ -63,7 +63,7 @@ struct BeatConsumerState {
           window(0) {}
 };
 
-void capture_and_propagate(BeatConsumerState &state, hls::stream<BeatPacket> &in_stream, IndividualAsBeats &dst_ind, FieldIndex num_cities);
+void capture_and_propagate(BeatConsumerState &state, hls::stream<BeatPacket> &in_stream, IndividualAsBeats &dst_ind, CityIndex num_cities);
 
 void flush_accumulated_beat(BeatConsumerState &state, IndividualAsBeats &dst_ind);
 
@@ -71,11 +71,11 @@ template <int TARGET_II>
 void stream_beats_to_individual(
     hls::stream<BeatPacket> &in_stream,
     IndividualAsBeats &dst_ind,
-    FieldIndex dst_start_idx,
-    FieldIndex n_cities_to_copy,
+    CityIndex dst_start_idx,
+    CityIndex n_cities_to_copy,
     const StartEndDataWithBeats &start_end_data,
     BeatIndex n_beats,
-    FieldIndex num_cities
+    CityIndex num_cities
 ) {
     BeatConsumerState state(
         n_cities_to_copy,
@@ -87,7 +87,7 @@ void stream_beats_to_individual(
         #pragma HLS PIPELINE II=TARGET_II
         // Instruct HLS that state dependency across iterations can be pipelined
         capture_and_propagate(state, in_stream, dst_ind, num_cities);
-    } while (state.current_valid_fields > 0 || state.cities_left > 0);
+    } while (state.current_valid_cities > 0 || state.cities_left > 0);
 
     // Flush final accumulated beat to RAM after loop ends
     flush_accumulated_beat(state, dst_ind);
