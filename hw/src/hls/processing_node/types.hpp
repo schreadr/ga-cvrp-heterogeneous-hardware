@@ -16,7 +16,8 @@
 // ----------------------------------------------------------------------------
 typedef ap_uint<MAX_CITIES_LOG2 + 1>                  CityIndex;
 typedef ap_uint<MAX_BEATS_LOG2 + 1>                   BeatIndex;
-typedef ap_uint<CITIES_PER_BEAT_LOG2 + 1>             BeatCityIndex;
+typedef ap_uint<CITIES_PER_BEAT_LOG2 + 1>             CityBeatIndex;
+typedef CityBeatIndex                                 BeatCityIndex;
 typedef ap_uint<RANDOMS_PER_BEAT_LOG2 + 1>            BeatRandomIndex;
 typedef ap_uint<NODE_CACHE_ENTRIES_PER_BEAT_LOG2 + 1> BeatCacheIndex;
 
@@ -52,26 +53,15 @@ struct CityData {
     }
 };
 
-struct NodePair {
-    NodeId from;
-    NodeId to;
-
-    bool operator==(const NodePair &other) const {
-        return from == other.from && to == other.to;
-    }
-    bool operator!=(const NodePair &other) const {
-        return !(*this == other);
-    }
-};
-
-struct NodePairElement {
-    NodePair pair;
+struct CoordElement {
+    Point coord;
+    bool is_depot;
     bool last;
 
-    bool operator==(const NodePairElement &other) const {
-        return pair == other.pair && last == other.last;
+    bool operator==(const CoordElement &other) const {
+        return coord == other.coord && is_depot == other.is_depot && last == other.last;
     }
-    bool operator!=(const NodePairElement &other) const {
+    bool operator!=(const CoordElement &other) const {
         return !(*this == other);
     }
 };
@@ -91,6 +81,19 @@ struct CityPair {
 
     bool operator==(const CityPair &other) const {
         return start == other.start && end == other.end;
+    }
+};
+
+struct CityElement {
+    City city;
+    Capacity demand;
+    Point coord;
+
+    bool operator==(const CityElement &other) const {
+        return city == other.city && demand == other.demand && coord == other.coord;
+    }
+    bool operator!=(const CityElement &other) const {
+        return !(*this == other);
     }
 };
 

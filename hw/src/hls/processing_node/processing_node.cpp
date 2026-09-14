@@ -195,10 +195,6 @@ static void process_stream(
     hls::stream<CityPair> mutate_pairs_0("mutate_pairs_0");
     hls::stream<CityPair> mutate_pairs_1("mutate_pairs_1");
 
-    #pragma HLS STREAM variable=crossover_pairs depth=16
-    #pragma HLS STREAM variable=mutate_pairs_0 depth=16
-    #pragma HLS STREAM variable=mutate_pairs_1 depth=16
-
     producer(in0, stream_0, num_individuals, num_cities);
     producer(in1, stream_1, num_individuals, num_cities);
     random_number_converter(in_random, crossover_pairs, mutate_pairs_0, mutate_pairs_1, num_individuals);
