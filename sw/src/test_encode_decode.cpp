@@ -73,7 +73,7 @@ void print_hex_dump(const std::string &label, const std::uint8_t *bytes, std::si
 void print_beat_markers(const std::string &label, const std::uint8_t *beat_bytes) {
     std::cout << label << " bit layout (Memory Stream Order LSB->MSB, '|' city/field, '-' sub-field):\n  ";
 
-    for (int abs_bit = 0; abs_bit < AXI_WIDTH; ++abs_bit) {
+    for (int abs_bit = 0; abs_bit < AXI_BEAT_WIDTH; ++abs_bit) {
         // Sample bits LSB-first within each byte
         int byte_idx = abs_bit / 8;
         int bit_in_byte = abs_bit % 8;
@@ -85,7 +85,7 @@ void print_beat_markers(const std::string &label, const std::uint8_t *beat_bytes
         int bit_in_city = abs_bit % CITY_BITS;
 
         // Print dividers (except after the very last bit of the AXI beat)
-        if (abs_bit + 1 < AXI_WIDTH) {
+        if (abs_bit + 1 < AXI_BEAT_WIDTH) {
             // End of city boundary (|)
             if (bit_in_city == CITY_BITS - 1) {
                 std::printf("|");
@@ -113,10 +113,10 @@ void print_decoded_fields(const std::string &label, Individual& individual, cons
     for(std::size_t i = 0; i < individual.tour.size(); ++i) {
         const auto &city = individual.tour[i];
         std::printf("  city %2zu [beat %zu, slot %2zu] depot_after=%u node_id=%d\n",
-                    i, i / CITIES_PER_BEAT, i % CITIES_PER_BEAT, city.depot_after, city.node_id);
+                    i, i / AXI_CITIES_PER_BEAT, i % AXI_CITIES_PER_BEAT, city.depot_after, city.node_id);
     }
 
-    std::size_t total_city_beats = get_total_city_beats(individual.tour.size());
+    std::size_t total_city_beats = get_total_axi_city_beats(individual.tour.size());
     std::printf("  fitness beat %zu [bits 0..%d] fitness=%u\n",
                 total_city_beats, FITNESS_BITS - 1, individual.fitness);
 }
@@ -132,7 +132,7 @@ bool test_encode_decode(const ProblemInstance &problem) {
 
     const std::vector<std::uint8_t> encoded = encode_population_fixed(problem, population);
     std::vector<Individual> decoded = decode_population_fixed(problem, encoded.data(), population.size());
-    const int beats_per_individual = get_total_beats(problem.dimension - 1);
+    const int beats_per_individual = get_total_axi_beats(problem.dimension - 1);
     const std::size_t bytes_per_individual = beats_per_individual * AXI_BYTES;
 
     for (std::size_t i = 0; i < population.size(); ++i) {

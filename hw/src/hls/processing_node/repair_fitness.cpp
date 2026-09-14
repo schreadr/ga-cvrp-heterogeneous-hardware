@@ -4,13 +4,13 @@
 #include <hls_stream.h>
 
 // Static mask to clear all depot flags
-static inline ap_uint<BEAT_WIDTH> get_clear_depots_mask() {
+static inline ap_uint<HW_BEAT_WIDTH> get_clear_depots_mask() {
     #pragma HLS INLINE
-    ap_uint<BEAT_WIDTH> mask = ~(ap_uint<BEAT_WIDTH>(0));
-    for (int i = 0; i < CITIES_PER_BEAT; ++i) {
+    ap_uint<HW_BEAT_WIDTH> mask = ~(ap_uint<HW_BEAT_WIDTH>(0));
+    for (int i = 0; i < HW_CITIES_PER_BEAT; ++i) {
         #pragma HLS UNROLL
         // Clear the specific depot bit for each city
-        mask &= ~(ap_uint<BEAT_WIDTH>(1) << (i * CITY_BITS + DEPOT_FLAG_OFFSET));
+        mask &= ~(ap_uint<HW_BEAT_WIDTH>(1) << (i * CITY_BITS + DEPOT_FLAG_OFFSET));
     }
     return mask;
 }
@@ -52,7 +52,7 @@ static void stream_input_beats(
     BeatIndex total_beats,
     hls::stream<Beat> &input_beats
 ) {
-    const ap_uint<BEAT_WIDTH> CLEAR_DEPOT_MASK = get_clear_depots_mask();
+    const ap_uint<HW_BEAT_WIDTH> CLEAR_DEPOT_MASK = get_clear_depots_mask();
     STREAM_INPUT_BEATS_LOOP: for (BeatIndex b = 0; b < total_beats; ++b) {
         #pragma HLS PIPELINE II=1
         input_beats.write(input[b] & CLEAR_DEPOT_MASK);
@@ -67,14 +67,14 @@ static void create_city_stream(
 ) {
     CityIndex city_idx = 0;
     Beat active_beat = input_beats.read();
-    CityBeatIndex cities_in_beat = CITIES_PER_BEAT;
+    CityBeatIndex cities_in_beat = HW_CITIES_PER_BEAT;
 
     CREATE_CITIES_LOOP: while (city_idx < num_cities) {
         #pragma HLS PIPELINE II=1
 
         if (cities_in_beat == 0) {
             active_beat = input_beats.read();
-            cities_in_beat = CITIES_PER_BEAT;
+            cities_in_beat = HW_CITIES_PER_BEAT;
         } else {
             City current_city = active_beat.range(CITY_BITS - 1, 0);
             NodeId current_node = get_node_id(current_city);
@@ -185,7 +185,7 @@ static void repair_and_calculate(
     stream_input_beats(input, total_city_beats, input_beats);
     create_city_stream(input_beats, num_cities, city_cache, city_stream);
     repair_depots(city_stream, num_cities, vehicle_capacity, coords, beat_stream);
-    stream_beats_to_individual<4>(beat_stream, output, 0, num_cities, start_end_data, total_city_beats, num_cities);
+    stream_beats_to_individual<1>(beat_stream, output, 0, num_cities, start_end_data, total_city_beats, num_cities);
     fitness = calculate_fitness(coords, depot_coord, num_cities);
 }
 

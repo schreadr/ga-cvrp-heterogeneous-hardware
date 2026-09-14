@@ -15,11 +15,12 @@
 // 1. Bitfield Index & Counter Types
 // ----------------------------------------------------------------------------
 typedef ap_uint<MAX_CITIES_LOG2 + 1>                  CityIndex;
-typedef ap_uint<MAX_BEATS_LOG2 + 1>                   BeatIndex;
-typedef ap_uint<CITIES_PER_BEAT_LOG2 + 1>             CityBeatIndex;
+typedef ap_uint<HW_MAX_BEATS_LOG2 + 1>                BeatIndex;
+typedef ap_uint<HW_CITIES_PER_BEAT_LOG2 + 1>          CityBeatIndex;
 typedef CityBeatIndex                                 BeatCityIndex;
 typedef ap_uint<RANDOMS_PER_BEAT_LOG2 + 1>            BeatRandomIndex;
 typedef ap_uint<NODE_CACHE_ENTRIES_PER_BEAT_LOG2 + 1> BeatCacheIndex;
+typedef ap_uint<HW_BEATS_PER_AXI_BEAT_LOG2 + 1>       BeatAxiIndex;
 
 // ----------------------------------------------------------------------------
 // 2. Problem & Node Data Types
@@ -100,10 +101,11 @@ struct CityElement {
 // ----------------------------------------------------------------------------
 // 4. Beat, Stream & Cache Types
 // ----------------------------------------------------------------------------
-typedef ap_uint<BEAT_WIDTH>             Beat;
-typedef ap_axiu<AXI_WIDTH, 0, 0, 0>     axi_word_t;
-typedef Beat                            IndividualAsBeats[MAX_BEATS];
-typedef Beat                            CityCacheBeat;
+typedef ap_uint<HW_BEAT_WIDTH>          Beat;
+typedef ap_uint<AXI_BEAT_WIDTH>         AxiBeat;
+typedef ap_axiu<AXI_BEAT_WIDTH, 0, 0, 0> axi_word_t;
+typedef Beat                            IndividualAsBeats[HW_MAX_BEATS];
+typedef AxiBeat                         CityCacheBeat;
 typedef ap_uint<NODE_CACHE_ENTRY_BITS>  CityCacheEntry;
 typedef ap_uint<RANDOM_BITS>            RandomNumber;
 
@@ -129,25 +131,51 @@ static inline CityIndex wrap_city_index(CityIndex idx, CityIndex num_cities) {
     return (idx >= num_cities) ? CityIndex(idx - num_cities) : idx;
 }
 
+static inline CityIndex wrap_city_index(int idx, int num_cities) {
+    #pragma HLS INLINE
+    return (idx >= num_cities) ? CityIndex(idx - num_cities) : CityIndex(idx);
+}
+
 static inline BeatIndex get_total_city_beats(CityIndex num_cities) {
     #pragma HLS INLINE
-    return (num_cities + CITIES_PER_BEAT - 1) >> CITIES_PER_BEAT_LOG2;
+    return (num_cities + HW_CITIES_PER_BEAT - 1) >> HW_CITIES_PER_BEAT_LOG2;
+}
+
+static inline BeatIndex get_total_city_beats(int num_cities) {
+    #pragma HLS INLINE
+    return (num_cities + HW_CITIES_PER_BEAT - 1) >> HW_CITIES_PER_BEAT_LOG2;
 }
 
 static inline BeatIndex get_total_beats(CityIndex num_cities) {
     #pragma HLS INLINE
-    return get_total_city_beats(num_cities) + FITNESS_BEATS;
+    return get_total_city_beats(num_cities) + HW_FITNESS_BEATS;
+}
+
+static inline BeatIndex get_total_beats(int num_cities) {
+    #pragma HLS INLINE
+    return get_total_city_beats(num_cities) + HW_FITNESS_BEATS;
 }
 
 static inline void get_beat_city(CityIndex global_idx, BeatIndex &beat_idx, CityIndex &city_idx) {
     #pragma HLS INLINE
-    beat_idx = global_idx >> CITIES_PER_BEAT_LOG2;
-    city_idx = global_idx & (CITIES_PER_BEAT - 1);
+    beat_idx = global_idx >> HW_CITIES_PER_BEAT_LOG2;
+    city_idx = global_idx & (HW_CITIES_PER_BEAT - 1);
+}
+
+static inline void get_beat_city(int global_idx, BeatIndex &beat_idx, CityIndex &city_idx) {
+    #pragma HLS INLINE
+    beat_idx = global_idx >> HW_CITIES_PER_BEAT_LOG2;
+    city_idx = global_idx & (HW_CITIES_PER_BEAT - 1);
 }
 
 static inline BeatIndex get_beat_idx(CityIndex global_idx) {
     #pragma HLS INLINE
-    return global_idx >> CITIES_PER_BEAT_LOG2;
+    return global_idx >> HW_CITIES_PER_BEAT_LOG2;
+}
+
+static inline BeatIndex get_beat_idx(int global_idx) {
+    #pragma HLS INLINE
+    return global_idx >> HW_CITIES_PER_BEAT_LOG2;
 }
 
 static inline StartEndData get_start_end_data(CityIndex start_idx, CityIndex end_idx) {
@@ -168,8 +196,8 @@ static inline CityIndex get_first_city_index(BeatIndex beat_idx) {
 
 static inline CityIndex get_last_city_index(CityIndex num_cities, BeatIndex beat_idx) {
     #pragma HLS INLINE
-    BeatIndex last_city_beat = (num_cities - 1) >> CITIES_PER_BEAT_LOG2;
-    return (beat_idx == last_city_beat) ? CityIndex((num_cities - 1) & (CITIES_PER_BEAT - 1)) : CityIndex(CITIES_PER_BEAT - 1);
+    BeatIndex last_city_beat = (num_cities - 1) >> HW_CITIES_PER_BEAT_LOG2;
+    return (beat_idx == last_city_beat) ? CityIndex((num_cities - 1) & (HW_CITIES_PER_BEAT - 1)) : CityIndex(HW_CITIES_PER_BEAT - 1);
 }
 
 // ----------------------------------------------------------------------------
@@ -287,11 +315,18 @@ static inline CityData consume_next_city_data(CityCacheBeat &beat) {
     return CityData{coord.x, coord.y, demand};
 }
 
-static inline RandomNumber consume_next_random(Beat &beat) {
+static inline RandomNumber consume_next_random(AxiBeat &beat) {
     #pragma HLS INLINE
     RandomNumber rnd = beat.range(RANDOM_BITS - 1, 0);
     beat >>= RANDOM_BITS;
     return rnd;
+}
+
+static inline Beat consume_next_hw_beat(AxiBeat &beat) {
+    #pragma HLS INLINE
+    Beat hw_beat = beat.range(HW_BEAT_WIDTH - 1, 0);
+    beat >>= HW_BEAT_WIDTH;
+    return hw_beat;
 }
 
 #endif // TYPES_HPP

@@ -52,8 +52,8 @@ std::vector<std::array<uint64_t, 8>> encode_individual_fixed(
     const Individual &individual
 ) {
     const int num_cities = static_cast<int>(problem.nodes.size());
-    const int total_city_beats = get_total_city_beats(num_cities);
-    const int beats_per_individual = get_total_beats(num_cities);
+    const int total_city_beats = get_total_axi_city_beats(num_cities);
+    const int beats_per_individual = get_total_axi_beats(num_cities);
 
     std::vector<std::array<uint64_t, 8>> beats(beats_per_individual);
     for (auto &beat : beats) {
@@ -68,8 +68,8 @@ std::vector<std::array<uint64_t, 8>> encode_individual_fixed(
         uint64_t depot_val = gene.depot_after ? 1ULL : 0ULL;
         uint64_t city      = id_val | (depot_val << DEPOT_FLAG_OFFSET);
 
-        size_t beat_idx = i / CITIES_PER_BEAT;
-        size_t slot = i % CITIES_PER_BEAT;
+        size_t beat_idx = i / AXI_CITIES_PER_BEAT;
+        size_t slot = i % AXI_CITIES_PER_BEAT;
         size_t bit_offset = slot * CITY_BITS;
 
         beats[beat_idx][bit_offset / 64] |= (city << (bit_offset % 64));
@@ -85,7 +85,7 @@ std::vector<uint8_t> encode_population_fixed(
     const ProblemInstance &problem,
     const std::vector<Individual> &population
 ) {
-    const int beats_per_individual = get_total_beats(static_cast<int>(problem.nodes.size()));
+    const int beats_per_individual = get_total_axi_beats(static_cast<int>(problem.nodes.size()));
 
     std::vector<uint8_t> buffer;
     buffer.reserve(population.size() * beats_per_individual * AXI_BYTES);
@@ -104,7 +104,7 @@ Individual decode_individual_fixed(
     const std::uint8_t *beat_bytes
 ) {
     const int num_cities = static_cast<int>(problem.nodes.size());
-    const int total_city_beats = get_total_city_beats(num_cities);
+    const int total_city_beats = get_total_axi_city_beats(num_cities);
 
     Individual individual;
     individual.tour.reserve(num_cities);
@@ -113,8 +113,8 @@ Individual decode_individual_fixed(
     const uint64_t city_mask = (CITY_BITS >= 64) ? ~0ULL : ((1ULL << CITY_BITS) - 1ULL);
 
     for (int i = 0; i < num_cities; ++i) {
-        int beat_idx = i / CITIES_PER_BEAT;
-        int slot = i % CITIES_PER_BEAT;
+        int beat_idx = i / AXI_CITIES_PER_BEAT;
+        int slot = i % AXI_CITIES_PER_BEAT;
         int bit_offset = slot * CITY_BITS;
 
         const uint64_t *words = reinterpret_cast<const uint64_t *>(
@@ -144,7 +144,7 @@ std::vector<Individual> decode_population_fixed(
     const std::uint8_t *buffer,
     std::size_t num_individuals
 ) {
-    const int beats_per_individual = get_total_beats(static_cast<int>(problem.nodes.size()));
+    const int beats_per_individual = get_total_axi_beats(static_cast<int>(problem.nodes.size()));
 
     std::vector<Individual> population;
     population.reserve(num_individuals);
@@ -167,8 +167,8 @@ void population_from_buffer(
     std::size_t pop_offset
 ) {
     const int num_cities = problem_dimension - 1;
-    const int total_city_beats = get_total_city_beats(num_cities);
-    const int beats_per_individual = get_total_beats(num_cities);
+    const int total_city_beats = get_total_axi_city_beats(num_cities);
+    const int beats_per_individual = get_total_axi_beats(num_cities);
     const std::size_t bytes_per_individual = beats_per_individual * AXI_BYTES;
     const std::size_t city_bytes = (num_cities * CITY_BITS) / 8;
     const std::size_t fitness_offset = total_city_beats * AXI_BYTES;
@@ -184,7 +184,7 @@ void population_from_buffer(
 }
 
 void population_to_buffer(std::vector<EncodedIndividual> &population, std::uint8_t* bytes, int problem_dimension, bool reversedOrder) {
-    const int beats_per_individual = get_total_beats(problem_dimension - 1);
+    const int beats_per_individual = get_total_axi_beats(problem_dimension - 1);
     if (reversedOrder) {
         for (int i=population.size()-1; i>=0; --i) {
             // Serialize each individual and write to bytes

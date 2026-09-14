@@ -46,7 +46,7 @@ struct BeatConsumerState {
     BeatIndex current_beat_idx;
 
     Beat accum_beat;
-    ap_uint<BEAT_WIDTH << 1> window;
+    ap_uint<HW_BEAT_WIDTH << 1> window;
 
     StartEndDataWithBeats data;
 
@@ -58,7 +58,7 @@ struct BeatConsumerState {
         : current_valid_cities(0),
           cities_left(n_cities_to_copy),
           curr_dst_idx(dst_start_idx),
-          current_beat_idx(MAX_BEATS),
+          current_beat_idx(HW_MAX_CITY_BEATS),
           data(data),
           window(0) {}
 };

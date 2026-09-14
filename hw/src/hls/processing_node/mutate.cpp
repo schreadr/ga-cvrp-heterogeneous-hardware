@@ -26,12 +26,12 @@ static void copyAndStream(IndividualAsBeats &p, hls::stream<BeatPacket> &reverse
             CityIndex high_city = (i == start_end_data.end_beat) ? start_end_data.end_city : get_last_city_index(num_cities, i);
 
             // shift relevant bits to the right s.t. they are on left after swapping
-            CityIndex shift_amount = (CITIES_PER_BEAT - 1 - high_city) << CITY_BITS_LOG2;
+            CityIndex shift_amount = (HW_CITIES_PER_BEAT - 1 - high_city) << CITY_BITS_LOG2;
             pb <<= shift_amount;
 
-            INVERT_LOOP: for (CityIndex idx = 0; idx < CITIES_PER_BEAT/2; idx++) {
+            INVERT_LOOP: for (CityIndex idx = 0; idx < HW_CITIES_PER_BEAT/2; idx++) {
                 #pragma HLS UNROLL
-                CityIndex j = CITIES_PER_BEAT - 1 - idx;
+                CityIndex j = HW_CITIES_PER_BEAT - 1 - idx;
                 swap(pb, idx, j);
             }
 
@@ -52,7 +52,7 @@ static void write(IndividualAsBeats &c, hls::stream<BeatPacket> &reverse_buffer,
     ap_uint<2> flushes = 2;
 
     WRITE_BACK_LOOP: for (int step = 0; step < total_city_beats + 2; ++step) {
-        #pragma HLS PIPELINE II=4
+        #pragma HLS PIPELINE II=1
         if (i > data.start_end_data.end_beat) {
             c[i] = buffer.read();
             i--;
@@ -88,8 +88,6 @@ void mutate_core(
     IndividualAsBeats &c,
     int num_cities
 ) {
-    #pragma HLS INLINE off
-
     CityIndex start_idx = cut_points.start;
     CityIndex end_idx = cut_points.end;
     const StartEndData &start_end_data = get_start_end_data(start_idx, end_idx);

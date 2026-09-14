@@ -373,7 +373,7 @@ bool test_run_ga_in_place_buffer_shift() {
     std::size_t pop_size = problem.dimension * multiplier; // 5 -> 6 (even)
     if (pop_size % 2 != 0) pop_size += 1;
     const std::size_t half_pop = pop_size / 2; // 3
-    const int beats_per_ind = get_total_beats(problem.dimension - 1);
+    const int beats_per_ind = get_total_axi_beats(problem.dimension - 1);
     const std::size_t bytes_per_ind = beats_per_ind * AXI_BYTES;
     const std::size_t total_bytes = pop_size * bytes_per_ind;
     const std::size_t half_bytes = half_pop * bytes_per_ind;

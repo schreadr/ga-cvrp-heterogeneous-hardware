@@ -130,7 +130,7 @@ int main(int argc, char *argv[]) {
         pop_size += 1;
     }
     const std::size_t num_ind_per_stream = pop_size / 2;
-    const int beats_per_individual = get_total_beats(problem.dimension - 1);
+    const int beats_per_individual = get_total_axi_beats(problem.dimension - 1);
     const std::size_t bytes_per_individual = beats_per_individual * AXI_BYTES;
     const std::size_t pop_bytes = pop_size * bytes_per_individual;
     const std::size_t half_pop_bytes = num_ind_per_stream * bytes_per_individual;

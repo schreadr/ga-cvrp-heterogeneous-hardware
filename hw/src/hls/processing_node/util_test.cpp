@@ -4,7 +4,7 @@
 #include <cmath>
 
 static void init_all_0(IndividualAsBeats &ind) {
-    for (int i = 0; i < MAX_BEATS; ++i) {
+    for (int i = 0; i < HW_MAX_BEATS; ++i) {
         ind[i] = 0;
     }
 }
@@ -48,16 +48,13 @@ static int test1(){
 
     init_all_0(dst_ind);
 
-    // Define test parameters with an unaligned start index
-    int num_cities = CITIES_PER_BEAT;
-    int n_beats = get_total_beats(num_cities);
-
     int dst_start_idx = 2; 
     int n_cities_to_copy = 5;
     int dst_end_idx = dst_start_idx + n_cities_to_copy - 1;
 
-    // Ensure we don't exceed the number of cities in a beat
-    assert(dst_start_idx + n_cities_to_copy <= num_cities); 
+    // Define test parameters with an unaligned start index
+    int num_cities = std::ceil((dst_start_idx + n_cities_to_copy) / (double) HW_CITIES_PER_BEAT) * HW_CITIES_PER_BEAT;
+    int n_beats = get_total_beats(num_cities);
 
     // Populate mock stream packets using city-setting utilities
     BeatPacket pkt1;
@@ -82,7 +79,7 @@ static int test1(){
     in_stream.write(pkt3);
 
     // Execute the HLS component
-    stream_beats_to_individual<4>(in_stream, dst_ind, dst_start_idx, n_cities_to_copy, StartEndDataWithBeats(get_start_end_data(dst_start_idx, dst_end_idx), 0, 0), n_beats, num_cities);
+    stream_beats_to_individual<1>(in_stream, dst_ind, dst_start_idx, n_cities_to_copy, StartEndDataWithBeats(get_start_end_data(dst_start_idx, dst_end_idx), 0, 0), n_beats, num_cities);
 
     std::vector<int> indices = {dst_start_idx, dst_start_idx + 1, dst_start_idx + 2, dst_start_idx + 3, dst_start_idx + 4};
     std::vector<int> expected_values = {0x111, 0x222, 0x333, 0x444, 0x555};
@@ -104,13 +101,13 @@ static int test2(){
 
     init_all_0(dst_ind);
 
-    int num_cities = CITIES_PER_BEAT * 2;
-    int n_beats = get_total_beats(num_cities);
-
     // Define test parameters with an unaligned start index
-    int dst_start_idx = CITIES_PER_BEAT - 2; // Start at the second last city of the first beat
+    int dst_start_idx = HW_CITIES_PER_BEAT - 2; // Start at the second last city of the first beat
     int n_cities_to_copy = 5; // This will require reading from two packets
     int dst_end_idx = dst_start_idx + n_cities_to_copy - 1;
+        
+    int num_cities = std::ceil(n_cities_to_copy / HW_CITIES_PER_BEAT) * HW_CITIES_PER_BEAT * 2;
+    int n_beats = get_total_beats(num_cities);
 
     // Populate mock stream packets using city-setting utilities
     BeatPacket pkt1;
@@ -135,7 +132,7 @@ static int test2(){
     in_stream.write(pkt3);
 
     // Execute the HLS component
-    stream_beats_to_individual<4>(in_stream, dst_ind, dst_start_idx, n_cities_to_copy, StartEndDataWithBeats(get_start_end_data(dst_start_idx, dst_end_idx), 0, 0), n_beats, num_cities);
+    stream_beats_to_individual<1>(in_stream, dst_ind, dst_start_idx, n_cities_to_copy, StartEndDataWithBeats(get_start_end_data(dst_start_idx, dst_end_idx), 0, 0), n_beats, num_cities);
 
     std::vector<int> indices = {dst_start_idx, dst_start_idx + 1, dst_start_idx + 2, dst_start_idx + 3, dst_start_idx + 4};
     std::vector<int> expected_values = {0x111, 0x222, 0x333, 0x444, 0x555};
@@ -157,13 +154,12 @@ static int test3(){
 
     init_all_0(dst_ind);
 
-    int num_cities = CITIES_PER_BEAT;
+    int n_cities_to_copy = 5; 
+    int num_cities = std::ceil(n_cities_to_copy / (double) HW_CITIES_PER_BEAT) * HW_CITIES_PER_BEAT; // 8 cities total (2 beats)
     int n_beats = get_total_beats(num_cities);
-
-    // Define test parameters with an unaligned start index
-    int dst_start_idx = CITIES_PER_BEAT - 2; // Start at the second last city of the first beat
-    int n_cities_to_copy = 5; // This will require reading from two packets
-    int dst_end_idx = 2;
+    // Start at second-to-last city of the individual (index 6)
+    int dst_start_idx = num_cities - 2; 
+    int dst_end_idx = (dst_start_idx + n_cities_to_copy - 1) % num_cities;
 
     // Populate mock stream packets using city-setting utilities
     BeatPacket pkt1;
@@ -188,7 +184,7 @@ static int test3(){
     in_stream.write(pkt3);
 
     // Execute the HLS component
-    stream_beats_to_individual<4>(in_stream, dst_ind, dst_start_idx, n_cities_to_copy, StartEndDataWithBeats(get_start_end_data(dst_start_idx, dst_end_idx), 0, 0), n_beats, num_cities);
+    stream_beats_to_individual<1>(in_stream, dst_ind, dst_start_idx, n_cities_to_copy, StartEndDataWithBeats(get_start_end_data(dst_start_idx, dst_end_idx), 0, 0), n_beats, num_cities);
 
     std::vector<int> indices = {dst_start_idx, dst_start_idx + 1, 0, 1, 2};
     std::vector<int> expected_values = {0x111, 0x222, 0x333, 0x444, 0x555};
@@ -285,17 +281,17 @@ static int test_beat_producer_full() {
     hls::stream<BeatPacket> stream;
     BeatProducerState state;
 
-    for (int i = 0; i < CITIES_PER_BEAT; ++i) {
+    for (int i = 0; i < HW_CITIES_PER_BEAT; ++i) {
         send_city(state, 0x1000 + i, stream);
     }
     finalizeStream(state, stream);
 
     std::vector<std::pair<CityIndex, Beat>> expected;
     Beat b = 0;
-    for (int i = 0; i < CITIES_PER_BEAT; ++i) {
+    for (int i = 0; i < HW_CITIES_PER_BEAT; ++i) {
         set_city(b, i, 0x1000 + i);
     }
-    expected.push_back({CITIES_PER_BEAT, b});
+    expected.push_back({HW_CITIES_PER_BEAT, b});
 
     std::vector<std::pair<CityIndex, Beat>> received = drain_stream(stream);
 
@@ -320,8 +316,8 @@ static int test_beat_producer_multibeat() {
 
     std::vector<std::pair<CityIndex, Beat>> expected;
     const int total_cities = 19;
-    for (int start = 0; start < total_cities; start += CITIES_PER_BEAT) {
-        int n = std::min(static_cast<int>(CITIES_PER_BEAT), total_cities - start);
+    for (int start = 0; start < total_cities; start += HW_CITIES_PER_BEAT) {
+        int n = std::min(static_cast<int>(HW_CITIES_PER_BEAT), total_cities - start);
         Beat b = 0;
         for (int i = 0; i < n; ++i) {
             set_city(b, i, 0x2000 + start + i);
@@ -377,7 +373,7 @@ static int test_border_cases() {
     in_stream.write(pkt1);
     in_stream.write(pkt2);
 
-    stream_beats_to_individual<4>(in_stream, dst_ind, dst_start_idx, n_cities_to_copy,
+    stream_beats_to_individual<1>(in_stream, dst_ind, dst_start_idx, n_cities_to_copy,
                                   StartEndDataWithBeats(get_start_end_data(dst_start_idx, dst_end_idx), 0, 0),
                                   n_beats, num_cities);
 
