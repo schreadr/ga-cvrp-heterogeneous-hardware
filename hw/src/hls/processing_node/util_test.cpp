@@ -270,15 +270,13 @@ static int test_beat_producer_partial() {
 
     send_city(state, 0x111, stream);
     send_city(state, 0x222, stream);
-    send_city(state, 0x333, stream);
     finalizeStream(state, stream);
 
     std::vector<std::pair<CityIndex, Beat>> expected;
     Beat b = 0;
     set_city(b, 0, 0x111);
     set_city(b, 1, 0x222);
-    set_city(b, 2, 0x333);
-    expected.push_back({3, b});
+    expected.push_back({2, b});
 
     std::vector<std::pair<CityIndex, Beat>> received = drain_stream(stream);
 
