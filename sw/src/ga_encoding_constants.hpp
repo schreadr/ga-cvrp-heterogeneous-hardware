@@ -40,16 +40,16 @@
 #define AXI_MAX_BEATS_LOG2           6 // ceil(log2(AXI_MAX_BEATS))
 
 // Hardware Pipeline Beat Constants
-#define HW_CITIES_PER_BEAT          4
-#define HW_CITIES_PER_BEAT_LOG2     2 // log2(HW_CITIES_PER_BEAT)
-#define HW_BEAT_WIDTH               (CITY_BITS * HW_CITIES_PER_BEAT) // 128
-#define HW_BEATS_PER_AXI_BEAT       (AXI_BEAT_WIDTH / HW_BEAT_WIDTH) // 4
-#define HW_BEATS_PER_AXI_BEAT_LOG2  (AXI_CITIES_PER_BEAT_LOG2 - HW_CITIES_PER_BEAT_LOG2) // 2
+#define HW_CITIES_PER_BEAT          2
+#define HW_CITIES_PER_BEAT_LOG2     1 // log2(HW_CITIES_PER_BEAT)
+#define HW_BEAT_WIDTH               (CITY_BITS * HW_CITIES_PER_BEAT) // 32
+#define HW_BEATS_PER_AXI_BEAT       (AXI_BEAT_WIDTH / HW_BEAT_WIDTH) // 16
+#define HW_BEATS_PER_AXI_BEAT_LOG2  (AXI_CITIES_PER_BEAT_LOG2 - HW_CITIES_PER_BEAT_LOG2) // 4
 
-#define HW_MAX_CITY_BEATS           ((MAX_CITIES + HW_CITIES_PER_BEAT - 1) / HW_CITIES_PER_BEAT) // 128
+#define HW_MAX_CITY_BEATS           ((MAX_CITIES + HW_CITIES_PER_BEAT - 1) / HW_CITIES_PER_BEAT) // 512
 #define HW_FITNESS_BEATS            1
-#define HW_MAX_BEATS                (HW_MAX_CITY_BEATS + HW_FITNESS_BEATS) // 129
-#define HW_MAX_BEATS_LOG2           9 // ceil(log2(HW_MAX_BEATS))
+#define HW_MAX_BEATS                (HW_MAX_CITY_BEATS + HW_FITNESS_BEATS) // 513
+#define HW_MAX_BEATS_LOG2           10 // ceil(log2(HW_MAX_BEATS))
 
 
 // Node Cache Encoding Constants

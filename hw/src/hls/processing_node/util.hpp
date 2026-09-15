@@ -4,7 +4,7 @@
 #include "types.hpp"
 #include <hls_stream.h>
 
-#define BEAT_STREAM_INTERVAL 3
+#define BEAT_STREAM_INTERVAL 1
 
 struct BeatPacket {
     Beat beat;
@@ -77,6 +77,27 @@ struct BeatConsumerState {
     }
 };
 
+struct BeatPacketWithLast {
+    Beat beat;
+    CityIndex n;
+    bool last;
+};
+
+void capture_and_tag_packets(
+    hls::stream<BeatPacket> &in_stream,
+    hls::stream<BeatPacketWithLast> &out_stream,
+    CityIndex n_cities_to_copy
+);
+
+void propagate_tagged_packets(
+    hls::stream<BeatPacketWithLast> &in_stream,
+    IndividualAsBeats &dst_ind,
+    CityIndex dst_start_idx,
+    CityIndex n_cities_to_copy,
+    const StartEndDataWithBeats &start_end_data,
+    CityIndex num_cities
+);
+
 void capture_and_propagate(BeatConsumerState &state, hls::stream<BeatPacket> &in_stream, IndividualAsBeats &dst_ind, CityIndex num_cities);
 
 void flush_accumulated_beat(BeatConsumerState &state, IndividualAsBeats &dst_ind);
@@ -91,21 +112,12 @@ void stream_beats_to_individual(
     BeatIndex n_beats,
     CityIndex num_cities
 ) {
-    BeatConsumerState state(
-        n_cities_to_copy,
-        dst_start_idx,
-        start_end_data,
-        num_cities
-    );
+    #pragma HLS DATAFLOW
+    hls::stream<BeatPacketWithLast> tagged_stream("tagged_packet_stream");
+    #pragma HLS STREAM variable=tagged_stream depth=4
 
-    WRITE_BEATS_LOOP: do {
-        #pragma HLS PIPELINE II=TARGET_II
-        // Instruct HLS that state dependency across iterations can be pipelined
-        capture_and_propagate(state, in_stream, dst_ind, num_cities);
-    } while (state.valid_cities > 0 || state.cities_left > 0);
-
-    // Flush final accumulated beat to RAM after loop ends
-    flush_accumulated_beat(state, dst_ind);
+    capture_and_tag_packets(in_stream, tagged_stream, n_cities_to_copy);
+    propagate_tagged_packets(tagged_stream, dst_ind, dst_start_idx, n_cities_to_copy, start_end_data, num_cities);
 }
 
 template <int W_IN>
