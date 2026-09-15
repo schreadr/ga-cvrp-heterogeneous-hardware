@@ -185,7 +185,7 @@ static void repair_and_calculate(
     stream_input_beats(input, total_city_beats, input_beats);
     create_city_stream(input_beats, num_cities, city_cache, city_stream);
     repair_depots(city_stream, num_cities, vehicle_capacity, coords, beat_stream);
-    stream_beats_to_individual<1>(beat_stream, output, 0, num_cities, start_end_data, total_city_beats, num_cities);
+    stream_beats_to_individual<BEAT_STREAM_INTERVAL>(beat_stream, output, 0, num_cities, start_end_data, total_city_beats, num_cities);
     fitness = calculate_fitness(coords, depot_coord, num_cities);
 }
 

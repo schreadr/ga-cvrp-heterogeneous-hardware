@@ -61,25 +61,30 @@ static int test1(){
     pkt1.beat = 0;
     set_city(pkt1.beat, 0, 0x111);
     set_city(pkt1.beat, 1, 0x222);
-    set_city(pkt1.beat, 2, 0x333);
-    pkt1.n = 3;
+    pkt1.n = 2;
 
     BeatPacket pkt2;
     pkt2.beat = 0;
-    pkt2.n = 0;
+    set_city(pkt2.beat, 0, 0x333);
+    pkt2.n = 1;
 
     BeatPacket pkt3;
     pkt3.beat = 0;
-    set_city(pkt3.beat, 0, 0x444);
-    set_city(pkt3.beat, 1, 0x555);
-    pkt3.n = 2;
+    pkt3.n = 0;
+
+    BeatPacket pkt4;
+    pkt4.beat = 0;
+    set_city(pkt4.beat, 0, 0x444);
+    set_city(pkt4.beat, 1, 0x555);
+    pkt4.n = 2;
 
     in_stream.write(pkt1);
     in_stream.write(pkt2);
     in_stream.write(pkt3);
+    in_stream.write(pkt4);
 
     // Execute the HLS component
-    stream_beats_to_individual<1>(in_stream, dst_ind, dst_start_idx, n_cities_to_copy, StartEndDataWithBeats(get_start_end_data(dst_start_idx, dst_end_idx), 0, 0), n_beats, num_cities);
+    stream_beats_to_individual<BEAT_STREAM_INTERVAL>(in_stream, dst_ind, dst_start_idx, n_cities_to_copy, StartEndDataWithBeats(get_start_end_data(dst_start_idx, dst_end_idx), 0, 0), n_beats, num_cities);
 
     std::vector<int> indices = {dst_start_idx, dst_start_idx + 1, dst_start_idx + 2, dst_start_idx + 3, dst_start_idx + 4};
     std::vector<int> expected_values = {0x111, 0x222, 0x333, 0x444, 0x555};
@@ -114,25 +119,30 @@ static int test2(){
     pkt1.beat = 0;
     set_city(pkt1.beat, 0, 0x111);
     set_city(pkt1.beat, 1, 0x222);
-    set_city(pkt1.beat, 2, 0x333);
-    pkt1.n = 3;
+    pkt1.n = 2;
 
     BeatPacket pkt2;
     pkt2.beat = 0;
-    pkt2.n = 0;
+    set_city(pkt2.beat, 0, 0x333);
+    pkt2.n = 1;
 
     BeatPacket pkt3;
     pkt3.beat = 0;
-    set_city(pkt3.beat, 0, 0x444);
-    set_city(pkt3.beat, 1, 0x555);
-    pkt3.n = 2;
+    pkt3.n = 0;
+
+    BeatPacket pkt4;
+    pkt4.beat = 0;
+    set_city(pkt4.beat, 0, 0x444);
+    set_city(pkt4.beat, 1, 0x555);
+    pkt4.n = 2;
 
     in_stream.write(pkt1);
     in_stream.write(pkt2);
     in_stream.write(pkt3);
+    in_stream.write(pkt4);
 
     // Execute the HLS component
-    stream_beats_to_individual<1>(in_stream, dst_ind, dst_start_idx, n_cities_to_copy, StartEndDataWithBeats(get_start_end_data(dst_start_idx, dst_end_idx), 0, 0), n_beats, num_cities);
+    stream_beats_to_individual<BEAT_STREAM_INTERVAL>(in_stream, dst_ind, dst_start_idx, n_cities_to_copy, StartEndDataWithBeats(get_start_end_data(dst_start_idx, dst_end_idx), 0, 0), n_beats, num_cities);
 
     std::vector<int> indices = {dst_start_idx, dst_start_idx + 1, dst_start_idx + 2, dst_start_idx + 3, dst_start_idx + 4};
     std::vector<int> expected_values = {0x111, 0x222, 0x333, 0x444, 0x555};
@@ -166,25 +176,30 @@ static int test3(){
     pkt1.beat = 0;
     set_city(pkt1.beat, 0, 0x111);
     set_city(pkt1.beat, 1, 0x222);
-    set_city(pkt1.beat, 2, 0x333);
-    pkt1.n = 3;
+    pkt1.n = 2;
 
     BeatPacket pkt2;
     pkt2.beat = 0;
-    pkt2.n = 0;
+    set_city(pkt2.beat, 0, 0x333);
+    pkt2.n = 1;
 
     BeatPacket pkt3;
     pkt3.beat = 0;
-    set_city(pkt3.beat, 0, 0x444);
-    set_city(pkt3.beat, 1, 0x555);
-    pkt3.n = 2;
+    pkt3.n = 0;
+
+    BeatPacket pkt4;
+    pkt4.beat = 0;
+    set_city(pkt4.beat, 0, 0x444);
+    set_city(pkt4.beat, 1, 0x555);
+    pkt4.n = 2;
 
     in_stream.write(pkt1);
     in_stream.write(pkt2);
     in_stream.write(pkt3);
+    in_stream.write(pkt4);
 
     // Execute the HLS component
-    stream_beats_to_individual<1>(in_stream, dst_ind, dst_start_idx, n_cities_to_copy, StartEndDataWithBeats(get_start_end_data(dst_start_idx, dst_end_idx), 0, 0), n_beats, num_cities);
+    stream_beats_to_individual<BEAT_STREAM_INTERVAL>(in_stream, dst_ind, dst_start_idx, n_cities_to_copy, StartEndDataWithBeats(get_start_end_data(dst_start_idx, dst_end_idx), 0, 0), n_beats, num_cities);
 
     std::vector<int> indices = {dst_start_idx, dst_start_idx + 1, 0, 1, 2};
     std::vector<int> expected_values = {0x111, 0x222, 0x333, 0x444, 0x555};
@@ -255,15 +270,13 @@ static int test_beat_producer_partial() {
 
     send_city(state, 0x111, stream);
     send_city(state, 0x222, stream);
-    send_city(state, 0x333, stream);
     finalizeStream(state, stream);
 
     std::vector<std::pair<CityIndex, Beat>> expected;
     Beat b = 0;
     set_city(b, 0, 0x111);
     set_city(b, 1, 0x222);
-    set_city(b, 2, 0x333);
-    expected.push_back({3, b});
+    expected.push_back({2, b});
 
     std::vector<std::pair<CityIndex, Beat>> received = drain_stream(stream);
 
@@ -373,7 +386,7 @@ static int test_border_cases() {
     in_stream.write(pkt1);
     in_stream.write(pkt2);
 
-    stream_beats_to_individual<1>(in_stream, dst_ind, dst_start_idx, n_cities_to_copy,
+    stream_beats_to_individual<BEAT_STREAM_INTERVAL>(in_stream, dst_ind, dst_start_idx, n_cities_to_copy,
                                   StartEndDataWithBeats(get_start_end_data(dst_start_idx, dst_end_idx), 0, 0),
                                   n_beats, num_cities);
 
