@@ -9,12 +9,11 @@ void find_unsued_cities(IndividualAsBeats &p, hls::stream<BeatPacket> &out, Star
                             start_end_data_unused_city_search.start_city > start_end_data_unused_city_search.end_city);
     BeatIndex fill_beats_to_go = wraps_same_beat ? BeatIndex(total_city_beats + BeatIndex(1)) : BeatIndex(total_city_beats);
 
-    BeatProducerState out_state;
-    CityIndex found = 0;
-
     assert(fill_beats_to_go <= HW_MAX_CITY_BEATS + 1);
-    FIND_UNSED_CITIES_LOOP: for (BeatIndex step = 0; step < fill_beats_to_go && found < n_cities_to_find; step++) {
+    FIND_UNSED_CITIES_LOOP: for (BeatIndex step = 0; step < fill_beats_to_go; step++) {
         #pragma HLS PIPELINE II=1
+        BeatProducerState out_state;
+
         BeatIndex read_b = (start_end_data_unused_city_search.start_beat + step);
         if (read_b >= total_city_beats) read_b -= total_city_beats;
 
@@ -29,14 +28,15 @@ void find_unsued_cities(IndividualAsBeats &p, hls::stream<BeatPacket> &out, Star
 
             if(i >= c_start && i <= c_end) {
                 NodeId id = get_node_id(c);
-                ap_uint<1> is_valid = !taken[id];
+                ap_uint<1> is_valid;
+                is_valid = !taken[id];
+                
                 if (is_valid) {
                     append_city(out_state, c);
                 }
             }
         }
 
-        found += out_state.count;
         finalizeStream(out_state, out);
     }
 }
@@ -98,18 +98,31 @@ void crossover(
             c0[b] = p0b;
             c1[b] = p1b;
 
+            ap_uint<MAX_CITIES> mask0[HW_CITIES_PER_BEAT];
+            #pragma HLS ARRAY_PARTITION variable=mask0 complete
+            ap_uint<MAX_CITIES> mask1[HW_CITIES_PER_BEAT];
+            #pragma HLS ARRAY_PARTITION variable=mask1 complete
+
             OX_COPY_CITY_LOOP: for (CityIndex j = 0; j < HW_CITIES_PER_BEAT; j++) {
                 #pragma HLS UNROLL
                 City c0_val = consume_next_city(p0b);
                 City c1_val = consume_next_city(p1b);
 
+                mask0[j] = 0;
+                mask1[j] = 0;
                 if(j >= low_city && j <= high_city) {
                     NodeId id0 = get_node_id(c0_val);
-                    taken0[id0] = 1;
+                    mask0[j][id0] = 1;
 
                     NodeId id1 = get_node_id(c1_val);
-                    taken1[id1] = 1;
+                    mask1[j][id1] = 1;
                 }
+            }
+
+            OR_REDUCE: for (int i = 0; i < HW_CITIES_PER_BEAT; ++i) {
+                #pragma HLS UNROLL
+                taken0 |= mask0[i];
+                taken1 |= mask1[i];
             }
         }
 
