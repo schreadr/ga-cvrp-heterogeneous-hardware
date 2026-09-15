@@ -4,6 +4,8 @@
 #include "types.hpp"
 #include <hls_stream.h>
 
+#define BEAT_STREAM_INTERVAL 3
+
 struct BeatPacket {
     Beat beat;
     CityIndex n;
@@ -39,28 +41,40 @@ struct StartEndDataWithBeats {
         : start_end_data(start_end_data), initial_start_beat(start_beat), end_beat(end_beat) {}
 };
 
+typedef ap_uint<HW_BEAT_WIDTH << 1> BeatWindow;
+
 struct BeatConsumerState {
-    CityIndex current_valid_cities;
+    CityBeatIndex valid_cities;
     CityIndex cities_left;
-    CityIndex curr_dst_idx;
-    BeatIndex current_beat_idx;
+    CityIndex dst_idx;
+    BeatIndex beat_idx;
 
     Beat accum_beat;
-    ap_uint<HW_BEAT_WIDTH << 1> window;
+    BeatWindow window;
 
     StartEndDataWithBeats data;
+
+    CityBeatIndex beat_limit;
+    CityIndex wrap_distance;
 
     BeatConsumerState(
         CityIndex n_cities_to_copy,
         CityIndex dst_start_idx,
-        StartEndDataWithBeats data
+        StartEndDataWithBeats data,
+        CityIndex num_cities
     )
-        : current_valid_cities(0),
+        : valid_cities(0),
           cities_left(n_cities_to_copy),
-          curr_dst_idx(dst_start_idx),
-          current_beat_idx(HW_MAX_CITY_BEATS),
+          dst_idx(dst_start_idx),
+          beat_idx(HW_MAX_CITY_BEATS),
           data(data),
-          window(0) {}
+          window(0)
+    {
+        CityBeatIndex beat_space  = HW_CITIES_PER_BEAT - get_city_beat_idx(dst_start_idx);
+        CityIndex     wrap_dist   = num_cities - dst_start_idx;
+        wrap_distance = wrap_dist;
+        beat_limit    = (wrap_dist < beat_space) ? (CityBeatIndex)wrap_dist : beat_space;
+    }
 };
 
 void capture_and_propagate(BeatConsumerState &state, hls::stream<BeatPacket> &in_stream, IndividualAsBeats &dst_ind, CityIndex num_cities);
@@ -80,14 +94,15 @@ void stream_beats_to_individual(
     BeatConsumerState state(
         n_cities_to_copy,
         dst_start_idx,
-        start_end_data
+        start_end_data,
+        num_cities
     );
 
     WRITE_BEATS_LOOP: do {
         #pragma HLS PIPELINE II=TARGET_II
         // Instruct HLS that state dependency across iterations can be pipelined
         capture_and_propagate(state, in_stream, dst_ind, num_cities);
-    } while (state.current_valid_cities > 0 || state.cities_left > 0);
+    } while (state.valid_cities > 0 || state.cities_left > 0);
 
     // Flush final accumulated beat to RAM after loop ends
     flush_accumulated_beat(state, dst_ind);

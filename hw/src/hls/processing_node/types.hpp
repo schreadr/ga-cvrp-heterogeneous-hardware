@@ -17,7 +17,6 @@
 typedef ap_uint<MAX_CITIES_LOG2 + 1>                  CityIndex;
 typedef ap_uint<HW_MAX_BEATS_LOG2 + 1>                BeatIndex;
 typedef ap_uint<HW_CITIES_PER_BEAT_LOG2 + 1>          CityBeatIndex;
-typedef CityBeatIndex                                 BeatCityIndex;
 typedef ap_uint<RANDOMS_PER_BEAT_LOG2 + 1>            BeatRandomIndex;
 typedef ap_uint<NODE_CACHE_ENTRIES_PER_BEAT_LOG2 + 1> BeatCacheIndex;
 typedef ap_uint<HW_BEATS_PER_AXI_BEAT_LOG2 + 1>       BeatAxiIndex;
@@ -156,18 +155,6 @@ static inline BeatIndex get_total_beats(int num_cities) {
     return get_total_city_beats(num_cities) + HW_FITNESS_BEATS;
 }
 
-static inline void get_beat_city(CityIndex global_idx, BeatIndex &beat_idx, CityIndex &city_idx) {
-    #pragma HLS INLINE
-    beat_idx = global_idx >> HW_CITIES_PER_BEAT_LOG2;
-    city_idx = global_idx & (HW_CITIES_PER_BEAT - 1);
-}
-
-static inline void get_beat_city(int global_idx, BeatIndex &beat_idx, CityIndex &city_idx) {
-    #pragma HLS INLINE
-    beat_idx = global_idx >> HW_CITIES_PER_BEAT_LOG2;
-    city_idx = global_idx & (HW_CITIES_PER_BEAT - 1);
-}
-
 static inline BeatIndex get_beat_idx(CityIndex global_idx) {
     #pragma HLS INLINE
     return global_idx >> HW_CITIES_PER_BEAT_LOG2;
@@ -176,6 +163,30 @@ static inline BeatIndex get_beat_idx(CityIndex global_idx) {
 static inline BeatIndex get_beat_idx(int global_idx) {
     #pragma HLS INLINE
     return global_idx >> HW_CITIES_PER_BEAT_LOG2;
+}
+
+template <typename T>
+static inline CityBeatIndex get_city_beat_idx(T val) {
+    #pragma HLS INLINE
+    return val & (HW_CITIES_PER_BEAT - 1);
+}
+
+template <typename T>
+static inline CityBeatIndex get_city_idx(T val) {
+    #pragma HLS INLINE
+    return get_city_beat_idx(val);
+}
+
+static inline void get_beat_city(CityIndex global_idx, BeatIndex &beat_idx, CityIndex &city_idx) {
+    #pragma HLS INLINE
+    beat_idx = get_beat_idx(global_idx);
+    city_idx = get_city_beat_idx(global_idx);
+}
+
+static inline void get_beat_city(int global_idx, BeatIndex &beat_idx, CityIndex &city_idx) {
+    #pragma HLS INLINE
+    beat_idx = get_beat_idx(global_idx);
+    city_idx = get_city_beat_idx(global_idx);
 }
 
 static inline StartEndData get_start_end_data(CityIndex start_idx, CityIndex end_idx) {
@@ -197,7 +208,7 @@ static inline CityIndex get_first_city_index(BeatIndex beat_idx) {
 static inline CityIndex get_last_city_index(CityIndex num_cities, BeatIndex beat_idx) {
     #pragma HLS INLINE
     BeatIndex last_city_beat = (num_cities - 1) >> HW_CITIES_PER_BEAT_LOG2;
-    return (beat_idx == last_city_beat) ? CityIndex((num_cities - 1) & (HW_CITIES_PER_BEAT - 1)) : CityIndex(HW_CITIES_PER_BEAT - 1);
+    return (beat_idx == last_city_beat) ? CityIndex(get_city_beat_idx(num_cities - 1)) : CityIndex(HW_CITIES_PER_BEAT - 1);
 }
 
 // ----------------------------------------------------------------------------
