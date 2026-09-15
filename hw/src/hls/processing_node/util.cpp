@@ -62,6 +62,9 @@ void inline process_next_packet(
         if (s >= dst_offset && s < dst_offset + n) {
             CityBeatIndex w = s - dst_offset;
             City c = 0;
+                        
+            // This code assumes HW_CITIES_PER_BEAT is 4, adjust if necessary
+            assert(HW_CITIES_PER_BEAT == 4); 
             switch (w) {
                 case 0: c = state.window.range(1 * CITY_BITS - 1, 0 * CITY_BITS); break;
                 case 1: c = state.window.range(2 * CITY_BITS - 1, 1 * CITY_BITS); break;
