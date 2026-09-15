@@ -358,49 +358,125 @@ int test_beat_producer() {
     return errors;
 }
 
-static int test_border_cases() {
+static int test_two_beats_warp_around() {
     IndividualAsBeats dst_ind;
     hls::stream<BeatPacket> in_stream;
 
     init_all_0(dst_ind);
 
-    int num_cities = 15;
+    int num_cities = 2 * HW_CITIES_PER_BEAT;
     int n_beats = get_total_beats(num_cities);
 
-    int dst_start_idx = 13;
-    int n_cities_to_copy = 4;
-    int dst_end_idx = 1;
+    int dst_start_idx = 2 * HW_CITIES_PER_BEAT - 1;
+    int dst_end_idx = 2 * HW_CITIES_PER_BEAT - 2;
+    int n_cities_to_copy = num_cities;
 
+    // Send 2 packets of HW_CITIES_PER_BEAT cities each
+    // Packet 1: first HW_CITIES_PER_BEAT cities
     BeatPacket pkt1;
     pkt1.beat = 0;
-    set_city(pkt1.beat, 0, 0x111);
-    set_city(pkt1.beat, 1, 0x222);
-    pkt1.n = 2;
+    for (int i = 0; i < HW_CITIES_PER_BEAT; i++) {
+        set_city(pkt1.beat, i, 0x100 + i + 1);
+    }
+    pkt1.n = HW_CITIES_PER_BEAT;
+    in_stream.write(pkt1);
 
+    // Packet 2: next HW_CITIES_PER_BEAT cities
     BeatPacket pkt2;
     pkt2.beat = 0;
-    set_city(pkt2.beat, 0, 0x333);
-    set_city(pkt2.beat, 1, 0x444);
-    pkt2.n = 2;
-
-    in_stream.write(pkt1);
+    for (int i = 0; i < HW_CITIES_PER_BEAT; i++) {
+        set_city(pkt2.beat, i, 0x100 + HW_CITIES_PER_BEAT + i + 1);
+    }
+    pkt2.n = HW_CITIES_PER_BEAT;
     in_stream.write(pkt2);
 
-    stream_beats_to_individual<BEAT_STREAM_INTERVAL>(in_stream, dst_ind, dst_start_idx, n_cities_to_copy,
-                                  StartEndDataWithBeats(get_start_end_data(dst_start_idx, dst_end_idx), 0, 0),
-                                  n_beats, num_cities);
+    StartEndData start_end_data = get_start_end_data(dst_start_idx, dst_end_idx);
+    StartEndDataWithBeats data_with_beats(start_end_data, 0, 0);
 
-    std::vector<int> indices = {13, 14, 0, 1};
-    std::vector<int> expected_values = {0x111, 0x222, 0x333, 0x444};
+    stream_beats_to_individual<BEAT_STREAM_INTERVAL>(
+        in_stream, dst_ind, dst_start_idx, n_cities_to_copy,
+        data_with_beats, n_beats, num_cities
+    );
+
+    std::vector<int> indices;
+    std::vector<int> expected_values;
+
+    for (int k = 0; k < num_cities; k++) {
+        int idx = wrap_city_index(dst_start_idx + k, num_cities);
+        indices.push_back(idx);
+        expected_values.push_back(0x100 + k + 1);
+    }
 
     bool success = true;
     success &= validate(indices, expected_values, dst_ind);
     success &= validate_expect(indices, 0, dst_ind, num_cities);
 
     if (success) {
-        std::cout << "Test Border Cases (Util) PASSED successfully!" << std::endl;
+        std::cout << "test_two_beats_warp_around PASSED successfully!" << std::endl;
     } else {
-        std::cout << "Test Border Cases (Util) FAILED!" << std::endl;
+        std::cout << "test_two_beats_warp_around FAILED!" << std::endl;
+    }
+
+    return success ? 0 : 1;
+}
+
+static int test_odd_cities_warp_around() {
+    IndividualAsBeats dst_ind;
+    hls::stream<BeatPacket> in_stream;
+
+    init_all_0(dst_ind);
+
+    int num_cities = 2 * HW_CITIES_PER_BEAT + 1;
+    int n_beats = get_total_beats(num_cities);
+
+    // Start at the last city of the tour (unaligned / partial beat)
+    int dst_start_idx = num_cities - 1;
+    int n_cities_to_copy = HW_CITIES_PER_BEAT + 1;
+    int dst_end_idx = wrap_city_index(dst_start_idx + n_cities_to_copy - 1, num_cities);
+
+    // Send packet 1: HW_CITIES_PER_BEAT cities
+    // The first city fills the last beat (index num_cities - 1),
+    // and the remaining HW_CITIES_PER_BEAT - 1 cities spill over into beat 0!
+    BeatPacket pkt1;
+    pkt1.beat = 0;
+    for (int i = 0; i < HW_CITIES_PER_BEAT; i++) {
+        set_city(pkt1.beat, i, 0x200 + i + 1);
+    }
+    pkt1.n = HW_CITIES_PER_BEAT;
+    in_stream.write(pkt1);
+
+    // Send packet 2: 1 city to complete beat 0
+    BeatPacket pkt2;
+    pkt2.beat = 0;
+    set_city(pkt2.beat, 0, 0x200 + HW_CITIES_PER_BEAT + 1);
+    pkt2.n = 1;
+    in_stream.write(pkt2);
+
+    StartEndData start_end_data = get_start_end_data(dst_start_idx, dst_end_idx);
+    StartEndDataWithBeats data_with_beats(start_end_data, 0, 0);
+
+    stream_beats_to_individual<BEAT_STREAM_INTERVAL>(
+        in_stream, dst_ind, dst_start_idx, n_cities_to_copy,
+        data_with_beats, n_beats, num_cities
+    );
+
+    std::vector<int> indices;
+    std::vector<int> expected_values;
+
+    for (int k = 0; k < n_cities_to_copy; k++) {
+        int idx = wrap_city_index(dst_start_idx + k, num_cities);
+        indices.push_back(idx);
+        expected_values.push_back(0x200 + k + 1);
+    }
+
+    bool success = true;
+    success &= validate(indices, expected_values, dst_ind);
+    success &= validate_expect(indices, 0, dst_ind, num_cities);
+
+    if (success) {
+        std::cout << "test_odd_cities_warp_around PASSED successfully!" << std::endl;
+    } else {
+        std::cout << "test_odd_cities_warp_around FAILED!" << std::endl;
     }
 
     return success ? 0 : 1;
@@ -412,6 +488,7 @@ int test_util() {
     errors += test3();
     errors += test_integer_sqrt();
     errors += test_beat_producer();
-    errors += test_border_cases();
+    errors += test_two_beats_warp_around();
+    errors += test_odd_cities_warp_around();
     return errors;
 }
