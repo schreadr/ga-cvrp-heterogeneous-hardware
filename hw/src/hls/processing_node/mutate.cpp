@@ -19,7 +19,7 @@ static void stream_reversed_slice(IndividualAsBeats &p, hls::stream<BeatPacket> 
         #pragma HLS PIPELINE II=1
         Beat pb = p[i]; 
 
-        CityIndex low_city = (i == start_end_data.start_beat) ? start_end_data.start_city : get_first_city_index(i);
+        CityIndex low_city = (i == start_end_data.start_beat) ? start_end_data.start_city : get_first_city_index();
         CityIndex high_city = (i == start_end_data.end_beat) ? start_end_data.end_city : get_last_city_index(num_cities, i);
 
         // shift relevant bits to the right s.t. they are on left after swapping
@@ -37,13 +37,13 @@ static void stream_reversed_slice(IndividualAsBeats &p, hls::stream<BeatPacket> 
     }
 }
 
-static void reverse_order(IndividualAsBeats &p, IndividualAsBeats &c, CityIndex num_cities, BeatIndex total_city_beats, CityIndex start_idx, CityIndex n_cities_to_copy, StartEndDataWithBeats &start_end_data) {
+static void reverse_order(IndividualAsBeats &p, IndividualAsBeats &c, CityIndex num_cities, CityIndex start_idx, CityIndex n_cities_to_copy, StartEndDataWithBeats &start_end_data) {
     #pragma HLS DATAFLOW
     hls::stream<BeatPacket> reverse_buffer("reverse_buffer");
     #pragma HLS STREAM variable=reverse_buffer depth=4
 
     stream_reversed_slice(p, reverse_buffer, num_cities, start_end_data.start_end_data);
-    stream_beats_to_individual<BEAT_STREAM_INTERVAL>(reverse_buffer, c, start_idx, n_cities_to_copy, start_end_data, total_city_beats, num_cities);
+    stream_beats_to_individual<BEAT_STREAM_INTERVAL>(reverse_buffer, c, start_idx, n_cities_to_copy, start_end_data, num_cities);
 }
 
 
@@ -73,7 +73,7 @@ void mutate_core(
         c[i] = p[i];
     }
 
-    reverse_order(p, c, num_cities, total_city_beats, start_idx, n_cities_to_copy, start_end_data_with_beats);
+    reverse_order(p, c, num_cities, start_idx, n_cities_to_copy, start_end_data_with_beats);
 }
 
 void mutate(

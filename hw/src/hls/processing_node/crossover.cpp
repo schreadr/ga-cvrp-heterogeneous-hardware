@@ -4,7 +4,7 @@
 #include <cassert>
 #include <hls_stream.h>
 
-void find_unsued_cities(IndividualAsBeats &p, hls::stream<BeatPacket> &out, StartEndData &start_end_data_unused_city_search, CityIndex num_cities, BeatIndex total_city_beats, CityIndex n_cities_to_find, ap_uint<MAX_CITIES> &taken){
+void find_unsued_cities(IndividualAsBeats &p, hls::stream<BeatPacket> &out, StartEndData &start_end_data_unused_city_search, CityIndex num_cities, BeatIndex total_city_beats, ap_uint<MAX_CITIES> &taken){
     bool wraps_same_beat = (start_end_data_unused_city_search.start_beat == start_end_data_unused_city_search.end_beat &&
                             start_end_data_unused_city_search.start_city > start_end_data_unused_city_search.end_city);
     BeatIndex fill_beats_to_go = wraps_same_beat ? BeatIndex(total_city_beats + BeatIndex(1)) : BeatIndex(total_city_beats);
@@ -17,7 +17,7 @@ void find_unsued_cities(IndividualAsBeats &p, hls::stream<BeatPacket> &out, Star
         BeatIndex read_b = (start_end_data_unused_city_search.start_beat + step);
         if (read_b >= total_city_beats) read_b -= total_city_beats;
 
-        CityIndex c_start = (step == 0) ? start_end_data_unused_city_search.start_city : get_first_city_index(read_b);
+        CityIndex c_start = (step == 0) ? start_end_data_unused_city_search.start_city : get_first_city_index();
         CityIndex c_end = (step == fill_beats_to_go - 1) ? start_end_data_unused_city_search.end_city : get_last_city_index(num_cities, read_b);
 
         Beat b = p[read_b];
@@ -47,11 +47,11 @@ void fill_up_in_circle(StartEndData &start_end_data_unused_city_search, StartEnd
     hls::stream<BeatPacket> beat_stream_0;
     hls::stream<BeatPacket> beat_stream_1;
 
-    find_unsued_cities(p1, beat_stream_0, start_end_data_unused_city_search, num_cities, total_city_beats, n_cities_to_insert, taken0);
-    find_unsued_cities(p0, beat_stream_1, start_end_data_unused_city_search, num_cities, total_city_beats, n_cities_to_insert, taken1);
+    find_unsued_cities(p1, beat_stream_0, start_end_data_unused_city_search, num_cities, total_city_beats, taken0);
+    find_unsued_cities(p0, beat_stream_1, start_end_data_unused_city_search, num_cities, total_city_beats, taken1);
 
-    stream_beats_to_individual<BEAT_STREAM_INTERVAL>(beat_stream_0, c0, start_idx, n_cities_to_insert, start_end_data_with_beats0, total_city_beats, num_cities);
-    stream_beats_to_individual<BEAT_STREAM_INTERVAL>(beat_stream_1, c1, start_idx, n_cities_to_insert, start_end_data_with_beats1, total_city_beats, num_cities);
+    stream_beats_to_individual<BEAT_STREAM_INTERVAL>(beat_stream_0, c0, start_idx, n_cities_to_insert, start_end_data_with_beats0, num_cities);
+    stream_beats_to_individual<BEAT_STREAM_INTERVAL>(beat_stream_1, c1, start_idx, n_cities_to_insert, start_end_data_with_beats1, num_cities);
 }
 
 
@@ -90,7 +90,7 @@ void crossover(
         COPY_BEAT_LOOP: for (BeatIndex i = 0; i < itrs; i++) {
             #pragma HLS PIPELINE II=1
             BeatIndex b = i + start_end_data.start_beat;
-            CityIndex low_city = (b == start_end_data.start_beat) ? start_end_data.start_city : get_first_city_index(b);
+            CityIndex low_city = (b == start_end_data.start_beat) ? start_end_data.start_city : get_first_city_index();
             CityIndex high_city = (b == start_end_data.end_beat) ? start_end_data.end_city : get_last_city_index(num_cities, b);
 
             Beat p0b = p0[b];

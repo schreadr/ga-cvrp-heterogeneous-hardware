@@ -54,7 +54,6 @@ static int test1(){
 
     // Define test parameters with an unaligned start index
     int num_cities = std::ceil((dst_start_idx + n_cities_to_copy) / (double) HW_CITIES_PER_BEAT) * HW_CITIES_PER_BEAT;
-    int n_beats = get_total_beats(num_cities);
 
     // Populate mock stream packets using city-setting utilities
     BeatPacket pkt1;
@@ -84,7 +83,7 @@ static int test1(){
     in_stream.write(pkt4);
 
     // Execute the HLS component
-    stream_beats_to_individual<BEAT_STREAM_INTERVAL>(in_stream, dst_ind, dst_start_idx, n_cities_to_copy, StartEndDataWithBeats(get_start_end_data(dst_start_idx, dst_end_idx), 0, 0), n_beats, num_cities);
+    stream_beats_to_individual<BEAT_STREAM_INTERVAL>(in_stream, dst_ind, dst_start_idx, n_cities_to_copy, StartEndDataWithBeats(get_start_end_data(dst_start_idx, dst_end_idx), 0, 0), num_cities);
 
     std::vector<int> indices = {dst_start_idx, dst_start_idx + 1, dst_start_idx + 2, dst_start_idx + 3, dst_start_idx + 4};
     std::vector<int> expected_values = {0x111, 0x222, 0x333, 0x444, 0x555};
@@ -112,7 +111,6 @@ static int test2(){
     int dst_end_idx = dst_start_idx + n_cities_to_copy - 1;
         
     int num_cities = std::ceil(n_cities_to_copy / HW_CITIES_PER_BEAT) * HW_CITIES_PER_BEAT * 2;
-    int n_beats = get_total_beats(num_cities);
 
     // Populate mock stream packets using city-setting utilities
     BeatPacket pkt1;
@@ -142,7 +140,7 @@ static int test2(){
     in_stream.write(pkt4);
 
     // Execute the HLS component
-    stream_beats_to_individual<BEAT_STREAM_INTERVAL>(in_stream, dst_ind, dst_start_idx, n_cities_to_copy, StartEndDataWithBeats(get_start_end_data(dst_start_idx, dst_end_idx), 0, 0), n_beats, num_cities);
+    stream_beats_to_individual<BEAT_STREAM_INTERVAL>(in_stream, dst_ind, dst_start_idx, n_cities_to_copy, StartEndDataWithBeats(get_start_end_data(dst_start_idx, dst_end_idx), 0, 0), num_cities);
 
     std::vector<int> indices = {dst_start_idx, dst_start_idx + 1, dst_start_idx + 2, dst_start_idx + 3, dst_start_idx + 4};
     std::vector<int> expected_values = {0x111, 0x222, 0x333, 0x444, 0x555};
@@ -166,7 +164,6 @@ static int test3(){
 
     int n_cities_to_copy = 5; 
     int num_cities = std::ceil(n_cities_to_copy / (double) HW_CITIES_PER_BEAT) * HW_CITIES_PER_BEAT; // 8 cities total (2 beats)
-    int n_beats = get_total_beats(num_cities);
     // Start at second-to-last city of the individual (index 6)
     int dst_start_idx = num_cities - 2; 
     int dst_end_idx = (dst_start_idx + n_cities_to_copy - 1) % num_cities;
@@ -199,7 +196,7 @@ static int test3(){
     in_stream.write(pkt4);
 
     // Execute the HLS component
-    stream_beats_to_individual<BEAT_STREAM_INTERVAL>(in_stream, dst_ind, dst_start_idx, n_cities_to_copy, StartEndDataWithBeats(get_start_end_data(dst_start_idx, dst_end_idx), 0, 0), n_beats, num_cities);
+    stream_beats_to_individual<BEAT_STREAM_INTERVAL>(in_stream, dst_ind, dst_start_idx, n_cities_to_copy, StartEndDataWithBeats(get_start_end_data(dst_start_idx, dst_end_idx), 0, 0), num_cities);
 
     std::vector<int> indices = {dst_start_idx, dst_start_idx + 1, 0, 1, 2};
     std::vector<int> expected_values = {0x111, 0x222, 0x333, 0x444, 0x555};
@@ -365,7 +362,6 @@ static int test_two_beats_warp_around() {
     init_all_0(dst_ind);
 
     int num_cities = 2 * HW_CITIES_PER_BEAT;
-    int n_beats = get_total_beats(num_cities);
 
     int dst_start_idx = 2 * HW_CITIES_PER_BEAT - 1;
     int dst_end_idx = 2 * HW_CITIES_PER_BEAT - 2;
@@ -395,7 +391,7 @@ static int test_two_beats_warp_around() {
 
     stream_beats_to_individual<BEAT_STREAM_INTERVAL>(
         in_stream, dst_ind, dst_start_idx, n_cities_to_copy,
-        data_with_beats, n_beats, num_cities
+        data_with_beats, num_cities
     );
 
     std::vector<int> indices;
@@ -427,7 +423,6 @@ static int test_odd_cities_warp_around() {
     init_all_0(dst_ind);
 
     int num_cities = 2 * HW_CITIES_PER_BEAT + 1;
-    int n_beats = get_total_beats(num_cities);
 
     // Start at the last city of the tour (unaligned / partial beat)
     int dst_start_idx = num_cities - 1;
@@ -457,7 +452,7 @@ static int test_odd_cities_warp_around() {
 
     stream_beats_to_individual<BEAT_STREAM_INTERVAL>(
         in_stream, dst_ind, dst_start_idx, n_cities_to_copy,
-        data_with_beats, n_beats, num_cities
+        data_with_beats, num_cities
     );
 
     std::vector<int> indices;

@@ -200,7 +200,7 @@ static inline StartEndData get_start_end_data(CityIndex start_idx, CityIndex end
     return StartEndData(start_beat, start_city, end_beat, end_city);
 }
 
-static inline CityIndex get_first_city_index(BeatIndex beat_idx) {
+static inline CityIndex get_first_city_index() {
     #pragma HLS INLINE
     return 0;
 }

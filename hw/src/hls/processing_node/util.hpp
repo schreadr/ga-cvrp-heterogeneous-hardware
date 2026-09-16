@@ -69,7 +69,6 @@ void stream_beats_to_individual(
     CityIndex dst_start_idx,
     CityIndex n_cities_to_copy,
     const StartEndDataWithBeats &start_end_data,
-    BeatIndex n_beats,
     CityIndex num_cities
 ) {
     #pragma HLS DATAFLOW
