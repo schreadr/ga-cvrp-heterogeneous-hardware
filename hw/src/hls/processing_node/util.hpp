@@ -41,42 +41,6 @@ struct StartEndDataWithBeats {
         : start_end_data(start_end_data), initial_start_beat(start_beat), end_beat(end_beat) {}
 };
 
-typedef ap_uint<HW_BEAT_WIDTH << 1> BeatWindow;
-
-struct BeatConsumerState {
-    CityBeatIndex valid_cities;
-    CityIndex cities_left;
-    CityIndex dst_idx;
-    BeatIndex beat_idx;
-
-    Beat accum_beat;
-    BeatWindow window;
-
-    StartEndDataWithBeats data;
-
-    CityBeatIndex beat_limit;
-    CityIndex wrap_distance;
-
-    BeatConsumerState(
-        CityIndex n_cities_to_copy,
-        CityIndex dst_start_idx,
-        StartEndDataWithBeats data,
-        CityIndex num_cities
-    )
-        : valid_cities(0),
-          cities_left(n_cities_to_copy),
-          dst_idx(dst_start_idx),
-          beat_idx(HW_MAX_CITY_BEATS),
-          data(data),
-          window(0)
-    {
-        CityBeatIndex beat_space  = HW_CITIES_PER_BEAT - get_city_beat_idx(dst_start_idx);
-        CityIndex     wrap_dist   = num_cities - dst_start_idx;
-        wrap_distance = wrap_dist;
-        beat_limit    = (wrap_dist < beat_space) ? (CityBeatIndex)wrap_dist : beat_space;
-    }
-};
-
 struct BeatPacketWithLast {
     Beat beat;
     CityIndex n;
@@ -97,10 +61,6 @@ void propagate_tagged_packets(
     const StartEndDataWithBeats &start_end_data,
     CityIndex num_cities
 );
-
-void capture_and_propagate(BeatConsumerState &state, hls::stream<BeatPacket> &in_stream, IndividualAsBeats &dst_ind, CityIndex num_cities);
-
-void flush_accumulated_beat(BeatConsumerState &state, IndividualAsBeats &dst_ind);
 
 template <int TARGET_II>
 void stream_beats_to_individual(
