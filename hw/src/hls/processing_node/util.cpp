@@ -114,8 +114,18 @@ void propagate_tagged_packets(
                         accum_beat.range((s + 1) * CITY_BITS - 1, s * CITY_BITS) = c;
                     }
                 }
+                // If spillover completed the last beat of the tour, flush it directly (RAM is dual-port) and reset to beat 0
+                if (!at_tour_end && curr_idx + pkt.n >= num_cities) {
+                    dst_ind[current_beat_idx] = accum_beat;
+                    current_beat_idx = 0;
+                    accum_beat = (0 == end_beat_idx) ? end_beat : ((0 == start_beat) ? initial_start_beat : Beat(0));
+                    beat_flushed = true;
+                } else {
+                    beat_flushed = false;
+                }
+            } else {
+                beat_flushed = true;
             }
-            beat_flushed = (n_next == 0);
         } else {
             beat_flushed = false;
         }

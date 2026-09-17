@@ -1,3 +1,4 @@
+#include <fstream>
 #include "processing_node.hpp"
 #include "test_helper.hpp"
 #include "crossover_test.hpp"
@@ -365,18 +366,36 @@ int run_integration_test_border_cases() {
     return errors;
 }
 
-int run_integration_test_big_instance() {
-    std::cout << "Running Integration Test (Big Instance: X-n1001-k43)..." << std::endl;
+
+int run_integration_test(const std::string&);
+
+int run_all_integration_tests() {
+    int errors = 0;
+    const std::vector<std::string> instance_files = {
+        "P-n16-k8.vrp",
+        "P-n40-k5.vrp",
+        "X-n1001-k43.vrp"
+    };
+
+    for (const auto& file : instance_files) {
+        int err = run_integration_test(file);
+        if (err != 0) std::cout << "Integration Test failed for " << file << std::endl;
+        errors += err;
+    }
+    return errors;
+}
+
+int run_integration_test(const std::string& vrp_path) {
+    std::cout << "Running Integration Test for: " << vrp_path << "..." << std::endl;
     hls::stream<axi_word_t> in0("in0_big"), out0("out0_big");
     hls::stream<axi_word_t> in1("in1_big"), out1("out1_big");
     hls::stream<axi_word_t> in_random("in_random_big");
 
-    const std::string vrp_path = "X-n1001-k43.vrp";
     std::cout << "Loading problem from: " << vrp_path << std::endl;
     const ProblemInstance problem = parse_vrp(vrp_path);
     validate_encoding_constants(problem);
 
-    const std::size_t num_ind = 2;
+    const std::size_t num_ind = 100;
     const uint32_t seed = 12648430;
 
     std::cout << "Generating initial population (" << num_ind << " individuals per stream)..." << std::endl;
@@ -428,12 +447,14 @@ int run_integration_test_big_instance() {
     std::vector<Individual> got_child_0;
     std::vector<Individual> got_child_1;
     try {
+        std::cout << "Decoding output stream 0..." << std::endl;
         got_child_0 = decode_population_fixed(problem, got_0.data(), num_ind);
+        std::cout << "Decoding output stream 1..." << std::endl;
         got_child_1 = decode_population_fixed(problem, got_1.data(), num_ind);
     } catch (const std::exception &e) {
-        std::cout << "Exception decoding output population in big instance test: "
+        std::cout << "Exception decoding output population in test: "
                   << e.what() << std::endl;
-        std::cout << "BIG INSTANCE INTEGRATION TEST FAILED with exception." << std::endl;
+        std::cout << "INTEGRATION TEST FAILED with exception." << std::endl;
         return 1;
     }
 
@@ -454,9 +475,9 @@ int run_integration_test_big_instance() {
     }
 
     if (errors == 0) {
-        std::cout << "BIG INSTANCE INTEGRATION TEST PASSED!" << std::endl;
+        std::cout << "Integration test for problem" << vrp_path <<" PASSED!" << std::endl;
     } else {
-        std::cout << "BIG INSTANCE INTEGRATION TEST FAILED with " << errors << " errors." << std::endl;
+        std::cout << "Integration test for problem" << vrp_path <<" FAILED with " << errors << " errors." << std::endl;
     }
 
     return errors;
@@ -516,9 +537,9 @@ int main() {
     if (cur_err != 0) std::cout << "Integration Border Cases Test failed with " << cur_err << " errors." << std::endl;
     errors += cur_err;
 
-    std::cout << "\nRunning Integration Big Instance Test..." << std::endl;
-    cur_err = run_integration_test_big_instance();
-    if (cur_err != 0) std::cout << "Integration Big Instance Test failed with " << cur_err << " errors." << std::endl;
+    std::cout << "\nRunning All Integration Tests..." << std::endl;
+    cur_err = run_all_integration_tests();
+    if (cur_err != 0) std::cout << "Integration Tests failed with " << cur_err << " errors." << std::endl;
     errors += cur_err;
 
     if (errors == 0) {

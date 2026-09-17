@@ -477,6 +477,69 @@ static int test_odd_cities_warp_around() {
     return success ? 0 : 1;
 }
 
+static int test_odd_cities_spillover_warp_around() {
+    IndividualAsBeats dst_ind;
+    hls::stream<BeatPacket> in_stream;
+
+    init_all_0(dst_ind);
+
+    int num_cities = 2 * HW_CITIES_PER_BEAT + 1;
+
+    // Start one city before the last beat (e.g. index 3 for num_cities = 5, where last city is 4)
+    int dst_start_idx = num_cities - 2;
+    int n_cities_to_copy = HW_CITIES_PER_BEAT + 2;
+    int dst_end_idx = wrap_city_index(dst_start_idx + n_cities_to_copy - 1, num_cities);
+
+    // Send packet 1: HW_CITIES_PER_BEAT cities
+    // City 1 fills beat 1, city 2 spills over into the last beat (index num_cities - 1),
+    // reaching the end of the tour!
+    BeatPacket pkt1;
+    pkt1.beat = 0;
+    for (int i = 0; i < HW_CITIES_PER_BEAT; i++) {
+        set_city(pkt1.beat, i, 0x300 + i + 1);
+    }
+    pkt1.n = HW_CITIES_PER_BEAT;
+    in_stream.write(pkt1);
+
+    // Send packet 2: HW_CITIES_PER_BEAT cities starting from beat 0
+    BeatPacket pkt2;
+    pkt2.beat = 0;
+    for (int i = 0; i < HW_CITIES_PER_BEAT; i++) {
+        set_city(pkt2.beat, i, 0x300 + HW_CITIES_PER_BEAT + i + 1);
+    }
+    pkt2.n = HW_CITIES_PER_BEAT;
+    in_stream.write(pkt2);
+
+    StartEndData start_end_data = get_start_end_data(dst_start_idx, dst_end_idx);
+    StartEndDataWithBeats data_with_beats(start_end_data, 0, 0);
+
+    stream_beats_to_individual<BEAT_STREAM_INTERVAL>(
+        in_stream, dst_ind, dst_start_idx, n_cities_to_copy,
+        data_with_beats, num_cities
+    );
+
+    std::vector<int> indices;
+    std::vector<int> expected_values;
+
+    for (int k = 0; k < n_cities_to_copy; k++) {
+        int idx = wrap_city_index(dst_start_idx + k, num_cities);
+        indices.push_back(idx);
+        expected_values.push_back(0x300 + k + 1);
+    }
+
+    bool success = true;
+    success &= validate(indices, expected_values, dst_ind);
+    success &= validate_expect(indices, 0, dst_ind, num_cities);
+
+    if (success) {
+        std::cout << "test_odd_cities_spillover_warp_around PASSED successfully!" << std::endl;
+    } else {
+        std::cout << "test_odd_cities_spillover_warp_around FAILED!" << std::endl;
+    }
+
+    return success ? 0 : 1;
+}
+
 int test_util() {
     int errors = test1();
     errors += test2();
@@ -485,5 +548,6 @@ int test_util() {
     errors += test_beat_producer();
     errors += test_two_beats_warp_around();
     errors += test_odd_cities_warp_around();
+    errors += test_odd_cities_spillover_warp_around();
     return errors;
 }
