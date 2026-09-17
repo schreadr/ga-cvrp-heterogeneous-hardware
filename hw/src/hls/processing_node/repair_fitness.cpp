@@ -65,31 +65,31 @@ static void create_city_stream(
     const CityData city_cache[MAX_CACHE_ENTRIES],
     hls::stream<CityElement> &city_stream
 ) {
-    CityIndex city_idx = 0;
     Beat active_beat = input_beats.read();
     CityBeatIndex cities_in_beat = HW_CITIES_PER_BEAT;
 
-    CREATE_CITIES_LOOP: while (city_idx < num_cities) {
+    CREATE_CITIES_LOOP: for (CityIndex city_idx = 0; city_idx < num_cities; ++city_idx) {
         #pragma HLS PIPELINE II=1
 
-        if (cities_in_beat == 0) {
-            active_beat = input_beats.read();
+        City current_city = active_beat.range(CITY_BITS - 1, 0);
+        NodeId current_node = get_node_id(current_city);
+        CityData cdata = city_cache[current_node];
+        Point coord = get_coord(cdata);
+
+        CityElement elem;
+        elem.city = current_city;
+        elem.demand = cdata.demand;
+        elem.coord = coord;
+        city_stream.write(elem);
+
+        if (cities_in_beat == 1) {
+            if (city_idx + 1 < num_cities) {
+                active_beat = input_beats.read();
+            }
             cities_in_beat = HW_CITIES_PER_BEAT;
         } else {
-            City current_city = active_beat.range(CITY_BITS - 1, 0);
-            NodeId current_node = get_node_id(current_city);
-            CityData cdata = city_cache[current_node];
-            Point coord = get_coord(cdata);
-
-            CityElement elem;
-            elem.city = current_city;
-            elem.demand = cdata.demand;
-            elem.coord = coord;
-            city_stream.write(elem);
-
             active_beat >>= CITY_BITS;
             cities_in_beat--;
-            city_idx++;
         }
     }
 }
