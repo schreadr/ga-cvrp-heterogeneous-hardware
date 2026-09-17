@@ -332,6 +332,31 @@ std::ostream& operator<<(std::ostream &os, const GASummary &summary) {
     return os;
 }
 
+int calc_max_n_subtours(const ProblemInstance &problem) {
+    if (problem.nodes.empty()) return 0;
+    std::vector<int> demands;
+    demands.reserve(problem.nodes.size());
+    for (const auto &node : problem.nodes) {
+        demands.push_back(node.demand);
+    }
+    std::sort(demands.rbegin(), demands.rend());
+
+    int k_min = 0;
+    int load = 0;
+    for (int d : demands) {
+        if (load + d <= problem.capacity) {
+            load += d;
+            k_min++;
+        } else {
+            break;
+        }
+    }
+    if (k_min == 0) k_min = 1;
+
+    int num_customers = static_cast<int>(problem.nodes.size());
+    return (num_customers + k_min - 1) / k_min;
+}
+
 std::uint32_t floor_euclidean_distance(const ProblemNode &lhs, const ProblemNode &rhs) {
     const long long dx = static_cast<long long>(lhs.x) - static_cast<long long>(rhs.x);
     const long long dy = static_cast<long long>(lhs.y) - static_cast<long long>(rhs.y);
@@ -569,6 +594,7 @@ GASummary run_ga(const ProblemInstance& problem, GAParams& params, std::function
     population_to_buffer(population, pop_buffer, problem.dimension);
 
     const std::size_t n_keep = std::min(pop_size, static_cast<std::size_t>(std::round(pop_size * (params.n_best_keep / 100.0))));
+    const int max_subtours = calc_max_n_subtours(problem);
     auto init_end = std::chrono::steady_clock::now();
     summary.timings.init_time_ms = std::chrono::duration<double, std::milli>(init_end - init_start).count();
 
@@ -577,7 +603,7 @@ GASummary run_ga(const ProblemInstance& problem, GAParams& params, std::function
         create_parent_pairs(population, parents1, parents2, new_seed());
         population_to_buffer(parents1, buffer_src_0, problem.dimension);
         population_to_buffer(parents2, buffer_src_1, problem.dimension);
-        generate_random_numbers(half_pop, buffer_src_rnd, problem.dimension - 1, new_seed());
+        generate_random_numbers(half_pop, buffer_src_rnd, problem.dimension - 1, params.two_opt_k, max_subtours, new_seed());
         auto t1 = std::chrono::steady_clock::now();
         
         create_new_generation();

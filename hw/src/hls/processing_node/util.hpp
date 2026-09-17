@@ -111,4 +111,22 @@ ap_uint<(W_IN + 1) / 2> integer_sqrt(ap_uint<W_IN> value) {
     return q;
 }
 
+inline ap_uint<COORD_BITS + 1> abs_coord_diff(Coord lhs, Coord rhs) {
+    #pragma HLS INLINE
+    return lhs >= rhs ? Coord(lhs - rhs) : Coord(rhs - lhs);
+}
+
+inline ap_uint<COORD_BITS * 2 + 2> squared_distance(Point from, Point to) {
+    #pragma HLS INLINE
+    ap_uint<COORD_BITS + 1> dx = abs_coord_diff(from.x, to.x);
+    ap_uint<COORD_BITS + 1> dy = abs_coord_diff(from.y, to.y);
+    return dx * dx + dy * dy;
+}
+
+inline ap_uint<COORD_BITS + 1> floored_distance(Point from, Point to) {
+    #pragma HLS INLINE
+    ap_uint<COORD_BITS * 2 + 2> squared = squared_distance(from, to);
+    return integer_sqrt<COORD_BITS * 2 + 2>(squared);
+}
+
 #endif // UTIL_HPP

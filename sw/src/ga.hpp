@@ -144,6 +144,7 @@ struct GAParams {
     std::size_t n_generations;
     double n_best_keep;
     std::uint32_t seed;
+    int two_opt_k = 0;
 
     std::uint8_t* buffer_src_0 = nullptr;
     std::uint8_t* buffer_src_1 = nullptr;
@@ -242,5 +243,7 @@ void create_parent_pairs(const std::vector<EncodedIndividual> &population, std::
 GASummary run_ga(const ProblemInstance& problem, GAParams& params, std::function<void()> create_new_generation);
 
 bool validate_encoding_constants(const ProblemInstance &problem, bool throw_on_error = true);
+
+int calc_max_n_subtours(const ProblemInstance &problem);
 
 #endif

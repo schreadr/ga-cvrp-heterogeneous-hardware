@@ -13,6 +13,8 @@ void processing_node(
     int num_cities,
     int vehicle_capacity,
     int init_city_cache,
+    int two_opt_k,
+    int max_subtours,
     int *dbg_num_individuals,
     int *dbg_num_cities
 );
@@ -22,7 +24,11 @@ void random_number_converter(
     hls::stream<CityPair> &crossover_pairs,
     hls::stream<CityPair> &mutate_pairs_0,
     hls::stream<CityPair> &mutate_pairs_1,
-    int num_individuals
+    hls::stream<RandomNumber> &two_opt_randoms_0,
+    hls::stream<RandomNumber> &two_opt_randoms_1,
+    int num_individuals,
+    CityIndex two_opt_k,
+    CityIndex max_subtours
 );
 
 #endif // PROCESSING_NODE_HPP

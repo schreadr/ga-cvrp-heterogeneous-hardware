@@ -55,7 +55,7 @@
 // by Vitis HLS for the scalar configuration arguments of the processing_node kernel
 // (see hw/src/hls/processing_node/processing_node.cpp). The byte offsets of the
 // kernel registers are 0x10 (num_individuals), 0x18 (num_cities), 0x20 (vehicle_capacity),
-// and 0x28 (init_city_cache); offsets 0x00-0x0F are reserved by the AXI4-Lite control block.
+// 0x28 (init_city_cache), and 0x30 (two_opt_k); offsets 0x00-0x0F are reserved by the AXI4-Lite control block.
 // Coyote CSRs are 64-bit wide, so the setCSR index equals byte offset / 8.
 constexpr uint32_t CSR_CONTROL                 = 0x00;
 constexpr uint32_t CSR_CONTROL_START           = 0x01;
@@ -63,6 +63,8 @@ constexpr uint32_t CSR_NUM_INDIVIDUALS         = 0x10 / 8;
 constexpr uint32_t CSR_NUM_CITIES              = 0x18 / 8;
 constexpr uint32_t CSR_VEHICLE_CAPACITY        = 0x20 / 8;
 constexpr uint32_t CSR_INIT_CITY_CACHE         = 0x28 / 8;
+constexpr uint32_t CSR_TWO_OPT_K               = 0x30 / 8;
+constexpr uint32_t CSR_MAX_SUBTOURS            = 0x38 / 8;
 
 constexpr const char kDefaultProblemFile[] = "../../problem_instances/P-n40-k5.vrp";
 
@@ -83,6 +85,7 @@ int main(int argc, char *argv[]) {
     bool smoke_test = false;
     std::string vrp_file;
     int precision = 1;
+    int two_opt_k = 0;
 
     boost::program_options::options_description runtime_options("Coyote CVRP GA Options");
     runtime_options.add_options()
@@ -93,7 +96,8 @@ int main(int argc, char *argv[]) {
         ("seed,s", boost::program_options::value<std::uint32_t>(&seed)->default_value(0xC0FFEEu), "Random seed")
         ("smoke_test,t", boost::program_options::bool_switch(&smoke_test), "Run a single generation smoke test on FPGA and exit")
         ("vrp_file,f", boost::program_options::value<std::string>(&vrp_file)->default_value(kDefaultProblemFile), "Path to the CVRP instance file")
-        ("precision,r", boost::program_options::value<int>(&precision)->default_value(1), "Coordinate precision scaling factor (higher precision in sqrt calculation)");
+        ("precision,r", boost::program_options::value<int>(&precision)->default_value(1), "Coordinate precision scaling factor (higher precision in sqrt calculation)")
+        ("two_opt_k,o", boost::program_options::value<int>(&two_opt_k)->default_value(0), "Number of 2-opt iterations per subtour");
 
     boost::program_options::variables_map command_line_arguments;
     boost::program_options::store(boost::program_options::parse_command_line(argc, argv, runtime_options), command_line_arguments);
@@ -118,6 +122,7 @@ int main(int argc, char *argv[]) {
     std::cout << "Percentage of best individuals to keep: " << n_best_keep << "%" << std::endl;
     std::cout << "Seed: " << seed << std::endl;
     std::cout << "Precision: " << precision << std::endl;
+    std::cout << "Two-opt k: " << two_opt_k << std::endl;
     std::cout << "Smoke test mode: " << (smoke_test ? "ENABLED" : "DISABLED") << std::endl;
     std::cout << "Genome hasher: " << get_hash_backend_name() << std::endl;
     std::cout << "VRP file: " << vrp_file << std::endl << std::endl;
@@ -134,12 +139,15 @@ int main(int argc, char *argv[]) {
     const std::size_t bytes_per_individual = beats_per_individual * AXI_BYTES;
     const std::size_t pop_bytes = pop_size * bytes_per_individual;
     const std::size_t half_pop_bytes = num_ind_per_stream * bytes_per_individual;
-    const std::size_t random_bytes = get_random_bytes(num_ind_per_stream);
+    const int max_subtours = calc_max_n_subtours(problem);
+    validate_streaming_params(num_ind_per_stream, two_opt_k, max_subtours);
+    const std::size_t random_bytes = get_random_bytes(num_ind_per_stream, two_opt_k, max_subtours);
 
     std::cout << "Loaded problem: " << problem.name << std::endl;
     std::cout << "Dimension: " << problem.dimension << std::endl;
     std::cout << "Vehicle capacity: " << problem.capacity << std::endl;
     std::cout << "Total population size: " << pop_size << std::endl;
+    std::cout << "Max subtours: " << max_subtours << std::endl;
 
     // Obtain Coyote thread
     coyote::cThread coyote_thread(DEFAULT_VFPGA_ID, getpid());
@@ -198,6 +206,8 @@ int main(int argc, char *argv[]) {
     coyote_thread.setCSR(reg_num_ind, CSR_NUM_INDIVIDUALS);
     coyote_thread.setCSR(reg_num_cities, CSR_NUM_CITIES);
     coyote_thread.setCSR(problem.capacity, CSR_VEHICLE_CAPACITY);
+    coyote_thread.setCSR(two_opt_k, CSR_TWO_OPT_K);
+    coyote_thread.setCSR(max_subtours, CSR_MAX_SUBTOURS);
 
     coyote_thread.setCSR(1, CSR_INIT_CITY_CACHE); // Dedicated register to trigger cache initialization
     coyote_thread.setCSR(CSR_CONTROL_START, CSR_CONTROL);
@@ -212,7 +222,9 @@ int main(int argc, char *argv[]) {
     if(coyote_thread.getCSR(CSR_NUM_INDIVIDUALS) == reg_num_ind &&
        coyote_thread.getCSR(CSR_NUM_CITIES) == reg_num_cities &&
        coyote_thread.getCSR(CSR_VEHICLE_CAPACITY) == problem.capacity &&
-       coyote_thread.getCSR(CSR_INIT_CITY_CACHE) == 0) {
+       coyote_thread.getCSR(CSR_INIT_CITY_CACHE) == 0 &&
+       coyote_thread.getCSR(CSR_TWO_OPT_K) == static_cast<uint32_t>(two_opt_k) &&
+       coyote_thread.getCSR(CSR_MAX_SUBTOURS) == static_cast<uint32_t>(max_subtours)) {
         std::cout << "Successfully programmed vFPGA kernel configuration registers." << std::endl;
     } else {
         std::cerr << "Error: Failed to program vFPGA kernel configuration registers." << std::endl;
@@ -247,7 +259,7 @@ int main(int argc, char *argv[]) {
         std::memset(dst_mem_0, 0, half_pop_bytes);
         std::memset(dst_mem_1, 0, half_pop_bytes);
 
-        generate_random_numbers(num_ind_per_stream, src_mem_rnd, reg_num_cities, seed ^ 0xDEADBEEF);
+        generate_random_numbers(num_ind_per_stream, src_mem_rnd, reg_num_cities, two_opt_k, max_subtours, seed ^ 0xDEADBEEF);
 
         std::cout << "Invoking FPGA for 1 generation..." << std::endl;
         coyote::cBench bench(1, 0);
@@ -288,6 +300,7 @@ int main(int argc, char *argv[]) {
         params.n_generations = n_generations;
         params.n_best_keep = n_best_keep;
         params.seed = seed;
+        params.two_opt_k = two_opt_k;
         params.buffer_src_0 = src_mem_0;
         params.buffer_src_1 = src_mem_1;
         params.buffer_src_rnd = src_mem_rnd;

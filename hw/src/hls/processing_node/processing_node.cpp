@@ -2,6 +2,7 @@
 #include "crossover.hpp"
 #include "mutate.hpp"
 #include "repair_fitness.hpp"
+#include "two_opt.hpp"
 #include <hls_streamofblocks.h>
 
 // added these for compilation with coyote
@@ -11,6 +12,7 @@
 #include "crossover.cpp"
 #include "mutate.cpp"
 #include "repair_fitness.cpp"
+#include "two_opt.cpp"
 
 #endif
 
@@ -140,7 +142,11 @@ void random_number_converter(
     hls::stream<CityPair> &crossover_pairs,
     hls::stream<CityPair> &mutate_pairs_0,
     hls::stream<CityPair> &mutate_pairs_1,
-    int num_individuals
+    hls::stream<RandomNumber> &two_opt_randoms_0,
+    hls::stream<RandomNumber> &two_opt_randoms_1,
+    int num_individuals,
+    CityIndex two_opt_k,
+    CityIndex max_subtours
 ) {
     AxiBeat current_beat = 0;
     BeatRandomIndex words_left = 0;
@@ -183,11 +189,27 @@ void random_number_converter(
         crossover_pairs.write(cx_pair);
         mutate_pairs_0.write(mut_pair_0);
         mutate_pairs_1.write(mut_pair_1);
+
+        TwoCityIndex total_two_opt_moves = TwoCityIndex(max_subtours) * TwoCityIndex(two_opt_k);
+        TWO_OPT_RND_LOOP: for (TwoCityIndex m = 0; m < total_two_opt_moves; ++m) {
+            #pragma HLS PIPELINE II=4
+            RandomNumber r0_1 = consume_next_random(in_random, current_beat, words_left);
+            RandomNumber r0_2 = consume_next_random(in_random, current_beat, words_left);
+            two_opt_randoms_0.write(r0_1);
+            two_opt_randoms_0.write(r0_2);
+
+            RandomNumber r1_1 = consume_next_random(in_random, current_beat, words_left);
+            RandomNumber r1_2 = consume_next_random(in_random, current_beat, words_left);
+            two_opt_randoms_1.write(r1_1);
+            two_opt_randoms_1.write(r1_2);
+        }
     }
 }
 
 static CityData cache_0[MAX_CACHE_ENTRIES];
 static CityData cache_1[MAX_CACHE_ENTRIES];
+static CityData cache_2opt_0[MAX_CACHE_ENTRIES];
+static CityData cache_2opt_1[MAX_CACHE_ENTRIES];
 
 static void init_node_cache(
     hls::stream<axi_word_t> &in0,
@@ -195,6 +217,8 @@ static void init_node_cache(
 ) {
     #pragma HLS BIND_STORAGE variable=cache_0 type=ram_1p impl=bram
     #pragma HLS BIND_STORAGE variable=cache_1 type=ram_1p impl=bram
+    #pragma HLS BIND_STORAGE variable=cache_2opt_0 type=ram_2p impl=bram
+    #pragma HLS BIND_STORAGE variable=cache_2opt_1 type=ram_2p impl=bram
     CityCacheBeat current_beat = 0;
     BeatCacheIndex words_left = 0;
     int total_entries = num_cities + 1;
@@ -204,6 +228,8 @@ static void init_node_cache(
         CityData cd = consume_next_city_data(in0, current_beat, words_left);
         cache_0[city_idx] = cd;
         cache_1[city_idx] = cd;
+        cache_2opt_0[city_idx] = cd;
+        cache_2opt_1[city_idx] = cd;
     }
 }
 
@@ -215,7 +241,9 @@ static void process_stream(
     hls::stream<axi_word_t> &in_random,
     int num_individuals,
     CityIndex num_cities,
-    Capacity vehicle_capacity
+    Capacity vehicle_capacity,
+    CityIndex two_opt_k,
+    CityIndex max_subtours
 ) {
     #pragma HLS DATAFLOW
 
@@ -227,6 +255,8 @@ static void process_stream(
     hls::stream_of_blocks<IndividualAsBeats> stream_mut_1;
     hls::stream_of_blocks<IndividualAsBeats> stream_repaired_0;
     hls::stream_of_blocks<IndividualAsBeats> stream_repaired_1;
+    hls::stream_of_blocks<IndividualAsBeats> stream_opt_0;
+    hls::stream_of_blocks<IndividualAsBeats> stream_opt_1;
 
     #pragma HLS BIND_STORAGE variable=stream_cx_0       type=ram_2p impl=bram latency=2
     #pragma HLS BIND_STORAGE variable=stream_cx_1       type=ram_2p impl=bram latency=2
@@ -234,23 +264,29 @@ static void process_stream(
     #pragma HLS BIND_STORAGE variable=stream_repaired_1 type=ram_2p impl=bram latency=2
     #pragma HLS BIND_STORAGE variable=stream_mut_0      type=ram_2p impl=bram latency=2
     #pragma HLS BIND_STORAGE variable=stream_mut_1      type=ram_2p impl=bram latency=2
+    #pragma HLS BIND_STORAGE variable=stream_opt_0      type=ram_2p impl=bram latency=2
+    #pragma HLS BIND_STORAGE variable=stream_opt_1      type=ram_2p impl=bram latency=2
     #pragma HLS BIND_STORAGE variable=stream_0          type=ram_2p impl=bram latency=2
     #pragma HLS BIND_STORAGE variable=stream_1          type=ram_2p impl=bram latency=2
 
     hls::stream<CityPair> crossover_pairs;
     hls::stream<CityPair> mutate_pairs_0;
     hls::stream<CityPair> mutate_pairs_1;
+    hls::stream<RandomNumber> two_opt_randoms_0;
+    hls::stream<RandomNumber> two_opt_randoms_1;
 
     producer(in0, stream_0, num_individuals, num_cities);
     producer(in1, stream_1, num_individuals, num_cities);
-    random_number_converter(in_random, crossover_pairs, mutate_pairs_0, mutate_pairs_1, num_individuals);
+    random_number_converter(in_random, crossover_pairs, mutate_pairs_0, mutate_pairs_1, two_opt_randoms_0, two_opt_randoms_1, num_individuals, two_opt_k, max_subtours);
     crossover(stream_0, stream_1, crossover_pairs, stream_cx_0, stream_cx_1, num_individuals, num_cities);
     mutate(stream_cx_0, mutate_pairs_0, stream_mut_0, num_individuals, num_cities);
     mutate(stream_cx_1, mutate_pairs_1, stream_mut_1, num_individuals, num_cities);
     repair_fitness(stream_mut_0, stream_repaired_0, num_individuals, num_cities, vehicle_capacity, cache_0);
     repair_fitness(stream_mut_1, stream_repaired_1, num_individuals, num_cities, vehicle_capacity, cache_1);
-    consumer(stream_repaired_0, out0, num_individuals, num_cities);
-    consumer(stream_repaired_1, out1, num_individuals, num_cities);
+    two_opt(stream_repaired_0, stream_opt_0, two_opt_randoms_0, num_individuals, num_cities, two_opt_k, max_subtours, cache_2opt_0);
+    two_opt(stream_repaired_1, stream_opt_1, two_opt_randoms_1, num_individuals, num_cities, two_opt_k, max_subtours, cache_2opt_1);
+    consumer(stream_opt_0, out0, num_individuals, num_cities);
+    consumer(stream_opt_1, out1, num_individuals, num_cities);
 }
 
 static void drive_debug_probes(
@@ -271,6 +307,8 @@ void processing_node(
     int num_cities,
     int vehicle_capacity,
     int init_city_cache,
+    int two_opt_k,
+    int max_subtours,
     int *dbg_num_individuals,
     int *dbg_num_cities
 ) {
@@ -284,6 +322,8 @@ void processing_node(
     #pragma HLS INTERFACE s_axilite port=num_cities offset=0x18 bundle=control
     #pragma HLS INTERFACE s_axilite port=vehicle_capacity offset=0x20 bundle=control
     #pragma HLS INTERFACE s_axilite port=init_city_cache offset=0x28 bundle=control
+    #pragma HLS INTERFACE s_axilite port=two_opt_k offset=0x30 bundle=control
+    #pragma HLS INTERFACE s_axilite port=max_subtours offset=0x38 bundle=control
 
     #pragma HLS INTERFACE ap_vld port=dbg_num_individuals
     #pragma HLS INTERFACE ap_vld port=dbg_num_cities
@@ -295,6 +335,6 @@ void processing_node(
     if (init_city_cache) {
         init_node_cache(in0, num_cities);
     } else {
-        process_stream(in0, out0, in1, out1, in_random, num_individuals, CityIndex(num_cities), Capacity(vehicle_capacity));
+        process_stream(in0, out0, in1, out1, in_random, num_individuals, CityIndex(num_cities), Capacity(vehicle_capacity), CityIndex(two_opt_k), CityIndex(max_subtours));
     }
 }

@@ -169,14 +169,16 @@ bool test_encode_decode(const ProblemInstance &problem) {
 
 bool test_generate_random_numbers(const ProblemInstance &problem) {
     const std::size_t test_rnd_indivs = 5;
-    const std::size_t rnd_bytes = get_random_bytes(test_rnd_indivs);
+    const int two_opt_k = 1;
+    const int max_subtours = calc_max_n_subtours(problem);
+    const std::size_t rnd_bytes = get_random_bytes(test_rnd_indivs, two_opt_k, max_subtours);
     std::vector<std::uint8_t> rnd_buf1(rnd_bytes, 0xFF);
     std::vector<std::uint8_t> rnd_buf2(rnd_bytes, 0xAA);
 
     const int num_cities = static_cast<int>(problem.nodes.size());
     const std::uint64_t seed = 0x12345678ULL;
-    generate_random_numbers(test_rnd_indivs, rnd_buf1.data(), num_cities, seed);
-    generate_random_numbers(test_rnd_indivs, rnd_buf2.data(), num_cities, seed);
+    generate_random_numbers(test_rnd_indivs, rnd_buf1.data(), num_cities, two_opt_k, max_subtours, seed);
+    generate_random_numbers(test_rnd_indivs, rnd_buf2.data(), num_cities, two_opt_k, max_subtours, seed);
 
     // Verify repeatability
     if (rnd_buf1 != rnd_buf2) {
@@ -186,13 +188,31 @@ bool test_generate_random_numbers(const ProblemInstance &problem) {
 
     // Verify values within bounds and padding is zero
     const uint32_t *words = reinterpret_cast<const uint32_t *>(rnd_buf1.data());
-    const std::size_t total_random_words = test_rnd_indivs * RANDOMS_PER_INDIV;
-    for (std::size_t i = 0; i < total_random_words; ++i) {
-        if (words[i] >= static_cast<uint32_t>(num_cities)) {
-            std::cerr << "FAIL: random number out of bounds at index " << i << ": " << words[i] << "\n";
-            return false;
+    const std::size_t words_per_indiv = get_randoms_per_indiv(two_opt_k, max_subtours);
+    const std::size_t total_random_words = test_rnd_indivs * words_per_indiv;
+
+    std::size_t idx = 0;
+    for (std::size_t indiv = 0; indiv < test_rnd_indivs; ++indiv) {
+        // Crossover + Mutate 0 + Mutate 1 cut points
+        const int city_cutpoints = RANDOMS_PER_INDIV_CROSSOVER + RANDOMS_PER_INDIV_MUTATE_0 + RANDOMS_PER_INDIV_MUTATE_1;
+        for (int i = 0; i < city_cutpoints; ++i) {
+            if (words[idx] >= static_cast<uint32_t>(num_cities)) {
+                std::cerr << "FAIL: city random number out of bounds at index " << idx << ": " << words[idx] << "\n";
+                return false;
+            }
+            idx++;
+        }
+        // 2-opt randoms
+        const int two_opt_randoms = 2 * (max_subtours * two_opt_k * RANDOMS_PER_2OPT_MOVE);
+        for (int i = 0; i < two_opt_randoms; ++i) {
+            if (words[idx] > RANDOM_UPPER_BOUND) {
+                std::cerr << "FAIL: 2-opt random number out of bounds at index " << idx << ": " << words[idx] << "\n";
+                return false;
+            }
+            idx++;
         }
     }
+
     for (std::size_t b = total_random_words * sizeof(uint32_t); b < rnd_bytes; ++b) {
         if (rnd_buf1[b] != 0) {
             std::cerr << "FAIL: non-zero padding byte at index " << b << "\n";

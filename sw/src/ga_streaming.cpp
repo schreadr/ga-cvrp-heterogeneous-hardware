@@ -1,6 +1,9 @@
 #include <array>
 #include <cstring>
+#include <iostream>
+#include <limits>
 #include <random>
+#include <stdexcept>
 
 #include "ga_streaming.hpp"
 #include "ga.hpp"
@@ -206,17 +209,81 @@ void generate_random_numbers(
     std::size_t num_individuals,
     std::uint8_t *buffer,
     int num_cities,
+    int two_opt_k,
+    int max_subtours,
     std::uint64_t seed
 ) {
-    const std::size_t total_bytes = get_random_bytes(num_individuals);
+    const std::size_t total_bytes = get_random_bytes(num_individuals, two_opt_k, max_subtours);
     std::memset(buffer, 0, total_bytes);
 
-    const std::size_t num_rnd = num_individuals * RANDOMS_PER_INDIV;
     std::mt19937_64 rng(seed);
-    std::uniform_int_distribution<uint32_t> dist(0, num_cities - 1);
+    std::uniform_int_distribution<uint32_t> dist_city(0, num_cities - 1);
+    std::uniform_int_distribution<uint32_t> dist_2opt(0, RANDOM_UPPER_BOUND);
 
     uint32_t *words = reinterpret_cast<uint32_t *>(buffer);
-    for (std::size_t i = 0; i < num_rnd; ++i) {
-        words[i] = dist(rng);
+    std::size_t idx = 0;
+
+    for (std::size_t indiv = 0; indiv < num_individuals; ++indiv) {
+        // Crossover cut points
+        for (int i = 0; i < RANDOMS_PER_INDIV_CROSSOVER; ++i) {
+            words[idx++] = dist_city(rng);
+        }
+        // Mutate cut points
+        for (int i = 0; i < RANDOMS_PER_INDIV_MUTATE_0; ++i) {
+            words[idx++] = dist_city(rng);
+        }
+        for (int i = 0; i < RANDOMS_PER_INDIV_MUTATE_1; ++i) {
+            words[idx++] = dist_city(rng);
+        }
+        // 2-opt randoms (stream 0 and stream 1 interleaved per move across max_subtours)
+        for (int s = 0; s < max_subtours; ++s) {
+            for (int k = 0; k < two_opt_k; ++k) {
+                for (int i = 0; i < RANDOMS_PER_2OPT_MOVE; ++i) {
+                    words[idx++] = dist_2opt(rng);
+                }
+                for (int i = 0; i < RANDOMS_PER_2OPT_MOVE; ++i) {
+                    words[idx++] = dist_2opt(rng);
+                }
+            }
+        }
     }
+}
+
+bool validate_streaming_params(
+    std::size_t num_individuals,
+    int two_opt_k,
+    int max_subtours,
+    bool throw_on_error
+) {
+    bool failed = false;
+
+    if (num_individuals == 0) {
+        std::cout << "num_individuals must be greater than 0." << std::endl;
+        failed = true;
+    }
+
+    if (two_opt_k < 0) {
+        std::cout << "two_opt_k cannot be negative." << std::endl;
+        failed = true;
+    } else if (two_opt_k > MAX_CITIES) {
+        std::cout << "two_opt_k (" << two_opt_k << ") exceeds MAX_CITIES (" << MAX_CITIES << ") / CityIndex range." << std::endl;
+        failed = true;
+    }
+
+    if (max_subtours < 0) {
+        std::cout << "max_subtours cannot be negative." << std::endl;
+        failed = true;
+    } else if (max_subtours > MAX_CITIES) {
+        std::cout << "max_subtours (" << max_subtours << ") exceeds MAX_CITIES (" << MAX_CITIES << ") / CityIndex range." << std::endl;
+        failed = true;
+    }
+
+    if (failed) {
+        if (throw_on_error) {
+            throw std::runtime_error("Streaming parameters validation failed.");
+        }
+        return false;
+    }
+
+    return true;
 }

@@ -80,7 +80,16 @@ void generate_random_numbers(
     std::size_t num_individuals,
     std::uint8_t *buffer,
     int num_cities,
+    int two_opt_k,
+    int max_subtours,
     std::uint64_t seed
+);
+
+bool validate_streaming_params(
+    std::size_t num_individuals,
+    int two_opt_k,
+    int max_subtours,
+    bool throw_on_error = true
 );
 
 #endif

@@ -15,24 +15,6 @@ static inline ap_uint<HW_BEAT_WIDTH> get_clear_depots_mask() {
     return mask;
 }
 
-static ap_uint<COORD_BITS + 1> abs_coord_diff(Coord lhs, Coord rhs) {
-    #pragma HLS INLINE
-    return lhs >= rhs ? lhs - rhs : rhs - lhs;
-}
-
-static ap_uint<COORD_BITS * 2 + 2> squared_distance(Point from, Point to) {
-    #pragma HLS INLINE
-    ap_uint<COORD_BITS + 1> dx = abs_coord_diff(from.x, to.x);
-    ap_uint<COORD_BITS + 1> dy = abs_coord_diff(from.y, to.y);
-    return dx * dx + dy * dy;
-}
-
-static ap_uint<COORD_BITS + 1> floored_distance(Point from, Point to) {
-    #pragma HLS INLINE
-    ap_uint<COORD_BITS * 2 + 2> squared = squared_distance(from, to);
-    return integer_sqrt<COORD_BITS * 2 + 2>(squared);
-}
-
 static void stream_coord(
     hls::stream<CoordElement> &coords,
     Point coord,
