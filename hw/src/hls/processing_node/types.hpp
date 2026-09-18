@@ -7,240 +7,337 @@
 
 #include "ga_encoding_constants.hpp"
 
-#define DEPOT_FLAG_FIELD_OFFSET (2 * COORD_BITS + CAPACITY_BITS)
+// ============================================================================
+// Type Definitions & Structs
+// ============================================================================
 
-// AXI4-Stream payload
-typedef ap_axiu<AXI_WIDTH, 0, 0, 0> axi_word_t;
+// ----------------------------------------------------------------------------
+// 1. Bitfield Index & Counter Types
+// ----------------------------------------------------------------------------
+typedef ap_uint<MAX_CITIES_LOG2 + 1>                  CityIndex;
+typedef ap_uint<HW_MAX_BEATS_LOG2 + 1>                BeatIndex;
+typedef ap_uint<HW_CITIES_PER_BEAT_LOG2 + 1>          CityBeatIndex;
+typedef ap_uint<RANDOMS_PER_BEAT_LOG2 + 1>            BeatRandomIndex;
+typedef ap_uint<NODE_CACHE_ENTRIES_PER_BEAT_LOG2 + 1> BeatCacheIndex;
+typedef ap_uint<HW_BEATS_PER_AXI_BEAT_LOG2 + 1>       BeatAxiIndex;
 
-// Single field (fitness or city) packed representation
-typedef ap_uint<COORD_BITS> Coord;
-// TODO rename to Demand
+// ----------------------------------------------------------------------------
+// 2. Problem & Node Data Types
+// ----------------------------------------------------------------------------
+typedef ap_uint<COORD_BITS>    Coord;
 typedef ap_uint<CAPACITY_BITS> Capacity;
-typedef ap_uint<NODE_ID_BITS> NodeId;
-typedef ap_uint<FIELD_BITS> FitnessOrCity;
-typedef ap_uint<RANDOM_BITS> RandomNumber;
-typedef ap_uint<BEAT_WIDTH> Beat;
+typedef ap_uint<NODE_ID_BITS>  NodeId;
 
-// TODO use it where indicated
-typedef ap_uint<FIELDS_PER_BEAT_LOG2 + 1> BeatFieldIndex;
-typedef ap_uint<RANDOMS_PER_BEAT_LOG2 + 1> BeatRandomIndex;
-typedef ap_uint<MAX_FIELDS_LOG2 + 1> FieldIndex;
-typedef ap_uint<MAX_BEATS_LOG2 + 1> BeatIndex;
+struct Point {
+    Coord x;
+    Coord y;
 
-// Individual as an array of beats
-typedef Beat IndividualAsBeats[MAX_BEATS];
-
-struct StartEndData {
-    const BeatIndex start_beat;
-    const FieldIndex start_field;
-    const BeatIndex end_beat;
-    const FieldIndex end_field;
-
-    StartEndData(BeatIndex s_beat, FieldIndex s_field, BeatIndex e_beat, FieldIndex e_field)
-        : start_beat(s_beat), start_field(s_field), end_beat(e_beat), end_field(e_field) {}
+    bool operator==(const Point &other) const {
+        return x == other.x && y == other.y;
+    }
+    bool operator!=(const Point &other) const {
+        return !(*this == other);
+    }
 };
 
+struct CityData {
+    Coord x;
+    Coord y;
+    Capacity demand;
+
+    bool operator==(const CityData &other) const {
+        return x == other.x && y == other.y && demand == other.demand;
+    }
+    bool operator!=(const CityData &other) const {
+        return !(*this == other);
+    }
+};
+
+struct CoordElement {
+    Point coord;
+    bool is_depot;
+    bool last;
+
+    bool operator==(const CoordElement &other) const {
+        return coord == other.coord && is_depot == other.is_depot && last == other.last;
+    }
+    bool operator!=(const CoordElement &other) const {
+        return !(*this == other);
+    }
+};
+
+// ----------------------------------------------------------------------------
+// 3. Individual Genome & City / Fitness Types
+// ----------------------------------------------------------------------------
+typedef ap_uint<CITY_BITS>     City;
+typedef ap_uint<FITNESS_BITS>  Fitness;
+
 struct CityPair {
-    FieldIndex start;
-    FieldIndex end;
+    CityIndex start;
+    CityIndex end;
 
     CityPair() : start(0), end(0) {}
-    CityPair(FieldIndex s, FieldIndex e) : start(s), end(e) {}
+    CityPair(CityIndex s, CityIndex e) : start(s), end(e) {}
 
     bool operator==(const CityPair &other) const {
         return start == other.start && end == other.end;
     }
 };
 
-// Get the beat and field indices for a global field index (0 = fitness)
-static inline void get_beat_field(FieldIndex global_idx, BeatIndex &beat_idx, FieldIndex &field_idx) {
-    #pragma HLS INLINE
+struct CityElement {
+    City city;
+    Capacity demand;
+    Point coord;
 
-    beat_idx = global_idx >> FIELDS_PER_BEAT_LOG2; // global_idx / FIELDS_PER_BEAT
-    field_idx = global_idx & (FIELDS_PER_BEAT - 1); // global_idx % FIELDS_PER_BEAT
+    bool operator==(const CityElement &other) const {
+        return city == other.city && demand == other.demand && coord == other.coord;
+    }
+    bool operator!=(const CityElement &other) const {
+        return !(*this == other);
+    }
+};
+
+// ----------------------------------------------------------------------------
+// 4. Beat, Stream & Cache Types
+// ----------------------------------------------------------------------------
+typedef ap_uint<HW_BEAT_WIDTH>          Beat;
+typedef ap_uint<AXI_BEAT_WIDTH>         AxiBeat;
+typedef ap_axiu<AXI_BEAT_WIDTH, 0, 0, 0> axi_word_t;
+typedef Beat                            IndividualAsBeats[HW_MAX_BEATS];
+typedef AxiBeat                         CityCacheBeat;
+typedef ap_uint<NODE_CACHE_ENTRY_BITS>  CityCacheEntry;
+typedef ap_uint<RANDOM_BITS>            RandomNumber;
+
+struct StartEndData {
+    const BeatIndex start_beat;
+    const CityIndex start_city;
+    const BeatIndex end_beat;
+    const CityIndex end_city;
+
+    StartEndData(BeatIndex s_beat, CityIndex s_city, BeatIndex e_beat, CityIndex e_city)
+        : start_beat(s_beat), start_city(s_city), end_beat(e_beat), end_city(e_city) {}
+};
+
+// ============================================================================
+// Methods & Inline Helper Functions
+// ============================================================================
+
+// ----------------------------------------------------------------------------
+// 1. Indexing & Beat Navigation Methods
+// ----------------------------------------------------------------------------
+static inline CityIndex wrap_city_index(CityIndex idx, CityIndex num_cities) {
+    #pragma HLS INLINE
+    return (idx >= num_cities) ? CityIndex(idx - num_cities) : idx;
 }
 
-static inline BeatIndex get_beat_idx(FieldIndex global_idx) {
+static inline CityIndex wrap_city_index(int idx, int num_cities) {
     #pragma HLS INLINE
-    return global_idx >> FIELDS_PER_BEAT_LOG2; // global_idx / FIELDS_PER_BEAT
+    return (idx >= num_cities) ? CityIndex(idx - num_cities) : CityIndex(idx);
 }
 
-static inline StartEndData get_start_end_data(FieldIndex start_idx, FieldIndex end_idx) {
+static inline BeatIndex get_total_city_beats(CityIndex num_cities) {
     #pragma HLS INLINE
-    
+    return (num_cities + HW_CITIES_PER_BEAT - 1) >> HW_CITIES_PER_BEAT_LOG2;
+}
+
+static inline BeatIndex get_total_city_beats(int num_cities) {
+    #pragma HLS INLINE
+    return (num_cities + HW_CITIES_PER_BEAT - 1) >> HW_CITIES_PER_BEAT_LOG2;
+}
+
+static inline BeatIndex get_total_beats(CityIndex num_cities) {
+    #pragma HLS INLINE
+    return get_total_city_beats(num_cities) + HW_FITNESS_BEATS;
+}
+
+static inline BeatIndex get_total_beats(int num_cities) {
+    #pragma HLS INLINE
+    return get_total_city_beats(num_cities) + HW_FITNESS_BEATS;
+}
+
+static inline BeatIndex get_beat_idx(CityIndex global_idx) {
+    #pragma HLS INLINE
+    return global_idx >> HW_CITIES_PER_BEAT_LOG2;
+}
+
+static inline BeatIndex get_beat_idx(int global_idx) {
+    #pragma HLS INLINE
+    return global_idx >> HW_CITIES_PER_BEAT_LOG2;
+}
+
+template <typename T>
+static inline CityBeatIndex get_city_beat_idx(T val) {
+    #pragma HLS INLINE
+    return val & (HW_CITIES_PER_BEAT - 1);
+}
+
+template <typename T>
+static inline CityBeatIndex get_city_idx(T val) {
+    #pragma HLS INLINE
+    return get_city_beat_idx(val);
+}
+
+static inline void get_beat_city(CityIndex global_idx, BeatIndex &beat_idx, CityIndex &city_idx) {
+    #pragma HLS INLINE
+    beat_idx = get_beat_idx(global_idx);
+    city_idx = get_city_beat_idx(global_idx);
+}
+
+static inline void get_beat_city(int global_idx, BeatIndex &beat_idx, CityIndex &city_idx) {
+    #pragma HLS INLINE
+    beat_idx = get_beat_idx(global_idx);
+    city_idx = get_city_beat_idx(global_idx);
+}
+
+static inline StartEndData get_start_end_data(CityIndex start_idx, CityIndex end_idx) {
+    #pragma HLS INLINE
     BeatIndex start_beat;
-    FieldIndex start_field;
+    CityIndex start_city;
     BeatIndex end_beat;
-    FieldIndex end_field;
-
-    get_beat_field(start_idx, start_beat, start_field);
-    get_beat_field(end_idx, end_beat, end_field);
-
-    return StartEndData(start_beat, start_field, end_beat, end_field);
+    CityIndex end_city;
+    get_beat_city(start_idx, start_beat, start_city);
+    get_beat_city(end_idx, end_beat, end_city);
+    return StartEndData(start_beat, start_city, end_beat, end_city);
 }
 
-static inline FitnessOrCity get_field_o(const IndividualAsBeats &ind, BeatIndex beat_idx, FieldIndex field_offset) {
+static inline CityIndex get_first_city_index() {
     #pragma HLS INLINE
-
-    FieldIndex high = field_offset + FIELD_BITS - 1;
-    return ind[beat_idx].range(high, field_offset);
+    return 0;
 }
 
-static inline FitnessOrCity get_field(const Beat &beat, FieldIndex field_idx) {
+static inline CityIndex get_last_city_index(CityIndex num_cities, BeatIndex beat_idx) {
     #pragma HLS INLINE
-    
-    FieldIndex low = field_idx << FIELD_BITS_LOG2;
-    FieldIndex high = low + FIELD_BITS - 1;
+    BeatIndex last_city_beat = (num_cities - 1) >> HW_CITIES_PER_BEAT_LOG2;
+    return (beat_idx == last_city_beat) ? CityIndex(get_city_beat_idx(num_cities - 1)) : CityIndex(HW_CITIES_PER_BEAT - 1);
+}
+
+// ----------------------------------------------------------------------------
+// 2. City-Level Accessors (Node ID & Depot Flag inside a City)
+// ----------------------------------------------------------------------------
+static inline NodeId get_node_id(City val) {
+    #pragma HLS INLINE
+    return val.range(NODE_ID_BITS - 1, 0);
+}
+
+static inline void set_node_id(City &val, NodeId id) {
+    #pragma HLS INLINE
+    val.range(NODE_ID_BITS - 1, 0) = id;
+}
+
+static inline bool get_is_depot(City val) {
+    #pragma HLS INLINE
+    return val[DEPOT_FLAG_OFFSET];
+}
+
+static inline void set_is_depot(City &val, bool depot) {
+    #pragma HLS INLINE
+    val[DEPOT_FLAG_OFFSET] = depot;
+}
+
+// ----------------------------------------------------------------------------
+// 3. Beat-Level & Individual City Accessors
+// ----------------------------------------------------------------------------
+static inline City get_city(const Beat &beat, CityIndex city_idx) {
+    #pragma HLS INLINE
+    CityIndex low = city_idx << CITY_BITS_LOG2;
+    CityIndex high = low + CITY_BITS - 1;
     return beat.range(high, low);
 }
 
-static inline FitnessOrCity get_field(const IndividualAsBeats &ind, BeatIndex beat_idx, FieldIndex field_idx) {
+static inline void set_city(Beat &beat, CityIndex city_idx, City val) {
     #pragma HLS INLINE
-
-    FieldIndex low = field_idx << FIELD_BITS_LOG2; // field_idx * FIELD_BITS
-    return get_field_o(ind, beat_idx, low);
+    CityIndex low = city_idx << CITY_BITS_LOG2;
+    CityIndex high = low + CITY_BITS - 1;
+    beat.range(high, low) = val;
 }
 
-// Read a field (fitness or city) from the individual
-static inline FitnessOrCity get_field(const IndividualAsBeats &ind, FieldIndex global_idx) {
+static inline City get_city(const IndividualAsBeats &ind, CityIndex global_idx) {
     #pragma HLS INLINE
-
     BeatIndex beat_idx;
-    FieldIndex field_idx;
-    get_beat_field(global_idx, beat_idx, field_idx);
-    return get_field(ind, beat_idx, field_idx);
+    CityIndex city_idx;
+    get_beat_city(global_idx, beat_idx, city_idx);
+    return get_city(ind[beat_idx], city_idx);
 }
 
-static inline FitnessOrCity consume_next_field(Beat &beat) {
+static inline void set_city(IndividualAsBeats &ind, CityIndex global_idx, City val) {
     #pragma HLS INLINE
-    FitnessOrCity field = beat.range(FIELD_BITS - 1, 0);
-    beat >>= FIELD_BITS;
-    return field;
+    BeatIndex beat_idx;
+    CityIndex city_idx;
+    get_beat_city(global_idx, beat_idx, city_idx);
+    set_city(ind[beat_idx], city_idx, val);
 }
 
-static inline RandomNumber consume_next_random(Beat &beat) {
+static inline City consume_next_city(Beat &beat) {
+    #pragma HLS INLINE
+    City city = beat.range(CITY_BITS - 1, 0);
+    beat >>= CITY_BITS;
+    return city;
+}
+
+// ----------------------------------------------------------------------------
+// 4. Trailing Dedicated Beat Fitness Accessors
+// ----------------------------------------------------------------------------
+static inline Fitness get_fitness(const IndividualAsBeats &ind, CityIndex num_cities) {
+    #pragma HLS INLINE
+    BeatIndex fitness_beat_idx = get_total_city_beats(num_cities);
+    return ind[fitness_beat_idx].range(FITNESS_BITS - 1, 0);
+}
+
+static inline void set_fitness(IndividualAsBeats &ind, Fitness val, CityIndex num_cities) {
+    #pragma HLS INLINE
+    BeatIndex fitness_beat_idx = get_total_city_beats(num_cities);
+    Beat beat = 0;
+    beat.range(FITNESS_BITS - 1, 0) = val;
+    ind[fitness_beat_idx] = beat;
+}
+
+// ----------------------------------------------------------------------------
+// 5. Node Cache & Stream Consumer Helpers
+// ----------------------------------------------------------------------------
+static inline Point get_coord(const CityCacheEntry &entry) {
+    #pragma HLS INLINE
+    Coord x = entry.range(NODE_CACHE_COORD_X_OFFSET + COORD_BITS - 1, NODE_CACHE_COORD_X_OFFSET);
+    Coord y = entry.range(NODE_CACHE_COORD_Y_OFFSET + COORD_BITS - 1, NODE_CACHE_COORD_Y_OFFSET);
+    return Point{x, y};
+}
+
+static inline Point get_coord(const CityData &cd) {
+    #pragma HLS INLINE
+    return Point{cd.x, cd.y};
+}
+
+static inline Capacity get_demand(const CityCacheEntry &entry) {
+    #pragma HLS INLINE
+    return entry.range(NODE_CACHE_DEMAND_OFFSET + CAPACITY_BITS - 1, NODE_CACHE_DEMAND_OFFSET);
+}
+
+static inline CityCacheEntry consume_next_cache_entry(CityCacheBeat &beat) {
+    #pragma HLS INLINE
+    CityCacheEntry entry = beat.range(NODE_CACHE_ENTRY_BITS - 1, 0);
+    beat >>= NODE_CACHE_ENTRY_BITS;
+    return entry;
+}
+
+static inline CityData consume_next_city_data(CityCacheBeat &beat) {
+    #pragma HLS INLINE
+    CityCacheEntry entry = consume_next_cache_entry(beat);
+    Point coord = get_coord(entry);
+    Capacity demand = get_demand(entry);
+    return CityData{coord.x, coord.y, demand};
+}
+
+static inline RandomNumber consume_next_random(AxiBeat &beat) {
     #pragma HLS INLINE
     RandomNumber rnd = beat.range(RANDOM_BITS - 1, 0);
     beat >>= RANDOM_BITS;
     return rnd;
 }
 
-static inline void set_field_o(IndividualAsBeats &ind, BeatIndex beat_idx, FieldIndex field_offset, FitnessOrCity val) {
+static inline Beat consume_next_hw_beat(AxiBeat &beat) {
     #pragma HLS INLINE
-
-    FieldIndex high = field_offset + FIELD_BITS - 1;
-    ind[beat_idx].range(high, field_offset) = val;
+    Beat hw_beat = beat.range(HW_BEAT_WIDTH - 1, 0);
+    beat >>= HW_BEAT_WIDTH;
+    return hw_beat;
 }
-
-static inline void set_field(IndividualAsBeats &ind, BeatIndex beat_idx, FieldIndex field_idx, FitnessOrCity val) {
-    #pragma HLS INLINE
-
-    FieldIndex low = field_idx << FIELD_BITS_LOG2; // field_idx * FIELD_BITS
-    set_field_o(ind, beat_idx, low, val);
-}
-
-static inline void set_field(Beat &beat, FieldIndex field_idx, FitnessOrCity val) {
-    #pragma HLS INLINE
-
-    FieldIndex low = field_idx << FIELD_BITS_LOG2; // field_idx * FIELD_BITS
-    FieldIndex high = low + FIELD_BITS - 1;
-    beat.range(high, low) = val;
-}
-
-// Write a field (fitness or city) to the individual
-static inline void set_field(IndividualAsBeats &ind, FieldIndex global_idx, FitnessOrCity val) {
-    #pragma HLS INLINE
-
-    BeatIndex beat_idx;
-    FieldIndex field_idx;
-    get_beat_field(global_idx, beat_idx, field_idx);
-    set_field(ind, beat_idx, field_idx, val);
-}
-
-static inline FieldIndex get_last_field_index(FieldIndex num_cities, BeatIndex beat_idx) {
-    #pragma HLS INLINE
-
-    FieldIndex num_fields = 1 + num_cities;
-    return beat_idx == BeatIndex(get_total_beats(num_cities) - 1) ? FieldIndex((num_fields - FieldIndex(1)) & FieldIndex(FIELDS_PER_BEAT - 1)) : FieldIndex(FIELDS_PER_BEAT - 1);
-}
-
-static inline FieldIndex get_first_city_index(BeatIndex beat_idx) {
-    #pragma HLS INLINE
-    return beat_idx == 0 ? 1 : 0;
-}
-
-// Convenience wrappers
-static inline FitnessOrCity get_fitness(const IndividualAsBeats &ind) {
-    #pragma HLS INLINE
-    return get_field(ind, 0);
-}
-static inline void set_fitness(IndividualAsBeats &ind, FitnessOrCity val) {
-    #pragma HLS INLINE
-    set_field(ind, 0, val);
-}
-
-// Field-level accessors on a FitnessOrCity (for crossover modifications)
-static inline Coord get_coord_x(FitnessOrCity val) {
-    #pragma HLS INLINE
-    return val.range(COORD_BITS-1, 0);
-}
-static inline Coord get_coord_y(FitnessOrCity val) {
-    #pragma HLS INLINE
-    return val.range(2*COORD_BITS-1, COORD_BITS);
-}
-static inline Capacity get_capacity(FitnessOrCity val) {
-    #pragma HLS INLINE
-    return val.range(2*COORD_BITS+CAPACITY_BITS-1, 2*COORD_BITS);
-}
-static inline bool get_is_depot(FitnessOrCity val) {
-    #pragma HLS INLINE
-    return val[DEPOT_FLAG_FIELD_OFFSET];
-}
-
-static inline FieldIndex get_node_id_idx(FieldIndex city_idx) {
-    #pragma HLS INLINE
-    return city_idx + FIELD_BITS - NODE_ID_BITS; // city_idx is 1..num_cities, node_idx is 0-based
-}
-
-static inline NodeId get_node_id(IndividualAsBeats &ind, BeatIndex beat_idx, FieldIndex node_idx) {
-    #pragma HLS INLINE
-    return ind[beat_idx].range(node_idx + NODE_ID_BITS - 1, node_idx);
-}
-
-static inline NodeId get_node_id(FitnessOrCity val) {
-    #pragma HLS INLINE
-    return val.range(2*COORD_BITS+CAPACITY_BITS+DEPOT_BITS + NODE_ID_BITS - 1, 2*COORD_BITS+CAPACITY_BITS+DEPOT_BITS);
-}
-
-static inline void set_coord_x(FitnessOrCity &val, Coord x) {
-    #pragma HLS INLINE
-    val.range(COORD_BITS-1, 0) = x;
-}
-static inline void set_coord_y(FitnessOrCity &val, Coord y) {
-    #pragma HLS INLINE
-    val.range(2*COORD_BITS-1, COORD_BITS) = y;
-}
-static inline void set_capacity(FitnessOrCity &val, Capacity cap) {
-    #pragma HLS INLINE
-    val.range(2*COORD_BITS+CAPACITY_BITS-1, 2*COORD_BITS) = cap;
-}
-static inline void set_is_depot(FitnessOrCity &val, bool depot) {
-    #pragma HLS INLINE
-    val[DEPOT_FLAG_FIELD_OFFSET] = depot;
-}
-static inline void set_node_id(FitnessOrCity &val, NodeId id) {
-    #pragma HLS INLINE
-    val.range(2*COORD_BITS+CAPACITY_BITS+DEPOT_BITS + NODE_ID_BITS - 1, 2*COORD_BITS+CAPACITY_BITS+DEPOT_BITS) = id;
-}
-
-// DEBUG Helper functions
-//static void print_beat_node_ids(const Beat &b, FieldIndex from_field, FieldIndex to_field) {
-//    std::cout << "Cities from " << from_field << " to " << to_field << ": ";
-//    for (FieldIndex i = from_field; i <= to_field; ++i) {
-//        NodeId id = get_node_id(get_field(b, i));
-//        std::cout << id.to_string(10) << ", ";
-//    }
-//    std::cout << std::endl;
-//}
 
 #endif // TYPES_HPP

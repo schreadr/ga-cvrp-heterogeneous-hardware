@@ -4,23 +4,25 @@
 #include "types.hpp"
 #include <hls_stream.h>
 
+#define BEAT_STREAM_INTERVAL 1
+
 struct BeatPacket {
     Beat beat;
-    FieldIndex n;
+    CityIndex n;
 };
 
 struct BeatProducerState {
     Beat beat;
-    FieldIndex count;
+    CityIndex count;
 
     BeatProducerState() : beat(0), count(0) {}
 };
 
-void append_field(BeatProducerState &state, FitnessOrCity field);
+void append_city(BeatProducerState &state, City city);
 
-void send_field(
+void send_city(
     BeatProducerState &state,
-    FitnessOrCity field,
+    City city,
     hls::stream<BeatPacket> &beat_stream
 );
 
@@ -32,65 +34,49 @@ void finalizeStream(
 struct StartEndDataWithBeats {
     const StartEndData start_end_data;
     const Beat initial_start_beat;
-    // chagnes if end_beat is the same as start_beat
+    // changes if end_beat is the same as start_beat
     Beat end_beat;
 
     StartEndDataWithBeats(const StartEndData &start_end_data, const Beat &start_beat, Beat end_beat)
         : start_end_data(start_end_data), initial_start_beat(start_beat), end_beat(end_beat) {}
 };
 
-struct BeatConsumerState {
-    FieldIndex current_valid_fields;
-    FieldIndex cities_left;
-    FieldIndex curr_dst_idx;
-    BeatIndex current_beat_idx;
-
-    Beat accum_beat;
-    ap_uint<BEAT_WIDTH << 1> window;
-
-    StartEndDataWithBeats data;
-
-    BeatConsumerState(
-        FieldIndex n_cities_to_copy,
-        FieldIndex dst_start_idx,
-        StartEndDataWithBeats data
-    )
-        : current_valid_fields(0),
-          cities_left(n_cities_to_copy),
-          curr_dst_idx(dst_start_idx),
-          current_beat_idx(MAX_BEATS),
-          data(data),
-          window(0) {}
+struct BeatPacketWithLast {
+    Beat beat;
+    CityIndex n;
+    bool last;
 };
 
-void capture_and_propagate(BeatConsumerState &state, hls::stream<BeatPacket> &in_stream, IndividualAsBeats &dst_ind, FieldIndex num_cities);
+void capture_and_tag_packets(
+    hls::stream<BeatPacket> &in_stream,
+    hls::stream<BeatPacketWithLast> &out_stream,
+    CityIndex n_cities_to_copy
+);
 
-void flush_accumulated_beat(BeatConsumerState &state, IndividualAsBeats &dst_ind);
+void propagate_tagged_packets(
+    hls::stream<BeatPacketWithLast> &in_stream,
+    IndividualAsBeats &dst_ind,
+    CityIndex dst_start_idx,
+    CityIndex n_cities_to_copy,
+    const StartEndDataWithBeats &start_end_data,
+    CityIndex num_cities
+);
 
 template <int TARGET_II>
 void stream_beats_to_individual(
     hls::stream<BeatPacket> &in_stream,
     IndividualAsBeats &dst_ind,
-    FieldIndex dst_start_idx,
-    FieldIndex n_cities_to_copy,
+    CityIndex dst_start_idx,
+    CityIndex n_cities_to_copy,
     const StartEndDataWithBeats &start_end_data,
-    BeatIndex n_beats,
-    FieldIndex num_cities
+    CityIndex num_cities
 ) {
-    BeatConsumerState state(
-        n_cities_to_copy,
-        dst_start_idx,
-        start_end_data
-    );
+    #pragma HLS DATAFLOW
+    hls::stream<BeatPacketWithLast> tagged_stream("tagged_packet_stream");
+    #pragma HLS STREAM variable=tagged_stream depth=4
 
-    WRITE_BEATS_LOOP: do {
-        #pragma HLS PIPELINE II=TARGET_II
-        // Instruct HLS that state dependency across iterations can be pipelined
-        capture_and_propagate(state, in_stream, dst_ind, num_cities);
-    } while (state.current_valid_fields > 0 || state.cities_left > 0);
-
-    // Flush final accumulated beat to RAM after loop ends
-    flush_accumulated_beat(state, dst_ind);
+    capture_and_tag_packets(in_stream, tagged_stream, n_cities_to_copy);
+    propagate_tagged_packets(tagged_stream, dst_ind, dst_start_idx, n_cities_to_copy, start_end_data, num_cities);
 }
 
 template <int W_IN>

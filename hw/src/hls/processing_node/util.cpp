@@ -3,116 +3,161 @@
 
 #include <hls_stream.h>
 
-void inline capture_next_packet(BeatConsumerState &state, hls::stream<BeatPacket> &in_stream){
-    #pragma HLS INLINE
-    BeatPacket pkt = in_stream.read();
-    state.window |= ((ap_uint<BEAT_WIDTH << 1>)pkt.beat) << (state.current_valid_fields << FIELD_BITS_LOG2);
-    state.current_valid_fields += pkt.n;
-    state.cities_left -= pkt.n;
+void capture_and_tag_packets(
+    hls::stream<BeatPacket> &in_stream,
+    hls::stream<BeatPacketWithLast> &out_stream,
+    CityIndex n_cities_to_copy
+) {
+    if (n_cities_to_copy == 0) return;
+
+    CityIndex remaining = n_cities_to_copy;
+    bool is_last = false;
+    CAPTURE_LOOP: do {
+        #pragma HLS PIPELINE II=1
+        BeatPacket pkt = in_stream.read();
+        CityIndex n = pkt.n;
+        if (n > 0) {
+            is_last = (n >= remaining);
+            remaining -= n;
+
+            BeatPacketWithLast tagged_pkt;
+            tagged_pkt.beat = pkt.beat;
+            tagged_pkt.n = n;
+            tagged_pkt.last = is_last;
+            out_stream.write(tagged_pkt);
+        }
+    } while (!is_last);
 }
 
-void inline process_next_packet(
-    BeatConsumerState &state,
+static inline void switch_beat(
+    BeatIndex dst_beat,
+    BeatIndex &current_beat_idx,
+    Beat &accum_beat,
+    Beat &end_beat,
     IndividualAsBeats &dst_ind,
-    FieldIndex num_cities
+    BeatIndex start_beat,
+    BeatIndex end_beat_idx,
+    Beat initial_start_beat,
+    bool same_start_end
 ) {
     #pragma HLS INLINE
-    BeatIndex dst_beat = get_beat_idx(state.curr_dst_idx);
-    FieldIndex dst_offset = state.curr_dst_idx & (FIELDS_PER_BEAT - 1);
+    Beat old_end = end_beat;
+    dst_ind[current_beat_idx] = accum_beat;
+    if (same_start_end && current_beat_idx == start_beat) {
+        end_beat = accum_beat;
+    }
+    current_beat_idx = dst_beat;
+    // For the case where start_beat == end_beat we want to use the end_beat value since it is updated
+    accum_beat = (dst_beat == end_beat_idx) ? old_end : ((dst_beat == start_beat) ? initial_start_beat : Beat(0));
+}
 
-    FieldIndex space_in_beat = FIELDS_PER_BEAT - dst_offset;
-    FieldIndex cities_until_wrap = num_cities - state.curr_dst_idx + 1;
+void propagate_tagged_packets(
+    hls::stream<BeatPacketWithLast> &in_stream,
+    IndividualAsBeats &dst_ind,
+    CityIndex dst_start_idx,
+    CityIndex n_cities_to_copy,
+    const StartEndDataWithBeats &start_end_data,
+    CityIndex num_cities
+) {
+    if (n_cities_to_copy == 0) return;
 
-    FieldIndex fields_this_beat = space_in_beat;
-    if (fields_this_beat > cities_until_wrap) fields_this_beat = cities_until_wrap;
-    if (fields_this_beat > state.current_valid_fields) fields_this_beat = state.current_valid_fields;   
+    CityIndex curr_idx = dst_start_idx;
+    const BeatIndex start_beat = start_end_data.start_end_data.start_beat;
+    const BeatIndex end_beat_idx = start_end_data.start_end_data.end_beat;
+    const Beat initial_start_beat = start_end_data.initial_start_beat;
+    const bool same_start_end = (start_beat == end_beat_idx);
 
-    // Commit current beat and pre-load target beat from RAM on beat changes
-    if (state.current_beat_idx != dst_beat) {
-        if (state.current_beat_idx != MAX_BEATS) {
-            //std::cout << "Writing accum_beat to dst_ind at index " << state.current_beat_idx << ": ";
-            //print_beat_node_ids(state.accum_beat, get_first_city_index(state.current_beat_idx), FIELDS_PER_BEAT - 1);
-            dst_ind[state.current_beat_idx] = state.accum_beat;
-            if (state.current_beat_idx == state.data.start_end_data.start_beat &&
-                state.data.start_end_data.start_beat == state.data.start_end_data.end_beat) {
-                state.data.end_beat = state.accum_beat;
+    BeatIndex current_beat_idx = start_beat;
+    Beat accum_beat = (start_beat == end_beat_idx) ? start_end_data.end_beat : initial_start_beat;
+    Beat end_beat = start_end_data.end_beat;
+    bool beat_flushed = false;
+
+    bool is_last = false;
+    PROPAGATE_LOOP: do {
+        #pragma HLS PIPELINE II=1
+        BeatPacketWithLast pkt = in_stream.read();
+        is_last = pkt.last;
+
+        CityBeatIndex dst_offset = get_city_beat_idx(curr_idx);
+        CityBeatIndex beat_space = HW_CITIES_PER_BEAT - dst_offset;
+        CityIndex tour_space = num_cities - curr_idx;
+        bool at_tour_end = (tour_space <= beat_space);
+        CityBeatIndex space = at_tour_end ? (CityBeatIndex)tour_space : beat_space;
+
+        CityBeatIndex n_curr = (pkt.n < space) ? (CityBeatIndex)pkt.n : space;
+        CityBeatIndex n_next = pkt.n - n_curr;
+
+        // 1. Parallel slot assignment for current beat
+        UPDATE_CURR_SLOTS: for (CityBeatIndex s = 0; s < HW_CITIES_PER_BEAT; s++) {
+            #pragma HLS UNROLL
+            CityBeatIndex w = s - dst_offset;
+            if (s >= dst_offset && w < n_curr) {
+                City c = pkt.beat.range((w + 1) * CITY_BITS - 1, w * CITY_BITS);
+                accum_beat.range((s + 1) * CITY_BITS - 1, s * CITY_BITS) = c;
             }
         }
-        state.current_beat_idx = dst_beat;
-        // For the case where start_beat == end_beat we want to use the end_beat value since it is updated
-        if (dst_beat == state.data.start_end_data.end_beat) {
-            state.accum_beat = state.data.end_beat;
-        } else if (dst_beat == state.data.start_end_data.start_beat) {
-            state.accum_beat = state.data.initial_start_beat;
+
+        // 2. If current beat was filled, flush it and switch to next beat (at most 1 write to dst_ind per cycle)
+        if (n_curr == space) {
+            BeatIndex next_beat = at_tour_end ? BeatIndex(0) : BeatIndex(current_beat_idx + 1);
+
+            switch_beat(next_beat, current_beat_idx, accum_beat, end_beat, dst_ind,
+                        start_beat, end_beat_idx, initial_start_beat, same_start_end);
+
+            // 3. If packet spills over, write spillover slots into the new beat
+            if (n_next > 0) {
+                UPDATE_NEXT_SLOTS: for (CityBeatIndex s = 0; s < HW_CITIES_PER_BEAT; s++) {
+                    #pragma HLS UNROLL
+                    if (s < n_next) {
+                        CityBeatIndex w = s + space;
+                        City c = pkt.beat.range((w + 1) * CITY_BITS - 1, w * CITY_BITS);
+                        accum_beat.range((s + 1) * CITY_BITS - 1, s * CITY_BITS) = c;
+                    }
+                }
+                // If spillover completed the last beat of the tour, flush it directly (RAM is dual-port) and reset to beat 0
+                if (!at_tour_end && curr_idx + pkt.n >= num_cities) {
+                    dst_ind[current_beat_idx] = accum_beat;
+                    current_beat_idx = 0;
+                    accum_beat = (0 == end_beat_idx) ? end_beat : ((0 == start_beat) ? initial_start_beat : Beat(0));
+                    beat_flushed = true;
+                } else {
+                    beat_flushed = false;
+                }
+            } else {
+                beat_flushed = true;
+            }
         } else {
-            state.accum_beat = 0;
+            beat_flushed = false;
         }
+
+        // Advance global index
+        CityIndex next_global = curr_idx + pkt.n;
+        if (next_global >= num_cities) next_global -= num_cities;
+        curr_idx = next_global;
+
+    } while (!is_last);
+
+    if (!beat_flushed) {
+        dst_ind[current_beat_idx] = accum_beat;
     }
-
-    // Extract valid fields and write into local register
-    ap_uint<BEAT_WIDTH << 1> raw_chunk = state.window.range((fields_this_beat << FIELD_BITS_LOG2) - 1, 0);
-    Beat out_beat = (Beat)(raw_chunk << (dst_offset << FIELD_BITS_LOG2));
-
-    int low_bit = dst_offset << FIELD_BITS_LOG2;
-    int high_bit = ((dst_offset + fields_this_beat) << FIELD_BITS_LOG2) - 1;
-
-    // Update accum register
-    state.accum_beat.range(high_bit, low_bit) = out_beat.range(high_bit, low_bit);
-
-    // Advance destination index and handle wrap-around
-    state.curr_dst_idx += fields_this_beat;
-    if (state.curr_dst_idx > num_cities) {
-        state.curr_dst_idx = get_first_city_index(0);
-    }
-
-    state.window >>= (fields_this_beat << FIELD_BITS_LOG2);
-    state.current_valid_fields -= fields_this_beat;
 }
 
-void capture_and_propagate(BeatConsumerState &state, hls::stream<BeatPacket> &in_stream, IndividualAsBeats &dst_ind, FieldIndex num_cities){
+void append_city(BeatProducerState &state, City city){
     #pragma HLS INLINE
-
-    if(state.current_valid_fields > 0){
-        process_next_packet(state, dst_ind, num_cities);
-    }
-
-    if(state.current_valid_fields < FIELDS_PER_BEAT && state.cities_left > 0){
-        capture_next_packet(state, in_stream);
-    }
-
-    //std::cout << "State after capture_and_propagate: "
-    //          << "current_valid_fields=" << state.current_valid_fields
-    //          << ", cities_left=" << state.cities_left
-    //          << ", curr_dst_idx=" << state.curr_dst_idx
-    //          << ", current_beat_idx=" << state.current_beat_idx
-    //          << std::endl;
-}
-
-void flush_accumulated_beat(BeatConsumerState &state, IndividualAsBeats &dst_ind) {
-    // TODO check if cities left?
-    if (state.current_beat_idx != MAX_BEATS) {
-        //std::cout << "Flushing accum_beat to dst_ind at index " << state.current_beat_idx << ": ";
-        //print_beat_node_ids(state.accum_beat, get_first_city_index(state.current_beat_idx), FIELDS_PER_BEAT - 1);
-        dst_ind[state.current_beat_idx] = state.accum_beat;
-    }
-}
-
-void append_field(BeatProducerState &state, FitnessOrCity field){
-    #pragma HLS INLINE
-    state.beat >>= FIELD_BITS;
-    state.beat.range(BEAT_WIDTH - 1, BEAT_WIDTH - FIELD_BITS) = field;
+    state.beat >>= CITY_BITS;
+    state.beat.range(HW_BEAT_WIDTH - 1, HW_BEAT_WIDTH - CITY_BITS) = city;
     state.count++;
 }
 
-void send_field(
+void send_city(
     BeatProducerState &state,
-    FitnessOrCity field,
+    City city,
     hls::stream<BeatPacket> &beat_stream
 ) {
     #pragma HLS INLINE
-    append_field(state, field);
+    append_city(state, city);
 
-    if (state.count == FIELDS_PER_BEAT) {
+    if (state.count == HW_CITIES_PER_BEAT) {
         BeatPacket pkt;
         pkt.beat = state.beat;
         pkt.n = state.count;
@@ -128,7 +173,7 @@ void finalizeStream(
 ) {
     #pragma HLS INLINE
     if (state.count > 0) {
-        state.beat >>= (FIELDS_PER_BEAT - state.count) * FIELD_BITS;
+        state.beat >>= (HW_CITIES_PER_BEAT - state.count) * CITY_BITS;
         BeatPacket pkt;
         pkt.beat = state.beat;
         pkt.n = state.count;

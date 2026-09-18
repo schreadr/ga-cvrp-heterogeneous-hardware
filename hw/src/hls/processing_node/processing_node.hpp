@@ -12,7 +12,7 @@ void processing_node(
     int num_individuals,
     int num_cities,
     int vehicle_capacity,
-    int depot_cords,
+    int init_city_cache,
     int *dbg_num_individuals,
     int *dbg_num_cities
 );

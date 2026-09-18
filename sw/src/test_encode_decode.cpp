@@ -35,7 +35,7 @@
  *
  * Build (standalone, no Coyote dependency):
  *   g++ -std=c++17 -I . test_encode_decode.cpp \
-       ga.cpp ga_streaming.cpp problem_parser.cpp -o test_encode_decode & & ./test_encode_decode
+       ga.cpp ga_streaming.cpp problem_parser.cpp -o test_encode_decode && ./test_encode_decode
  */
 
 #include <cstdint>
@@ -53,7 +53,7 @@
 
 namespace {
 
-constexpr const char kDefaultProblemFile[] = "../../P-n40-k5.vrp";
+constexpr const char kDefaultProblemFile[] = "../../problem_instances/P-n40-k5.vrp";
 
 void print_hex_dump(const std::string &label, const std::uint8_t *bytes, std::size_t size) {
     std::cout << label << " (" << size << " B):\n";
@@ -71,9 +71,9 @@ void print_hex_dump(const std::string &label, const std::uint8_t *bytes, std::si
 }
 
 void print_beat_markers(const std::string &label, const std::uint8_t *beat_bytes) {
-    std::cout << label << " bit layout (Memory Stream Order LSB->MSB, '|' field, '-' sub-field):\n  ";
+    std::cout << label << " bit layout (Memory Stream Order LSB->MSB, '|' city/field, '-' sub-field):\n  ";
 
-    for (int abs_bit = 0; abs_bit < AXI_WIDTH; ++abs_bit) {
+    for (int abs_bit = 0; abs_bit < AXI_BEAT_WIDTH; ++abs_bit) {
         // Sample bits LSB-first within each byte
         int byte_idx = abs_bit / 8;
         int bit_in_byte = abs_bit % 8;
@@ -81,28 +81,25 @@ void print_beat_markers(const std::string &label, const std::uint8_t *beat_bytes
         bool set = (beat_bytes[byte_idx] >> bit_in_byte) & 1;
         std::printf("%c", set ? '1' : '0');
 
-        int field_idx = abs_bit / FIELD_BITS;
-        int bit_in_field = abs_bit % FIELD_BITS;
+        int city_idx = abs_bit / CITY_BITS;
+        int bit_in_city = abs_bit % CITY_BITS;
 
         // Print dividers (except after the very last bit of the AXI beat)
-        if (abs_bit + 1 < AXI_WIDTH) {
-            // End of field boundary (|)
-            if (bit_in_field == FIELD_BITS - 1) {
+        if (abs_bit + 1 < AXI_BEAT_WIDTH) {
+            // End of city boundary (|)
+            if (bit_in_city == CITY_BITS - 1) {
                 std::printf("|");
             } 
-            // Sub-field boundaries inside city fields (-)
-            else if (field_idx > 0) {
-                if (bit_in_field == COORD_BITS - 1 || 
-                    bit_in_field == (2 * COORD_BITS) - 1 || 
-                    bit_in_field == (2 * COORD_BITS + CAPACITY_BITS) - 1 ||
-                    bit_in_field == (2 * COORD_BITS + CAPACITY_BITS + DEPOT_BITS) - 1 ||
-                    bit_in_field == (2 * COORD_BITS + CAPACITY_BITS + DEPOT_BITS + NODE_ID_BITS) - 1) {
+            // Sub-field boundaries inside city (-)
+            else {
+                if (bit_in_city == NODE_ID_BITS - 1 || 
+                    bit_in_city == DEPOT_FLAG_OFFSET) {
                     std::printf("-");
                 }
             }
 
-            // New line formatting at field boundaries for readability
-            if (bit_in_field == FIELD_BITS - 1 && (field_idx + 1) % (64/FIELD_BITS + 1) == 0) {
+            // New line formatting at city boundaries for readability
+            if (bit_in_city == CITY_BITS - 1 && (city_idx + 1) % 8 == 0) {
                 std::printf("\n  ");
             }
         }
@@ -111,16 +108,17 @@ void print_beat_markers(const std::string &label, const std::uint8_t *beat_bytes
 }
 
 void print_decoded_fields(const std::string &label, Individual& individual, const ProblemInstance &problem) {
-    std::cout << label << " decoded fields:\n";
+    std::cout << label << " decoded tour & fitness:\n";
 
-    std::printf("  field  0 [bits %3d..%3d]  fitness=%u\n",
-                0, FIELD_BITS - 1, individual.fitness);
-
-    for(std::size_t  i = 0; i < individual.tour.size(); ++i) {
+    for(std::size_t i = 0; i < individual.tour.size(); ++i) {
         const auto &city = individual.tour[i];
-        std::printf("  field %2zu [bits %3zu..%3zu] x=%3u y=%3u demand=%2u depot_after=%u node_id=%d\n",
-                    i+1, (i+1) * FIELD_BITS, (i + 2) * FIELD_BITS - 1, problem.nodes[city.node_id].x, problem.nodes[city.node_id].y, problem.nodes[city.node_id].demand, city.depot_after, city.node_id);
+        std::printf("  city %2zu [beat %zu, slot %2zu] depot_after=%u node_id=%d\n",
+                    i, i / AXI_CITIES_PER_BEAT, i % AXI_CITIES_PER_BEAT, city.depot_after, city.node_id);
     }
+
+    std::size_t total_city_beats = get_total_axi_city_beats(individual.tour.size());
+    std::printf("  fitness beat %zu [bits 0..%d] fitness=%u\n",
+                total_city_beats, FITNESS_BITS - 1, individual.fitness);
 }
 
 bool test_encode_decode(const ProblemInstance &problem) {
@@ -134,12 +132,18 @@ bool test_encode_decode(const ProblemInstance &problem) {
 
     const std::vector<std::uint8_t> encoded = encode_population_fixed(problem, population);
     std::vector<Individual> decoded = decode_population_fixed(problem, encoded.data(), population.size());
-    const std::size_t bytes_per_individual = get_total_beats(problem.dimension - 1) * AXI_BYTES;
+    const int beats_per_individual = get_total_axi_beats(problem.dimension - 1);
+    const std::size_t bytes_per_individual = beats_per_individual * AXI_BYTES;
 
     for (std::size_t i = 0; i < population.size(); ++i) {
         const std::uint8_t *bytes = encoded.data() + i * bytes_per_individual;
         print_hex_dump("Individual " + std::to_string(i), bytes, bytes_per_individual);
-        print_beat_markers("Individual " + std::to_string(i), bytes);
+        for (int b = 0; b < beats_per_individual; ++b) {
+            std::string beat_label = "Individual " + std::to_string(i) + " Beat " + std::to_string(b);
+            if (b == beats_per_individual - 1) beat_label += " (Fitness Beat)";
+            else beat_label += " (City Beat)";
+            print_beat_markers(beat_label, bytes + b * AXI_BYTES);
+        }
         print_decoded_fields("Individual " + std::to_string(i), decoded[i], problem);
         std::cout << "\n";
     }
@@ -184,7 +188,7 @@ bool test_generate_random_numbers(const ProblemInstance &problem) {
     const uint32_t *words = reinterpret_cast<const uint32_t *>(rnd_buf1.data());
     const std::size_t total_random_words = test_rnd_indivs * RANDOMS_PER_INDIV;
     for (std::size_t i = 0; i < total_random_words; ++i) {
-        if (words[i] < 1 || words[i] > static_cast<uint32_t>(num_cities)) {
+        if (words[i] >= static_cast<uint32_t>(num_cities)) {
             std::cerr << "FAIL: random number out of bounds at index " << i << ": " << words[i] << "\n";
             return false;
         }
@@ -199,6 +203,42 @@ bool test_generate_random_numbers(const ProblemInstance &problem) {
     return true;
 }
 
+bool test_node_cache_encode(const ProblemInstance &problem) {
+    std::vector<uint8_t> cache = encode_node_cache(problem);
+    const uint64_t coord_mask = (1ULL << COORD_BITS) - 1ULL;
+    const uint64_t demand_mask = (1ULL << CAPACITY_BITS) - 1ULL;
+
+    auto check_entry = [&](int idx, uint64_t exp_x, uint64_t exp_y, uint64_t exp_demand, const std::string &label) {
+        int beat_idx = idx >> NODE_CACHE_ENTRIES_PER_BEAT_LOG2;
+        int word_idx = idx & (NODE_CACHE_ENTRIES_PER_BEAT - 1);
+        const uint64_t *words = reinterpret_cast<const uint64_t *>(cache.data() + beat_idx * AXI_BYTES);
+        uint64_t val = words[word_idx];
+        uint64_t x = (val >> NODE_CACHE_COORD_X_OFFSET) & coord_mask;
+        uint64_t y = (val >> NODE_CACHE_COORD_Y_OFFSET) & coord_mask;
+        uint64_t demand = (val >> NODE_CACHE_DEMAND_OFFSET) & demand_mask;
+        if (x != (exp_x & coord_mask) || y != (exp_y & coord_mask) || demand != (exp_demand & demand_mask)) {
+            std::cerr << "Mismatch in node cache at " << label << " (index " << idx << ")\n";
+            return false;
+        }
+        return true;
+    };
+
+    for (std::size_t i = 0; i < problem.nodes.size(); ++i) {
+        if (!check_entry(static_cast<int>(i), problem.nodes[i].x, problem.nodes[i].y, problem.nodes[i].demand, "node " + std::to_string(i))) {
+            return false;
+        }
+    }
+
+    // Verify depot entry at index problem.nodes.size()
+    int depot_idx = static_cast<int>(problem.nodes.size());
+    if (!check_entry(depot_idx, problem.depot.x, problem.depot.y, 0, "depot")) {
+        return false;
+    }
+
+    std::cout << "PASS: encode_node_cache verified for " << problem.nodes.size() << " nodes + depot.\n";
+    return true;
+}
+
 } // namespace
 
 int main(int argc, char *argv[]) {
@@ -210,6 +250,10 @@ int main(int argc, char *argv[]) {
                   << "  dimension=" << problem.dimension
                   << "  capacity=" << problem.capacity
                   << "  customers=" << numCustomers(problem) << "\n\n";
+
+        if (!test_node_cache_encode(problem)) {
+            return EXIT_FAILURE;
+        }
 
         if (!test_encode_decode(problem)) {
             return EXIT_FAILURE;

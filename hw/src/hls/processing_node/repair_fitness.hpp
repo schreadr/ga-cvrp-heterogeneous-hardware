@@ -8,9 +8,9 @@ void repair_fitness(
     hls::stream_of_blocks<IndividualAsBeats> &in,
     hls::stream_of_blocks<IndividualAsBeats> &out,
     int num_individuals,
-    FieldIndex num_cities,
+    CityIndex num_cities,
     Capacity vehicle_capacity,
-    int depot_cords
+    const CityData city_cache[MAX_CACHE_ENTRIES]
 );
 
 #endif // REPAIR_FITNESS_HPP

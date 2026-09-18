@@ -55,32 +55,33 @@ void tb_pull_bytes(hls::stream<axi_word_t> &stream,
 }
 
 void make_individual_beats(const ProblemInstance &problem, const Individual &individual, IndividualAsBeats &out) {
-    set_fitness(out, individual.fitness);
+    const int num_cities = static_cast<int>(individual.tour.size());
+    const int total_beats = get_total_beats(num_cities);
+    for (int b = 0; b < total_beats; ++b) {
+        out[b] = 0;
+    }
 
     for (std::size_t i = 0; i < individual.tour.size(); ++i) {
         const auto &gene = individual.tour[i];
-        const ProblemNode &node = problem.nodes.at(static_cast<std::size_t>(gene.node_id));
 
-        FitnessOrCity field = 0;
-        set_coord_x(field, node.x);
-        set_coord_y(field, node.y);
-        set_capacity(field, node.demand);
-        set_is_depot(field, gene.depot_after);
-        set_node_id(field, gene.node_id);
+        City city = 0;
+        set_is_depot(city, gene.depot_after);
+        set_node_id(city, gene.node_id);
 
-        set_field(out, static_cast<int>(i + 1), field);
+        set_city(out, static_cast<int>(i), city);
     }
+
+    set_fitness(out, Fitness(individual.fitness), num_cities);
 }
 
-Individual decode_individual(const ProblemInstance &problem, const IndividualAsBeats &ind, int num_cities) {
+Individual decode_individual(const ProblemInstance &problem, const IndividualAsBeats &ind, int num_cities) {   
     Individual individual;
-    individual.fitness = get_fitness(ind);
+    individual.fitness = static_cast<uint32_t>(get_fitness(ind, num_cities));
 
-    for (int i = 1; i <= num_cities; ++i) {
-        FitnessOrCity field = get_field(ind, i);
-        int node_id = static_cast<int>(get_node_id(field));
-        const ProblemNode &node = problem.nodes.at(static_cast<std::size_t>(node_id));
-        bool depot_after = get_is_depot(field);
+    for (int i = 0; i < num_cities; ++i) {
+        City city = get_city(ind, i);
+        int node_id = static_cast<int>(get_node_id(city));
+        bool depot_after = get_is_depot(city);
         individual.tour.push_back(TourGene{node_id, depot_after});
     }
 
@@ -119,8 +120,7 @@ std::vector<Individual> build_population(const ProblemInstance &problem,
     for (std::size_t i = 0; i < tours.size(); ++i) {
         out[i].fitness = fitness_base + static_cast<std::uint32_t>(i);
         out[i].tour.reserve(tours[i].size());
-        for (int node_id : tours[i]) {
-            (void)problem;
+        for (int node_id : tours[i]) {            
             out[i].tour.push_back(TourGene{node_id, false});
         }
     }

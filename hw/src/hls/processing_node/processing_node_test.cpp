@@ -1,3 +1,4 @@
+#include <fstream>
 #include "processing_node.hpp"
 #include "test_helper.hpp"
 #include "crossover_test.hpp"
@@ -82,13 +83,13 @@ int test_random_number_converter() {
         39, 4, 7, 18, 13, 13
     };
 
-    std::vector<std::pair<FieldIndex, FieldIndex>> exp_cx = {
+    std::vector<std::pair<CityIndex, CityIndex>> exp_cx = {
         {3, 15}, {2, 2}, {25, 40}, {11, 19}, {4, 39}
     };
-    std::vector<std::pair<FieldIndex, FieldIndex>> exp_mut_0 = {
+    std::vector<std::pair<CityIndex, CityIndex>> exp_mut_0 = {
         {8, 20}, {1, 30}, {12, 14}, {5, 9}, {7, 18}
     };
-    std::vector<std::pair<FieldIndex, FieldIndex>> exp_mut_1 = {
+    std::vector<std::pair<CityIndex, CityIndex>> exp_mut_1 = {
         {5, 10}, {16, 22}, {1, 35}, {4, 28}, {13, 13}
     };
 
@@ -151,12 +152,12 @@ int run_integration_test(){
     const std::size_t total_bytes_1 = enc_1.size();
 
     // Stream the cut points corresponding to the hardcoded test values
-    // kOxStart = 2, kOxEnd = 34; kMutateStart = 2, kMutateEnd = 34
+    // kOxStart = 1, kOxEnd = 33; kMutateStart = 1, kMutateEnd = 33
     // Pass them in mixed order to verify the converter sorts smaller first.
     std::vector<uint32_t> rnd_nums = {
-        34, 2, 2, 34, 2, 34,
-        2, 34, 34, 2, 2, 34,
-        34, 2, 34, 2, 34, 2
+        33, 1, 1, 33, 1, 33,
+        1, 33, 33, 1, 1, 33,
+        33, 1, 33, 1, 33, 1
     };
     const std::size_t payload_bytes_rnd = rnd_nums.size() * sizeof(uint32_t);
     const std::size_t total_bytes_rnd = get_random_bytes(kNumIndividuals);
@@ -164,6 +165,16 @@ int run_integration_test(){
     std::memcpy(enc_rnd.data(), rnd_nums.data(), payload_bytes_rnd);
 
     int dbg_indiv0, dbg_cities;
+
+    std::cout << "Sending node cache to FPGA (Stream 0)..." << std::endl;
+    const std::vector<std::uint8_t> cache_bytes = encode_node_cache(problem);
+    tb_push_bytes(in0, cache_bytes.data(), cache_bytes.size(), true);
+    processing_node(in0, out0, in1, out1, in_random,
+                    kNumIndividuals,
+                    kNumCities,
+                    problem.capacity,
+                    1,
+                    &dbg_indiv0, &dbg_cities);
 
     std::cout << "Streaming encoded populations and random numbers..." << std::endl;
     tb_push_bytes(in0, enc_0.data(), total_bytes_0, true);
@@ -175,7 +186,7 @@ int run_integration_test(){
                     kNumIndividuals,
                     kNumCities,
                     problem.capacity,
-                    (problem.depot.x << COORD_BITS) | problem.depot.y,
+                    0,
                     &dbg_indiv0, &dbg_cities);
 
     std::cout << "Processing Node finished. Reading outputs from stream..." << std::endl;
@@ -277,8 +288,8 @@ int run_integration_test_border_cases() {
     const std::size_t total_bytes_1 = enc_1.size();
 
     std::vector<uint32_t> rnd_nums = {
-        6, 10, 1, 1, 1, 1,
-        5, 15, 1, 1, 1, 1
+        5, 9, 0, 0, 0, 0,
+        4, 14, 0, 0, 0, 0
     };
     const std::size_t payload_bytes_rnd = rnd_nums.size() * sizeof(uint32_t);
     const std::size_t total_bytes_rnd = get_random_bytes(kNumIndividuals_border_cases);
@@ -286,6 +297,16 @@ int run_integration_test_border_cases() {
     std::memcpy(enc_rnd.data(), rnd_nums.data(), payload_bytes_rnd);
 
     int dbg_indiv0, dbg_cities;
+
+    std::cout << "Sending node cache to FPGA (Stream 0, border cases)..." << std::endl;
+    const std::vector<std::uint8_t> cache_bytes = encode_node_cache(problem);
+    tb_push_bytes(in0, cache_bytes.data(), cache_bytes.size(), true);
+    processing_node(in0, out0, in1, out1, in_random,
+                    static_cast<int>(kNumIndividuals_border_cases),
+                    kNumCities_border_cases,
+                    problem.capacity,
+                    1,
+                    &dbg_indiv0, &dbg_cities);
 
     std::cout << "Streaming encoded populations and random numbers (border cases)..." << std::endl;
     tb_push_bytes(in0, enc_0.data(), total_bytes_0, true);
@@ -297,7 +318,7 @@ int run_integration_test_border_cases() {
                     static_cast<int>(kNumIndividuals_border_cases),
                     kNumCities_border_cases,
                     problem.capacity,
-                    (problem.depot.x << COORD_BITS) | problem.depot.y,
+                    0,
                     &dbg_indiv0, &dbg_cities);
 
     std::cout << "Processing Node (border cases) finished. Reading outputs from stream..." << std::endl;
@@ -345,18 +366,36 @@ int run_integration_test_border_cases() {
     return errors;
 }
 
-int run_integration_test_big_instance() {
-    std::cout << "Running Integration Test (Big Instance: X-n1001-k43)..." << std::endl;
+
+int run_integration_test(const std::string&);
+
+int run_all_integration_tests() {
+    int errors = 0;
+    const std::vector<std::string> instance_files = {
+        "P-n16-k8.vrp",
+        "P-n40-k5.vrp",
+        "X-n1001-k43.vrp"
+    };
+
+    for (const auto& file : instance_files) {
+        int err = run_integration_test(file);
+        if (err != 0) std::cout << "Integration Test failed for " << file << std::endl;
+        errors += err;
+    }
+    return errors;
+}
+
+int run_integration_test(const std::string& vrp_path) {
+    std::cout << "Running Integration Test for: " << vrp_path << "..." << std::endl;
     hls::stream<axi_word_t> in0("in0_big"), out0("out0_big");
     hls::stream<axi_word_t> in1("in1_big"), out1("out1_big");
     hls::stream<axi_word_t> in_random("in_random_big");
 
-    const std::string vrp_path = "X-n1001-k43.vrp";
     std::cout << "Loading problem from: " << vrp_path << std::endl;
     const ProblemInstance problem = parse_vrp(vrp_path);
     validate_encoding_constants(problem);
 
-    const std::size_t num_ind = 2;
+    const std::size_t num_ind = 100;
     const uint32_t seed = 12648430;
 
     std::cout << "Generating initial population (" << num_ind << " individuals per stream)..." << std::endl;
@@ -375,6 +414,16 @@ int run_integration_test_big_instance() {
 
     int dbg_indiv0 = 0, dbg_cities = 0;
 
+    std::cout << "Sending node cache to FPGA (Stream 0, big instance)..." << std::endl;
+    const std::vector<std::uint8_t> cache_bytes = encode_node_cache(problem);
+    tb_push_bytes(in0, cache_bytes.data(), cache_bytes.size(), true);
+    processing_node(in0, out0, in1, out1, in_random,
+                    static_cast<int>(num_ind),
+                    problem.dimension - 1,
+                    problem.capacity,
+                    1,
+                    &dbg_indiv0, &dbg_cities);
+
     std::cout << "Streaming encoded populations and random numbers (big instance)..." << std::endl;
     tb_push_bytes(in0, enc_0.data(), total_bytes_0, true);
     tb_push_bytes(in1, enc_1.data(), total_bytes_1, true);
@@ -385,7 +434,7 @@ int run_integration_test_big_instance() {
                     static_cast<int>(num_ind),
                     problem.dimension - 1,
                     problem.capacity,
-                    (problem.depot.x << COORD_BITS) | problem.depot.y,
+                    0,
                     &dbg_indiv0, &dbg_cities);
 
     std::cout << "Processing Node (big instance) finished. Reading outputs from stream..." << std::endl;
@@ -398,12 +447,14 @@ int run_integration_test_big_instance() {
     std::vector<Individual> got_child_0;
     std::vector<Individual> got_child_1;
     try {
+        std::cout << "Decoding output stream 0..." << std::endl;
         got_child_0 = decode_population_fixed(problem, got_0.data(), num_ind);
+        std::cout << "Decoding output stream 1..." << std::endl;
         got_child_1 = decode_population_fixed(problem, got_1.data(), num_ind);
     } catch (const std::exception &e) {
-        std::cout << "Exception decoding output population in big instance test: "
+        std::cout << "Exception decoding output population in test: "
                   << e.what() << std::endl;
-        std::cout << "BIG INSTANCE INTEGRATION TEST FAILED with exception." << std::endl;
+        std::cout << "INTEGRATION TEST FAILED with exception." << std::endl;
         return 1;
     }
 
@@ -424,9 +475,9 @@ int run_integration_test_big_instance() {
     }
 
     if (errors == 0) {
-        std::cout << "BIG INSTANCE INTEGRATION TEST PASSED!" << std::endl;
+        std::cout << "Integration test for problem" << vrp_path <<" PASSED!" << std::endl;
     } else {
-        std::cout << "BIG INSTANCE INTEGRATION TEST FAILED with " << errors << " errors." << std::endl;
+        std::cout << "Integration test for problem" << vrp_path <<" FAILED with " << errors << " errors." << std::endl;
     }
 
     return errors;
@@ -486,9 +537,9 @@ int main() {
     if (cur_err != 0) std::cout << "Integration Border Cases Test failed with " << cur_err << " errors." << std::endl;
     errors += cur_err;
 
-    std::cout << "\nRunning Integration Big Instance Test..." << std::endl;
-    cur_err = run_integration_test_big_instance();
-    if (cur_err != 0) std::cout << "Integration Big Instance Test failed with " << cur_err << " errors." << std::endl;
+    std::cout << "\nRunning All Integration Tests..." << std::endl;
+    cur_err = run_all_integration_tests();
+    if (cur_err != 0) std::cout << "Integration Tests failed with " << cur_err << " errors." << std::endl;
     errors += cur_err;
 
     if (errors == 0) {
