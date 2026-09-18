@@ -72,6 +72,10 @@ void propagate_tagged_packets(
     Beat end_beat = start_end_data.end_beat;
     bool beat_flushed = false;
 
+    bool has_cached_tour_end_beat = false;
+    Beat cached_tour_end_beat = 0;
+    BeatIndex cached_tour_end_beat_idx = 0;
+
     bool is_last = false;
     PROPAGATE_LOOP: do {
         #pragma HLS PIPELINE II=1
@@ -114,9 +118,12 @@ void propagate_tagged_packets(
                         accum_beat.range((s + 1) * CITY_BITS - 1, s * CITY_BITS) = c;
                     }
                 }
-                // If spillover completed the last beat of the tour, flush it directly (RAM is dual-port) and reset to beat 0
+                // If spillover completed the last beat of the tour, cache it to flush after loop finishes
                 if (!at_tour_end && curr_idx + pkt.n >= num_cities) {
-                    dst_ind[current_beat_idx] = accum_beat;
+                    cached_tour_end_beat = accum_beat;
+                    cached_tour_end_beat_idx = current_beat_idx;
+                    has_cached_tour_end_beat = true;
+
                     current_beat_idx = 0;
                     accum_beat = (0 == end_beat_idx) ? end_beat : ((0 == start_beat) ? initial_start_beat : Beat(0));
                     beat_flushed = true;
@@ -139,6 +146,9 @@ void propagate_tagged_packets(
 
     if (!beat_flushed) {
         dst_ind[current_beat_idx] = accum_beat;
+    }
+    if (has_cached_tour_end_beat) {
+        dst_ind[cached_tour_end_beat_idx] = cached_tour_end_beat;
     }
 }
 
