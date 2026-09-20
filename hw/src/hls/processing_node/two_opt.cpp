@@ -1,20 +1,9 @@
 #include "two_opt.hpp"
 #include "util.hpp"
 
-typedef NodeId Subtour[MAX_CITIES];
-typedef ap_uint<N_TWO_OPT_WORKERS_LOG2  + 1> WorkerIndex;
-
 struct SubtourMeta {
     CityIndex length;
     Fitness delta;
-    bool last_of_indiv;
-    bool last_of_batch;
-};
-
-struct SubtourDispatchToken {
-    WorkerIndex worker_idx;
-    CityIndex subtours_processed;
-    bool is_dummy;
     bool last_of_indiv;
     bool last_of_batch;
 };
@@ -129,36 +118,39 @@ static void symmetric_sweep(
     sweep_delta = local_delta;
 }
 
-static void two_opt_tours(
-    hls::stream_of_blocks<Subtour> &tour_stream,
-    hls::stream<SubtourMeta> &meta_stream,
-    hls::stream_of_blocks<Subtour> &opt_tour_stream,
-    hls::stream<SubtourMeta> &opt_meta_stream,
-    hls::stream<RandomPair> &worker_random_stream,
+static void two_opt_worker(
+    hls::stream<SubtourMeta> &meta_in,
+    hls::stream<NodeId>      &cities_in,
+    hls::stream<SubtourMeta> &meta_out,
+    hls::stream<NodeId>      &cities_out,
+    hls::stream<RandomPair>  &random_in,
     CityIndex num_cities,
     CityIndex two_opt_k,
     bool enable_precheck,
     const CityData city_cache[MAX_CACHE_ENTRIES]
 ) {
+    NodeId local_tour[MAX_CITIES];
     bool batch_done = false;
 
     OPTIMIZE_SUBTOURS_LOOP: while (!batch_done) {
-        SubtourMeta meta = meta_stream.read();
-        hls::read_lock<Subtour> tour(tour_stream);
-        hls::write_lock<Subtour> opt_tour(opt_tour_stream);
+        SubtourMeta meta = meta_in.read();
+        batch_done = meta.last_of_batch;
+
+        if (batch_done) {
+            break;
+        }
 
         CityIndex len = meta.length;
-        batch_done = meta.last_of_batch;
         Fitness subtour_delta = 0;
 
-        COPY_TOUR_LOOP: for (CityIndex i = 0; i < len; ++i) {
+        LOAD_TOUR_LOOP: for (CityIndex i = 0; i < len; ++i) {
             #pragma HLS PIPELINE II=1
-            opt_tour[i] = tour[i];
+            local_tour[i] = cities_in.read();
         }
 
         if (len > 0) {
             MOVE_LOOP: for (CityIndex move = 0; move < two_opt_k; ++move) {
-                RandomPair rnd = worker_random_stream.read();
+                RandomPair rnd = random_in.read();
                 RandomNumber r1 = rnd.r1;
                 RandomNumber r2 = rnd.r2;
 
@@ -175,7 +167,7 @@ static void two_opt_tours(
                     if (L_rel != R_rel) {
                         Fitness sweep_delta = 0;
                         symmetric_sweep(
-                            opt_tour,
+                            local_tour,
                             city_cache,
                             0, len - 1,
                             L_rel, R_rel,
@@ -189,86 +181,23 @@ static void two_opt_tours(
             }
         }
 
-        opt_meta_stream.write(SubtourMeta{len, subtour_delta, meta.last_of_indiv, batch_done});
-    }
-}
+        meta_out.write(SubtourMeta{len, subtour_delta, meta.last_of_indiv, false});
 
-template <int N_WORKERS>
-static void send_subtour_to_worker(
-    WorkerIndex target_worker,
-    bool is_dummy,
-    bool last_of_indiv,
-    bool last_of_batch,
-    hls::stream_of_blocks<Subtour> (&tour_stream)[N_WORKERS],
-    hls::stream<SubtourMeta> (&meta_stream)[N_WORKERS],
-    const IndividualAsBeats &in_ind,
-    Beat &active_beat,
-    CityBeatIndex &cities_in_beat,
-    BeatIndex &beat_idx,
-    CityIndex &total_cities_read,
-    CityIndex num_cities,
-    bool &indiv_done
-) {
-    #pragma HLS INLINE
-    DISPATCH_EXTRACT_LOOP: for (WorkerIndex w = 0; w < N_WORKERS; ++w) {
-        #pragma HLS UNROLL
-        if (target_worker == w) {
-            hls::write_lock<Subtour> tour(tour_stream[w]);
-            CityIndex tour_len = 0;
-
-            if (!is_dummy) {
-                bool subtour_done = false;
-
-                BUILD_TOUR_LOOP: while (!subtour_done) {
-                    #pragma HLS PIPELINE II=1
-
-                    City current_city = active_beat.range(CITY_BITS - 1, 0);
-                    NodeId nid = get_node_id(current_city);
-                    bool is_depot = get_is_depot(current_city);
-
-                    tour[tour_len++] = nid;
-                    total_cities_read++;
-
-                    if (is_depot) {
-                        subtour_done = true;
-                    }
-                    if (total_cities_read == num_cities) {
-                        subtour_done = true;
-                        indiv_done = true;
-                    }
-
-                    if (cities_in_beat == 1) {
-                        beat_idx++;
-                        if (total_cities_read < num_cities) {
-                            active_beat = in_ind[beat_idx];
-                        }
-                        cities_in_beat = HW_CITIES_PER_BEAT;
-                    } else {
-                        active_beat >>= CITY_BITS;
-                        cities_in_beat--;
-                    }
-                }
-
-                meta_stream[w].write(SubtourMeta{tour_len, 0, indiv_done, false});
-            } else {
-                meta_stream[w].write(SubtourMeta{0, 0, last_of_indiv, last_of_batch});
-            }
+        EMIT_TOUR_LOOP: for (CityIndex i = 0; i < len; ++i) {
+            #pragma HLS PIPELINE II=1
+            cities_out.write(local_tour[i]);
         }
     }
 }
 
-template <int N_WORKERS>
-static void extract_subtours_all(
+static void extract_subtours(
     hls::stream_of_blocks<IndividualAsBeats> &in,
     int num_individuals,
     CityIndex num_cities,
-    hls::stream_of_blocks<Subtour> (&tour_stream)[N_WORKERS],
-    hls::stream<SubtourMeta> (&meta_stream)[N_WORKERS],
-    hls::stream<Fitness> &fitness_stream,
-    hls::stream<SubtourDispatchToken> &subtour_token_stream
+    hls::stream<SubtourMeta> &meta_stream,
+    hls::stream<NodeId>      &city_stream,
+    hls::stream<Fitness>     &fitness_stream
 ) {
-    WorkerIndex worker_idx = 0;
-
     EXTRACT_INDIV_LOOP: for (int indiv = 0; indiv < num_individuals; ++indiv) {
         hls::read_lock<IndividualAsBeats> in_ind(in);
 
@@ -281,142 +210,126 @@ static void extract_subtours_all(
 
         CityIndex total_cities_read = 0;
         bool indiv_done = false;
-        CityIndex subtours_processed = 0;
 
         EXTRACT_SUBTOURS_LOOP: while (!indiv_done) {
-            send_subtour_to_worker<N_WORKERS>(
-                worker_idx, false, false, false,
-                tour_stream, meta_stream,
-                in_ind, active_beat, cities_in_beat, beat_idx,
-                total_cities_read, num_cities, indiv_done
-            );
-            subtours_processed++;
-            subtour_token_stream.write(SubtourDispatchToken{
-                worker_idx,
-                subtours_processed,
-                false,
-                indiv_done,
-                false
-            });
-            worker_idx = (worker_idx == N_WORKERS - 1) ? WorkerIndex(0) : WorkerIndex(worker_idx + 1);
+            CityIndex tour_len = 0;
+            bool subtour_done = false;
+
+            BUILD_TOUR_LOOP: while (!subtour_done) {
+                #pragma HLS PIPELINE II=1
+
+                City current_city = active_beat.range(CITY_BITS - 1, 0);
+                NodeId nid = get_node_id(current_city);
+                bool is_depot = get_is_depot(current_city);
+
+                city_stream.write(nid);
+                tour_len++;
+                total_cities_read++;
+
+                if (is_depot) {
+                    subtour_done = true;
+                }
+                if (total_cities_read == num_cities) {
+                    subtour_done = true;
+                    indiv_done = true;
+                }
+
+                if (cities_in_beat == 1) {
+                    beat_idx++;
+                    if (total_cities_read < num_cities) {
+                        active_beat = in_ind[beat_idx];
+                    }
+                    cities_in_beat = HW_CITIES_PER_BEAT;
+                } else {
+                    active_beat >>= CITY_BITS;
+                    cities_in_beat--;
+                }
+            }
+
+            meta_stream.write(SubtourMeta{tour_len, 0, indiv_done, false});
         }
-    }
-
-    // 1. Balance the final round if worker_idx != 0 so all workers have an equal number of blocks
-    if (worker_idx != 0) {
-        Beat active_beat = 0;
-        CityBeatIndex cities_in_beat = 0;
-        BeatIndex beat_idx = 0;
-        CityIndex total_cities_read = 0;
-        bool dummy_done = false;
-        IndividualAsBeats dummy_ind;
-
-        BALANCE_FINAL_ROUND_LOOP: while (worker_idx != 0) {
-            send_subtour_to_worker<N_WORKERS>(
-                worker_idx, true, false, false,
-                tour_stream, meta_stream,
-                dummy_ind, active_beat, cities_in_beat, beat_idx,
-                total_cities_read, num_cities, dummy_done
-            );
-            subtour_token_stream.write(SubtourDispatchToken{
-                worker_idx,
-                0,
-                true,
-                false,
-                false
-            });
-            worker_idx = (worker_idx == N_WORKERS - 1) ? WorkerIndex(0) : WorkerIndex(worker_idx + 1);
-        }
-    }
-
-    // 2. Final batch termination round: send one dummy block with last_of_batch = true to each worker
-    Beat active_beat = 0;
-    CityBeatIndex cities_in_beat = 0;
-    BeatIndex beat_idx = 0;
-    CityIndex total_cities_read = 0;
-    bool dummy_done = false;
-    IndividualAsBeats dummy_ind;
-
-    TERMINATION_BATCH_LOOP: for (WorkerIndex w = 0; w < N_WORKERS; ++w) {
-        send_subtour_to_worker<N_WORKERS>(
-            w, true, false, true,
-            tour_stream, meta_stream,
-            dummy_ind, active_beat, cities_in_beat, beat_idx,
-            total_cities_read, num_cities, dummy_done
-        );
-        subtour_token_stream.write(SubtourDispatchToken{
-            w,
-            0,
-            true,
-            false,
-            (w == N_WORKERS - 1)
-        });
     }
 }
 
 template <int N_WORKERS>
-static void dispatch_randoms_all(
-    hls::stream<RandomPair> &random_stream,
-    hls::stream<SubtourDispatchToken> &subtour_token_stream,
+static void dispatch_subtours_and_randoms(
+    hls::stream<SubtourMeta> &meta_in,
+    hls::stream<NodeId>      &cities_in,
+    hls::stream<RandomPair>  &random_stream,
+    int num_individuals,
     CityIndex two_opt_k,
     CityIndex max_subtours,
-    hls::stream<RandomPair> (&worker_random_stream)[N_WORKERS]
+    hls::stream<SubtourMeta> (&worker_meta)[N_WORKERS],
+    hls::stream<NodeId>      (&worker_cities)[N_WORKERS],
+    hls::stream<RandomPair>  (&worker_randoms)[N_WORKERS]
 ) {
-    bool batch_done = false;
+    int worker_idx = 0;
 
-    DISPATCH_RANDOMS_LOOP: while (!batch_done) {
-        SubtourDispatchToken token = subtour_token_stream.read();
-        batch_done = token.last_of_batch;
+    DISPATCH_INDIV_LOOP: for (int indiv = 0; indiv < num_individuals; ++indiv) {
+        CityIndex subtours_count = 0;
+        bool indiv_done = false;
 
-        if (!token.is_dummy) {
-            FORWARD_RND_LOOP: for (CityIndex move = 0; move < two_opt_k; ++move) {
+        DISPATCH_SUBTOURS_LOOP: while (!indiv_done) {
+            SubtourMeta meta = meta_in.read();
+            indiv_done = meta.last_of_indiv;
+            subtours_count++;
+
+            int w = worker_idx;
+            worker_idx = (worker_idx == N_WORKERS - 1) ? 0 : (worker_idx + 1);
+
+            worker_meta[w].write(meta);
+
+            FORWARD_CITIES_LOOP: for (CityIndex i = 0; i < meta.length; ++i) {
                 #pragma HLS PIPELINE II=1
-                RandomPair pair = random_stream.read();
-                DISPATCH_RND_WORKER_LOOP: for (WorkerIndex w = 0; w < N_WORKERS; ++w) {
-                    #pragma HLS UNROLL
-                    if (token.worker_idx == w) {
-                        worker_random_stream[w].write(pair);
-                    }
-                }
+                worker_cities[w].write(cities_in.read());
+            }
+
+            FORWARD_RNDS_LOOP: for (CityIndex k = 0; k < two_opt_k; ++k) {
+                #pragma HLS PIPELINE II=1
+                worker_randoms[w].write(random_stream.read());
             }
         }
 
-        if (token.last_of_indiv) {
-            TwoCityIndex remaining_subtours = (token.subtours_processed < max_subtours) ?
-                TwoCityIndex(max_subtours - token.subtours_processed) : TwoCityIndex(0);
-            TwoCityIndex total_drain_moves = remaining_subtours * TwoCityIndex(two_opt_k);
-            DRAIN_RANDOMS_LOOP: for (TwoCityIndex m = 0; m < total_drain_moves; ++m) {
-                #pragma HLS PIPELINE II=1
-                random_stream.read();
-            }
+        CityIndex remaining_subtours = (subtours_count < max_subtours) ?
+            CityIndex(max_subtours - subtours_count) : CityIndex(0);
+        TwoCityIndex total_drain_moves = TwoCityIndex(remaining_subtours) * TwoCityIndex(two_opt_k);
+
+        DRAIN_RANDOMS_LOOP: for (TwoCityIndex m = 0; m < total_drain_moves; ++m) {
+            #pragma HLS PIPELINE II=1
+            random_stream.read();
         }
+    }
+
+    TERMINATE_WORKERS_LOOP: for (int w = 0; w < N_WORKERS; ++w) {
+        #pragma HLS UNROLL
+        worker_meta[w].write(SubtourMeta{0, 0, false, true});
     }
 }
 
 template <int N_WORKERS>
 static void read_subtour_to_beats(
-    WorkerIndex target_worker,
-    hls::stream_of_blocks<Subtour> (&opt_tour_stream)[N_WORKERS],
-    hls::stream<SubtourMeta> (&opt_meta_stream)[N_WORKERS],
+    int target_worker,
+    hls::stream<SubtourMeta> (&worker_opt_meta)[N_WORKERS],
+    hls::stream<NodeId>      (&worker_opt_cities)[N_WORKERS],
     BeatProducerState &state,
     hls::stream<BeatPacket> &beat_stream,
     Fitness &indiv_delta,
     bool &indiv_done
 ) {
     #pragma HLS INLINE
-    DISPATCH_READ_LOOP: for (WorkerIndex w = 0; w < N_WORKERS; ++w) {
+    DISPATCH_READ_LOOP: for (int w = 0; w < N_WORKERS; ++w) {
         #pragma HLS UNROLL
         if (target_worker == w) {
-            SubtourMeta meta = opt_meta_stream[w].read();
-            hls::read_lock<Subtour> opt_tour(opt_tour_stream[w]);
+            SubtourMeta meta = worker_opt_meta[w].read();
             CityIndex len = meta.length;
             indiv_done = meta.last_of_indiv;
             indiv_delta += meta.delta;
 
             REBUILD_TOUR_LOOP: for (CityIndex i = 0; i < len; ++i) {
                 #pragma HLS PIPELINE II=1
+                NodeId nid = worker_opt_cities[w].read();
                 City city = 0;
-                set_node_id(city, opt_tour[i]);
+                set_node_id(city, nid);
                 set_is_depot(city, (i == len - 1));
                 send_city(state, city, beat_stream);
             }
@@ -426,14 +339,13 @@ static void read_subtour_to_beats(
 
 template <int N_WORKERS>
 static void array_to_beats_all(
-    hls::stream_of_blocks<Subtour> (&opt_tour_stream)[N_WORKERS],
-    hls::stream<SubtourMeta> (&opt_meta_stream)[N_WORKERS],
+    hls::stream<SubtourMeta> (&worker_opt_meta)[N_WORKERS],
+    hls::stream<NodeId>      (&worker_opt_cities)[N_WORKERS],
     hls::stream<BeatPacket> &beat_stream,
     hls::stream<Fitness> &delta_stream,
-    int num_individuals,
-    CityIndex num_cities
+    int num_individuals
 ) {
-    WorkerIndex worker_idx = 0;
+    int worker_idx = 0;
 
     ARRAY_TO_BEATS_INDIV_LOOP: for (int indiv = 0; indiv < num_individuals; ++indiv) {
         BeatProducerState state;
@@ -442,41 +354,17 @@ static void array_to_beats_all(
 
         REBUILD_SUBTOURS_LOOP: while (!indiv_done) {
             read_subtour_to_beats<N_WORKERS>(
-                worker_idx, opt_tour_stream, opt_meta_stream,
+                worker_idx, worker_opt_meta, worker_opt_cities,
                 state, beat_stream, indiv_delta, indiv_done
             );
-            worker_idx = (worker_idx == N_WORKERS - 1) ? WorkerIndex(0) : WorkerIndex(worker_idx + 1);
+            worker_idx = (worker_idx == N_WORKERS - 1) ? 0 : (worker_idx + 1);
         }
 
         finalizeStream(state, beat_stream);
         delta_stream.write(indiv_delta);
     }
-
-    // Drain final balancing round if needed
-    if (worker_idx != 0) {
-        BeatProducerState dummy_state;
-        Fitness dummy_delta = 0;
-        bool dummy_done = false;
-        DRAIN_FINAL_BALANCE_LOOP: while (worker_idx != 0) {
-            read_subtour_to_beats<N_WORKERS>(
-                worker_idx, opt_tour_stream, opt_meta_stream,
-                dummy_state, beat_stream, dummy_delta, dummy_done
-            );
-            worker_idx = (worker_idx == N_WORKERS - 1) ? WorkerIndex(0) : WorkerIndex(worker_idx + 1);
-        }
-    }
-
-    // Drain final batch termination round
-    DRAIN_BATCH_TERMINATION_LOOP: for (WorkerIndex w = 0; w < N_WORKERS; ++w) {
-        BeatProducerState dummy_state;
-        Fitness dummy_delta = 0;
-        bool dummy_done = false;
-        read_subtour_to_beats<N_WORKERS>(
-            w, opt_tour_stream, opt_meta_stream,
-            dummy_state, beat_stream, dummy_delta, dummy_done
-        );
-    }
 }
+
 
 static void stream_beats_to_all_individuals(
     hls::stream<BeatPacket> &beat_stream,
@@ -509,7 +397,7 @@ static void init_local_cache(
     INIT_CACHE_ENTRIES: for (int c = 0; c < MAX_CACHE_ENTRIES; ++c) {
         #pragma HLS PIPELINE II=1
         CityData d = city_cache[c];
-        INIT_CACHE_WORKERS: for (WorkerIndex w = 0; w < N_TWO_OPT_WORKERS; ++w) {
+        INIT_CACHE_WORKERS: for (int w = 0; w < N_TWO_OPT_WORKERS; ++w) {
             #pragma HLS UNROLL
             local_cache[w][c] = d;
         }
@@ -529,39 +417,46 @@ static void two_opt_streaming(
 ) {
     #pragma HLS DATAFLOW
 
-    hls::stream_of_blocks<Subtour> tour_stream[N_TWO_OPT_WORKERS];
-    hls::stream<SubtourMeta>       meta_stream[N_TWO_OPT_WORKERS];
+    hls::stream<SubtourMeta> meta_stream;
+    #pragma HLS STREAM variable=meta_stream depth=4
+    hls::stream<NodeId>      city_stream;
+    #pragma HLS STREAM variable=city_stream depth=MAX_CITIES
 
-    hls::stream_of_blocks<Subtour> opt_tour_stream[N_TWO_OPT_WORKERS];
-    hls::stream<SubtourMeta>       opt_meta_stream[N_TWO_OPT_WORKERS];
-
-    hls::stream<RandomPair>        worker_random_stream[N_TWO_OPT_WORKERS];
+    hls::stream<SubtourMeta> worker_meta[N_TWO_OPT_WORKERS];
+    #pragma HLS STREAM variable=worker_meta depth=4
+    hls::stream<NodeId>      worker_cities[N_TWO_OPT_WORKERS];
+    #pragma HLS STREAM variable=worker_cities depth=MAX_CITIES
+    hls::stream<RandomPair>  worker_random_stream[N_TWO_OPT_WORKERS];
     #pragma HLS STREAM variable=worker_random_stream depth=MAX_TWO_OPT_K
 
-    hls::stream<SubtourDispatchToken> subtour_token_stream;
-    #pragma HLS STREAM variable=subtour_token_stream depth=2 * N_TWO_OPT_WORKERS
+    hls::stream<SubtourMeta> worker_opt_meta[N_TWO_OPT_WORKERS];
+    #pragma HLS STREAM variable=worker_opt_meta depth=4
+    hls::stream<NodeId>      worker_opt_cities[N_TWO_OPT_WORKERS];
+    #pragma HLS STREAM variable=worker_opt_cities depth=MAX_CITIES
 
-    hls::stream<BeatPacket>        beat_stream;
-    hls::stream<Fitness>           fitness_stream;
-    #pragma HLS STREAM variable=fitness_stream depth=16
-    hls::stream<Fitness>           delta_stream;
-    #pragma HLS STREAM variable=delta_stream depth=16
+    hls::stream<BeatPacket>  beat_stream;
+    #pragma HLS STREAM variable=beat_stream depth=16
+    hls::stream<Fitness>     fitness_stream;
+    #pragma HLS STREAM variable=fitness_stream depth=8
+    hls::stream<Fitness>     delta_stream;
+    #pragma HLS STREAM variable=delta_stream depth=2
 
-    extract_subtours_all<N_TWO_OPT_WORKERS>(
+    extract_subtours(
         in, num_individuals, num_cities,
-        tour_stream, meta_stream, fitness_stream, subtour_token_stream
+        meta_stream, city_stream, fitness_stream
     );
 
-    dispatch_randoms_all<N_TWO_OPT_WORKERS>(
-        random_stream, subtour_token_stream, two_opt_k, max_subtours,
-        worker_random_stream
+    dispatch_subtours_and_randoms<N_TWO_OPT_WORKERS>(
+        meta_stream, city_stream, random_stream,
+        num_individuals, two_opt_k, max_subtours,
+        worker_meta, worker_cities, worker_random_stream
     );
 
-    TWO_OPT_WORKERS_LOOP: for (WorkerIndex w = 0; w < N_TWO_OPT_WORKERS; ++w) {
+    TWO_OPT_WORKERS_LOOP: for (int w = 0; w < N_TWO_OPT_WORKERS; ++w) {
         #pragma HLS UNROLL
-        two_opt_tours(
-            tour_stream[w], meta_stream[w],
-            opt_tour_stream[w], opt_meta_stream[w],
+        two_opt_worker(
+            worker_meta[w], worker_cities[w],
+            worker_opt_meta[w], worker_opt_cities[w],
             worker_random_stream[w],
             num_cities, two_opt_k,
             enable_precheck,
@@ -570,8 +465,9 @@ static void two_opt_streaming(
     }
 
     array_to_beats_all<N_TWO_OPT_WORKERS>(
-        opt_tour_stream, opt_meta_stream, beat_stream, delta_stream,
-        num_individuals, num_cities
+        worker_opt_meta, worker_opt_cities,
+        beat_stream, delta_stream,
+        num_individuals
     );
 
     stream_beats_to_all_individuals(
