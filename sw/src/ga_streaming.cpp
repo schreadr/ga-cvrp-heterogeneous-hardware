@@ -265,8 +265,8 @@ bool validate_streaming_params(
     if (two_opt_k < 0) {
         std::cout << "two_opt_k cannot be negative." << std::endl;
         failed = true;
-    } else if (two_opt_k > MAX_CITIES) {
-        std::cout << "two_opt_k (" << two_opt_k << ") exceeds MAX_CITIES (" << MAX_CITIES << ") / CityIndex range." << std::endl;
+    } else if (two_opt_k > MAX_TWO_OPT_K) {
+        std::cout << "two_opt_k (" << two_opt_k << ") exceeds MAX_TWO_OPT_K (" << MAX_TWO_OPT_K << ")." << std::endl;
         failed = true;
     }
 

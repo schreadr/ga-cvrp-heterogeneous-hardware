@@ -142,8 +142,8 @@ void random_number_converter(
     hls::stream<CityPair> &crossover_pairs,
     hls::stream<CityPair> &mutate_pairs_0,
     hls::stream<CityPair> &mutate_pairs_1,
-    hls::stream<RandomNumber> &two_opt_randoms_0,
-    hls::stream<RandomNumber> &two_opt_randoms_1,
+    hls::stream<RandomPair> &two_opt_randoms_0,
+    hls::stream<RandomPair> &two_opt_randoms_1,
     int num_individuals,
     CityIndex two_opt_k,
     CityIndex max_subtours
@@ -192,16 +192,14 @@ void random_number_converter(
 
         TwoCityIndex total_two_opt_moves = TwoCityIndex(max_subtours) * TwoCityIndex(two_opt_k);
         TWO_OPT_RND_LOOP: for (TwoCityIndex m = 0; m < total_two_opt_moves; ++m) {
-            #pragma HLS PIPELINE II=4
+            #pragma HLS PIPELINE II=2
             RandomNumber r0_1 = consume_next_random(in_random, current_beat, words_left);
             RandomNumber r0_2 = consume_next_random(in_random, current_beat, words_left);
-            two_opt_randoms_0.write(r0_1);
-            two_opt_randoms_0.write(r0_2);
+            two_opt_randoms_0.write(RandomPair(r0_1, r0_2));
 
             RandomNumber r1_1 = consume_next_random(in_random, current_beat, words_left);
             RandomNumber r1_2 = consume_next_random(in_random, current_beat, words_left);
-            two_opt_randoms_1.write(r1_1);
-            two_opt_randoms_1.write(r1_2);
+            two_opt_randoms_1.write(RandomPair(r1_1, r1_2));
         }
     }
 }
@@ -272,8 +270,10 @@ static void process_stream(
     hls::stream<CityPair> crossover_pairs;
     hls::stream<CityPair> mutate_pairs_0;
     hls::stream<CityPair> mutate_pairs_1;
-    hls::stream<RandomNumber> two_opt_randoms_0;
-    hls::stream<RandomNumber> two_opt_randoms_1;
+    hls::stream<RandomPair> two_opt_randoms_0;
+    #pragma HLS STREAM variable=two_opt_randoms_0 depth=2 * MAX_TWO_OPT_K
+    hls::stream<RandomPair> two_opt_randoms_1;
+    #pragma HLS STREAM variable=two_opt_randoms_1 depth=2 * MAX_TWO_OPT_K
 
     producer(in0, stream_0, num_individuals, num_cities);
     producer(in1, stream_1, num_individuals, num_cities);

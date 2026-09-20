@@ -24,8 +24,8 @@ void random_number_converter(
     hls::stream<CityPair> &crossover_pairs,
     hls::stream<CityPair> &mutate_pairs_0,
     hls::stream<CityPair> &mutate_pairs_1,
-    hls::stream<RandomNumber> &two_opt_randoms_0,
-    hls::stream<RandomNumber> &two_opt_randoms_1,
+    hls::stream<RandomPair> &two_opt_randoms_0,
+    hls::stream<RandomPair> &two_opt_randoms_1,
     int num_individuals,
     CityIndex two_opt_k,
     CityIndex max_subtours

@@ -77,6 +77,8 @@
 #define RANDOMS_PER_INDIV_MUTATE_1   2 // 2 cut points for mutate 1
 #define RANDOMS_PER_2OPT_MOVE        2 // 2 random numbers per 2-opt move
 
+#define MAX_TWO_OPT_K                64
+
 static inline int get_randoms_per_indiv(int two_opt_k, int max_subtours) {
     return RANDOMS_PER_INDIV_CROSSOVER + RANDOMS_PER_INDIV_MUTATE_0 + RANDOMS_PER_INDIV_MUTATE_1 + 2 * (max_subtours * two_opt_k * RANDOMS_PER_2OPT_MOVE);
 }
@@ -132,12 +134,15 @@ static_block {
     assert(MAX_CACHE_ENTRIES == MAX_CITIES + 1);
     assert(MAX_CACHE_BEATS == (MAX_CACHE_ENTRIES + NODE_CACHE_ENTRIES_PER_BEAT - 1) / NODE_CACHE_ENTRIES_PER_BEAT);
 
-    // Random Numbers
+    // Random Numbers & 2-Opt
     assert_power_of_two(RANDOM_BITS);
     assert_power_of_two(RANDOMS_PER_BEAT);
     assert(RANDOMS_PER_BEAT * RANDOM_BITS == AXI_BEAT_WIDTH);
     assert((1ULL << RANDOM_BITS_LOG2) == RANDOM_BITS);
     assert((1ULL << RANDOMS_PER_BEAT_LOG2) == RANDOMS_PER_BEAT);
+    assert_power_of_two(MAX_TWO_OPT_K);
+    assert(MAX_TWO_OPT_K > 0);
+    assert(MAX_TWO_OPT_K <= MAX_CITIES);
 }
 
 // Host / AXI stream beat calculation helpers

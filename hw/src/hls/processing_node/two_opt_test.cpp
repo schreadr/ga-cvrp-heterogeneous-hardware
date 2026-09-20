@@ -141,7 +141,7 @@ int run_two_opt_test() {
 
     hls::stream_of_blocks<IndividualAsBeats> input;
     hls::stream_of_blocks<IndividualAsBeats> output;
-    hls::stream<RandomNumber> random_stream("random_stream");
+    hls::stream<RandomPair> random_stream("random_stream");
     
     const ProblemInstance problem = make_problem();
     
@@ -176,9 +176,10 @@ int run_two_opt_test() {
     std::vector<uint32_t> all_randoms(kNumIndividuals * randoms_per_indiv);
 
     std::mt19937 rng(42);
-    for (size_t i = 0; i < all_randoms.size(); ++i) {
+    for (size_t i = 0; i < all_randoms.size(); i += 2) {
         all_randoms[i] = rng();
-        random_stream.write(all_randoms[i]);
+        all_randoms[i + 1] = rng();
+        random_stream.write(RandomPair(all_randoms[i], all_randoms[i + 1]));
     }
     
     two_opt(input, output, random_stream, kNumIndividuals, CityIndex(kNumCities), CityIndex(kTwoOptK), CityIndex(max_subtours), cache);

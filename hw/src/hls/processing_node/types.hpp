@@ -109,6 +109,21 @@ typedef AxiBeat                         CityCacheBeat;
 typedef ap_uint<NODE_CACHE_ENTRY_BITS>  CityCacheEntry;
 typedef ap_uint<RANDOM_BITS>            RandomNumber;
 
+struct RandomPair {
+    RandomNumber r1;
+    RandomNumber r2;
+
+    RandomPair() : r1(0), r2(0) {}
+    RandomPair(RandomNumber a, RandomNumber b) : r1(a), r2(b) {}
+
+    bool operator==(const RandomPair &other) const {
+        return r1 == other.r1 && r2 == other.r2;
+    }
+    bool operator!=(const RandomPair &other) const {
+        return !(*this == other);
+    }
+};
+
 struct StartEndData {
     const BeatIndex start_beat;
     const CityIndex start_city;

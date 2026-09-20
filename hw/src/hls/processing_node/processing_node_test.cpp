@@ -74,8 +74,8 @@ int test_random_number_converter() {
     hls::stream<CityPair> cx_pairs("cx_pairs");
     hls::stream<CityPair> mut_pairs_0("mut_pairs_0");
     hls::stream<CityPair> mut_pairs_1("mut_pairs_1");
-    hls::stream<RandomNumber> two_opt_randoms_0("two_opt_randoms_0");
-    hls::stream<RandomNumber> two_opt_randoms_1("two_opt_randoms_1");
+    hls::stream<RandomPair> two_opt_randoms_0("two_opt_randoms_0");
+    hls::stream<RandomPair> two_opt_randoms_1("two_opt_randoms_1");
 
     const int test_individuals = 5;
     const int two_opt_k = 1;
@@ -133,25 +133,23 @@ int test_random_number_converter() {
             errors++;
         }
         for (int k = 0; k < two_opt_k; ++k) {
-            RandomNumber r0_1 = two_opt_randoms_0.read();
-            RandomNumber r0_2 = two_opt_randoms_0.read();
-            RandomNumber r1_1 = two_opt_randoms_1.read();
-            RandomNumber r1_2 = two_opt_randoms_1.read();
+            RandomPair p0 = two_opt_randoms_0.read();
+            RandomPair p1 = two_opt_randoms_1.read();
 
             RandomNumber exp_r0_1 = 100 + 4 * i + 0;
             RandomNumber exp_r0_2 = 100 + 4 * i + 1;
             RandomNumber exp_r1_1 = 100 + 4 * i + 2;
             RandomNumber exp_r1_2 = 100 + 4 * i + 3;
 
-            if (r0_1 != exp_r0_1 || r0_2 != exp_r0_2) {
+            if (p0.r1 != exp_r0_1 || p0.r2 != exp_r0_2) {
                 std::cout << "Mismatch in two_opt_randoms_0[" << i << "]: got ("
-                          << r0_1 << ", " << r0_2 << ") expected ("
+                          << p0.r1 << ", " << p0.r2 << ") expected ("
                           << exp_r0_1 << ", " << exp_r0_2 << ")\n";
                 errors++;
             }
-            if (r1_1 != exp_r1_1 || r1_2 != exp_r1_2) {
+            if (p1.r1 != exp_r1_1 || p1.r2 != exp_r1_2) {
                 std::cout << "Mismatch in two_opt_randoms_1[" << i << "]: got ("
-                          << r1_1 << ", " << r1_2 << ") expected ("
+                          << p1.r1 << ", " << p1.r2 << ") expected ("
                           << exp_r1_1 << ", " << exp_r1_2 << ")\n";
                 errors++;
             }
