@@ -19,19 +19,37 @@ struct SubtourDispatchToken {
     bool last_of_batch;
 };
 
+static inline bool evaluate_interval_step(
+    Point prev_coord_left,
+    Point curr_coord_left,
+    Point curr_coord_right,
+    Point prev_coord_right,
+    Fitness &d_old,
+    Fitness &d_new
+) {
+    #pragma HLS INLINE
+    Fitness d_old_left  = floored_distance(prev_coord_left, curr_coord_left);
+    Fitness d_old_right = floored_distance(curr_coord_right, prev_coord_right);
+    Fitness d_new_left  = floored_distance(prev_coord_left, curr_coord_right);
+    Fitness d_new_right = floored_distance(curr_coord_left, prev_coord_right);
+
+    d_old = d_old_left + d_old_right;
+    d_new = d_new_left + d_new_right;
+    return (d_old > d_new);
+}
+
 static void symmetric_sweep(
     NodeId tour_buf[MAX_CITIES],
     const CityData city_cache[MAX_CACHE_ENTRIES],
     CityIndex start, CityIndex end,
     CityIndex L, CityIndex R,
     NodeId DEPOT,
-    Fitness &sweep_delta
+    Fitness &sweep_delta,
+    bool enable_precheck
 ) {
     CityIndex M = (R - L + 1) / 2;
     Fitness local_delta = 0;
     bool swap_flag = false;
-
-    bool improves[MAX_CITIES / 2];
 
     NodeId prev_node_left  = (L == start) ? DEPOT : tour_buf[L - 1];
     NodeId prev_node_right = (R == end)   ? DEPOT : tour_buf[R + 1];
@@ -39,6 +57,29 @@ static void symmetric_sweep(
     Point prev_coord_left  = get_coord(city_cache[prev_node_left]);
     Point prev_coord_right = get_coord(city_cache[prev_node_right]);
 
+    if (enable_precheck) {
+        NodeId curr_node_left0  = tour_buf[L];
+        NodeId curr_node_right0 = tour_buf[R];
+        Point curr_coord_left0  = get_coord(city_cache[curr_node_left0]);
+        Point curr_coord_right0 = get_coord(city_cache[curr_node_right0]);
+
+        Fitness d_old0, d_new0;
+        bool imp0 = evaluate_interval_step(
+            prev_coord_left,
+            curr_coord_left0,
+            curr_coord_right0,
+            prev_coord_right,
+            d_old0,
+            d_new0
+        );
+
+        if (!imp0) {
+            sweep_delta = 0;
+            return;
+        }
+    }
+
+    bool improves[MAX_CITIES / 2];
     NodeId tmp_left[MAX_CITIES / 2];
     NodeId tmp_right[MAX_CITIES / 2];
 
@@ -52,14 +93,15 @@ static void symmetric_sweep(
         Point curr_coord_left  = get_coord(city_cache[curr_node_left]);
         Point curr_coord_right = get_coord(city_cache[curr_node_right]);
 
-        Fitness d_old_left  = floored_distance(prev_coord_left, curr_coord_left);
-        Fitness d_old_right = floored_distance(curr_coord_right, prev_coord_right);
-        Fitness d_new_left  = floored_distance(prev_coord_left, curr_coord_right);
-        Fitness d_new_right = floored_distance(curr_coord_left, prev_coord_right);
-
-        Fitness d_old = d_old_left + d_old_right;
-        Fitness d_new = d_new_left + d_new_right;
-        bool imp = (d_old > d_new);
+        Fitness d_old, d_new;
+        bool imp = evaluate_interval_step(
+            prev_coord_left,
+            curr_coord_left,
+            curr_coord_right,
+            prev_coord_right,
+            d_old,
+            d_new
+        );
         improves[i] = imp;
 
         if (imp) {
@@ -95,6 +137,7 @@ static void two_opt_tours(
     hls::stream<RandomPair> &worker_random_stream,
     CityIndex num_cities,
     CityIndex two_opt_k,
+    bool enable_precheck,
     const CityData city_cache[MAX_CACHE_ENTRIES]
 ) {
     bool batch_done = false;
@@ -137,7 +180,8 @@ static void two_opt_tours(
                             0, len - 1,
                             L_rel, R_rel,
                             num_cities,
-                            sweep_delta
+                            sweep_delta,
+                            enable_precheck
                         );
                         subtour_delta += sweep_delta;
                     }
@@ -480,6 +524,7 @@ static void two_opt_streaming(
     CityIndex num_cities,
     CityIndex two_opt_k,
     CityIndex max_subtours,
+    bool enable_precheck,
     const CityData local_cache[N_TWO_OPT_WORKERS][MAX_CACHE_ENTRIES]
 ) {
     #pragma HLS DATAFLOW
@@ -519,6 +564,7 @@ static void two_opt_streaming(
             opt_tour_stream[w], opt_meta_stream[w],
             worker_random_stream[w],
             num_cities, two_opt_k,
+            enable_precheck,
             local_cache[w]
         );
     }
@@ -542,6 +588,7 @@ void two_opt(
     CityIndex num_cities,
     CityIndex two_opt_k,
     CityIndex max_subtours,
+    bool enable_precheck,
     const CityData city_cache[MAX_CACHE_ENTRIES]
 ) {
     CityData local_cache[N_TWO_OPT_WORKERS][MAX_CACHE_ENTRIES];
@@ -553,6 +600,7 @@ void two_opt(
     two_opt_streaming(
         in, out, random_stream,
         num_individuals, num_cities, two_opt_k, max_subtours,
+        enable_precheck,
         local_cache
     );
 }

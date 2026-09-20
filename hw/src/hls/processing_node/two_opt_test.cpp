@@ -45,7 +45,8 @@ static void two_opt_software(
     size_t &rnd_ptr,
     const ProblemInstance &problem,
     CityIndex two_opt_k,
-    CityIndex max_subtours
+    CityIndex max_subtours,
+    bool enable_precheck = false
 ) {
     const int DEPOT = problem.dimension - 1;
     auto get_coord_sw = [&](int node) -> Point {
@@ -89,6 +90,23 @@ static void two_opt_software(
 
                     Point prev_coord_left  = get_coord_sw(prev_node_left);
                     Point prev_coord_right = get_coord_sw(prev_node_right);
+
+                    if (enable_precheck) {
+                        int curr_left0 = sub[L_rel];
+                        int curr_right0 = sub[R_rel];
+                        Point curr_coord_left0 = get_coord_sw(curr_left0);
+                        Point curr_coord_right0 = get_coord_sw(curr_right0);
+
+                        Fitness d_old_left0  = floored_distance(prev_coord_left, curr_coord_left0);
+                        Fitness d_old_right0 = floored_distance(curr_coord_right0, prev_coord_right);
+                        Fitness d_new_left0  = floored_distance(prev_coord_left, curr_coord_right0);
+                        Fitness d_new_right0 = floored_distance(curr_coord_left0, prev_coord_right);
+
+                        long long delta0 = (long long)(d_old_left0 + d_old_right0) - (long long)(d_new_left0 + d_new_right0);
+                        if (delta0 <= 0) {
+                            continue;
+                        }
+                    }
 
                     std::vector<bool> improves(M, false);
                     for (int i = 0; i < M; ++i) {
@@ -182,14 +200,14 @@ int run_two_opt_test() {
         random_stream.write(RandomPair(all_randoms[i], all_randoms[i + 1]));
     }
     
-    two_opt(input, output, random_stream, kNumIndividuals, CityIndex(kNumCities), CityIndex(kTwoOptK), CityIndex(max_subtours), cache);
+    two_opt(input, output, random_stream, kNumIndividuals, CityIndex(kNumCities), CityIndex(kTwoOptK), CityIndex(max_subtours), false, cache);
 
     const std::vector<Individual> result = tb_pull_individuals(output, problem, kNumIndividuals);
     
     std::vector<Individual> expected_population = input_population;
     size_t rnd_ptr = 0;
     for (int i = 0; i < kNumIndividuals; ++i) {
-        two_opt_software(expected_population[i], all_randoms, rnd_ptr, problem, CityIndex(kTwoOptK), CityIndex(max_subtours));
+        two_opt_software(expected_population[i], all_randoms, rnd_ptr, problem, CityIndex(kTwoOptK), CityIndex(max_subtours), false);
     }
 
     std::cout << "Verifying Outputs..." << std::endl;

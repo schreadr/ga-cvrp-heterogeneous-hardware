@@ -206,6 +206,7 @@ int run_integration_test(){
                     1,
                     two_opt_k,
                     max_subtours,
+                    0,
                     &dbg_indiv0, &dbg_cities);
 
     std::cout << "Streaming encoded populations and random numbers..." << std::endl;
@@ -221,6 +222,7 @@ int run_integration_test(){
                     0,
                     two_opt_k,
                     max_subtours,
+                    0,
                     &dbg_indiv0, &dbg_cities);
 
     std::cout << "Processing Node finished. Reading outputs from stream..." << std::endl;
@@ -344,6 +346,7 @@ int run_integration_test_border_cases() {
                     1,
                     two_opt_k,
                     max_subtours,
+                    0,
                     &dbg_indiv0, &dbg_cities);
 
     std::cout << "Streaming encoded populations and random numbers (border cases)..." << std::endl;
@@ -359,6 +362,7 @@ int run_integration_test_border_cases() {
                     0,
                     two_opt_k,
                     max_subtours,
+                    0,
                     &dbg_indiv0, &dbg_cities);
 
     std::cout << "Processing Node (border cases) finished. Reading outputs from stream..." << std::endl;
@@ -476,6 +480,7 @@ int run_integration_test(const std::string& vrp_path, int two_opt_k) {
                     1,
                     two_opt_k,
                     max_subtours,
+                    0,
                     &dbg_indiv0, &dbg_cities);
 
     std::cout << "Streaming encoded populations and random numbers (big instance)..." << std::endl;
@@ -491,6 +496,7 @@ int run_integration_test(const std::string& vrp_path, int two_opt_k) {
                     0,
                     two_opt_k,
                     max_subtours,
+                    0,
                     &dbg_indiv0, &dbg_cities);
 
     std::cout << "Processing Node (big instance) finished. Reading outputs from stream..." << std::endl;

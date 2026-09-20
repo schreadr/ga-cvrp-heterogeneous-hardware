@@ -10,6 +10,10 @@
 #define N_TWO_OPT_WORKERS_LOG2 3 
 #endif
 
+#ifndef MAX_TWO_OPT_K
+#define MAX_TWO_OPT_K 64
+#endif
+
 void two_opt(
     hls::stream_of_blocks<IndividualAsBeats> &in,
     hls::stream_of_blocks<IndividualAsBeats> &out,
@@ -18,6 +22,7 @@ void two_opt(
     CityIndex num_cities,
     CityIndex two_opt_k,
     CityIndex max_subtours,
+    bool enable_precheck,
     const CityData city_cache[MAX_CACHE_ENTRIES]
 );
 

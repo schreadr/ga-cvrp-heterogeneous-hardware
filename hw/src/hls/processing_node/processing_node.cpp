@@ -241,7 +241,8 @@ static void process_stream(
     CityIndex num_cities,
     Capacity vehicle_capacity,
     CityIndex two_opt_k,
-    CityIndex max_subtours
+    CityIndex max_subtours,
+    bool two_opt_enable_precheck
 ) {
     #pragma HLS DATAFLOW
 
@@ -283,8 +284,8 @@ static void process_stream(
     mutate(stream_cx_1, mutate_pairs_1, stream_mut_1, num_individuals, num_cities);
     repair_fitness(stream_mut_0, stream_repaired_0, num_individuals, num_cities, vehicle_capacity, cache_0);
     repair_fitness(stream_mut_1, stream_repaired_1, num_individuals, num_cities, vehicle_capacity, cache_1);
-    two_opt(stream_repaired_0, stream_opt_0, two_opt_randoms_0, num_individuals, num_cities, two_opt_k, max_subtours, cache_2opt_0);
-    two_opt(stream_repaired_1, stream_opt_1, two_opt_randoms_1, num_individuals, num_cities, two_opt_k, max_subtours, cache_2opt_1);
+    two_opt(stream_repaired_0, stream_opt_0, two_opt_randoms_0, num_individuals, num_cities, two_opt_k, max_subtours, two_opt_enable_precheck, cache_2opt_0);
+    two_opt(stream_repaired_1, stream_opt_1, two_opt_randoms_1, num_individuals, num_cities, two_opt_k, max_subtours, two_opt_enable_precheck, cache_2opt_1);
     consumer(stream_opt_0, out0, num_individuals, num_cities);
     consumer(stream_opt_1, out1, num_individuals, num_cities);
 }
@@ -309,6 +310,7 @@ void processing_node(
     int init_city_cache,
     int two_opt_k,
     int max_subtours,
+    int two_opt_enable_precheck,
     int *dbg_num_individuals,
     int *dbg_num_cities
 ) {
@@ -324,6 +326,7 @@ void processing_node(
     #pragma HLS INTERFACE s_axilite port=init_city_cache offset=0x28 bundle=control
     #pragma HLS INTERFACE s_axilite port=two_opt_k offset=0x30 bundle=control
     #pragma HLS INTERFACE s_axilite port=max_subtours offset=0x38 bundle=control
+    #pragma HLS INTERFACE s_axilite port=two_opt_enable_precheck offset=0x40 bundle=control
 
     #pragma HLS INTERFACE ap_vld port=dbg_num_individuals
     #pragma HLS INTERFACE ap_vld port=dbg_num_cities
@@ -335,6 +338,6 @@ void processing_node(
     if (init_city_cache) {
         init_node_cache(in0, num_cities);
     } else {
-        process_stream(in0, out0, in1, out1, in_random, num_individuals, CityIndex(num_cities), Capacity(vehicle_capacity), CityIndex(two_opt_k), CityIndex(max_subtours));
+        process_stream(in0, out0, in1, out1, in_random, num_individuals, CityIndex(num_cities), Capacity(vehicle_capacity), CityIndex(two_opt_k), CityIndex(max_subtours), bool(two_opt_enable_precheck != 0));
     }
 }

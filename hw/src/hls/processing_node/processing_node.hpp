@@ -15,6 +15,7 @@ void processing_node(
     int init_city_cache,
     int two_opt_k,
     int max_subtours,
+    int two_opt_enable_precheck,
     int *dbg_num_individuals,
     int *dbg_num_cities
 );

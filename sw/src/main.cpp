@@ -65,6 +65,7 @@ constexpr uint32_t CSR_VEHICLE_CAPACITY        = 0x20 / 8;
 constexpr uint32_t CSR_INIT_CITY_CACHE         = 0x28 / 8;
 constexpr uint32_t CSR_TWO_OPT_K               = 0x30 / 8;
 constexpr uint32_t CSR_MAX_SUBTOURS            = 0x38 / 8;
+constexpr uint32_t CSR_TWO_OPT_ENABLE_PRECHECK = 0x40 / 8;
 
 constexpr const char kDefaultProblemFile[] = "../../problem_instances/P-n40-k5.vrp";
 
@@ -208,6 +209,7 @@ int main(int argc, char *argv[]) {
     coyote_thread.setCSR(problem.capacity, CSR_VEHICLE_CAPACITY);
     coyote_thread.setCSR(two_opt_k, CSR_TWO_OPT_K);
     coyote_thread.setCSR(max_subtours, CSR_MAX_SUBTOURS);
+    coyote_thread.setCSR(1, CSR_TWO_OPT_ENABLE_PRECHECK);
 
     coyote_thread.setCSR(1, CSR_INIT_CITY_CACHE); // Dedicated register to trigger cache initialization
     coyote_thread.setCSR(CSR_CONTROL_START, CSR_CONTROL);
@@ -224,7 +226,8 @@ int main(int argc, char *argv[]) {
        coyote_thread.getCSR(CSR_VEHICLE_CAPACITY) == problem.capacity &&
        coyote_thread.getCSR(CSR_INIT_CITY_CACHE) == 0 &&
        coyote_thread.getCSR(CSR_TWO_OPT_K) == static_cast<uint32_t>(two_opt_k) &&
-       coyote_thread.getCSR(CSR_MAX_SUBTOURS) == static_cast<uint32_t>(max_subtours)) {
+       coyote_thread.getCSR(CSR_MAX_SUBTOURS) == static_cast<uint32_t>(max_subtours) &&
+       coyote_thread.getCSR(CSR_TWO_OPT_ENABLE_PRECHECK) == 1) {
         std::cout << "Successfully programmed vFPGA kernel configuration registers." << std::endl;
     } else {
         std::cerr << "Error: Failed to program vFPGA kernel configuration registers." << std::endl;
