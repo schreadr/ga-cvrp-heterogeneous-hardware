@@ -27,6 +27,39 @@ static inline bool evaluate_interval_step(
     return (d_old > d_new);
 }
 
+static inline bool evaluate_interval_step_pipelined(
+    Point prev_coord_left,
+    Point curr_coord_left,
+    Point curr_coord_right,
+    Point prev_coord_right,
+    Fitness &d_old,
+    Fitness &d_new
+) {
+    #pragma HLS INLINE
+
+    Point pts_a[4] = {prev_coord_left, curr_coord_right, prev_coord_left, curr_coord_left};
+    Point pts_b[4] = {curr_coord_left, prev_coord_right, curr_coord_right, prev_coord_right};
+    #pragma HLS ARRAY_PARTITION variable=pts_a complete
+    #pragma HLS ARRAY_PARTITION variable=pts_b complete
+
+    Fitness dists[4];
+    #pragma HLS ARRAY_PARTITION variable=dists complete
+
+    PRECHECK_DIST_LOOP: for (int d = 0; d < 4; ++d) {
+        #pragma HLS PIPELINE II=1
+        dists[d] = floored_distance(pts_a[d], pts_b[d]);
+    }
+
+    Fitness d_old_left  = dists[0];
+    Fitness d_old_right = dists[1];
+    Fitness d_new_left  = dists[2];
+    Fitness d_new_right = dists[3];
+
+    d_old = d_old_left + d_old_right;
+    d_new = d_new_left + d_new_right;
+    return (d_old > d_new);
+}
+
 static void symmetric_sweep(
     NodeId tour_buf[MAX_CITIES],
     const CityData city_cache[MAX_CACHE_ENTRIES],
@@ -53,7 +86,7 @@ static void symmetric_sweep(
         Point curr_coord_right0 = get_coord(city_cache[curr_node_right0]);
 
         Fitness d_old0, d_new0;
-        bool imp0 = evaluate_interval_step(
+        bool imp0 = evaluate_interval_step_pipelined(
             prev_coord_left,
             curr_coord_left0,
             curr_coord_right0,
