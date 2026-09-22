@@ -41,6 +41,8 @@
 #include <iostream>
 #include <functional>
 
+#include "batch_job.hpp"
+
 struct ProblemNode {
     int id = 0;
     int x = 0;
@@ -154,6 +156,22 @@ struct GAParams {
     std::uint8_t* buffer_pop = nullptr;
 };
 
+struct AsyncGAParams {
+    std::size_t pop_size = 0;
+    std::size_t n_generations = 0;
+    double n_best_keep = 5.0;
+    std::uint32_t seed = 0;
+    int two_opt_k = 0;
+    std::size_t num_vfpgas = 1;
+    std::size_t num_ind_per_stream = 0; // Batch size per stream for each vFPGA
+
+    // Pre-allocated buffer slots for all vFPGAs (e.g. 2 slots per vFPGA for double-buffering)
+    std::vector<BatchBufferSlot> buffer_slots;
+
+    // Host scratchpad for population
+    std::uint8_t* buffer_pop = nullptr;
+};
+
 // Ceiled Euclidean distance between two problem nodes
 std::uint32_t ceil_euclidean_distance(const ProblemNode &lhs, const ProblemNode &rhs);
 
@@ -240,6 +258,14 @@ struct GASummary {
 void create_parent_pairs(const std::vector<EncodedIndividual> &population, std::vector<EncodedIndividual> &parents1, std::vector<EncodedIndividual> &parents2, std::uint32_t seed);
 
 GASummary run_ga(const ProblemInstance& problem, GAParams& params, std::function<void()> create_new_generation);
+
+using VfpgaExecuteFn = std::function<void(int vfid, const BatchJob &job)>;
+
+GASummary run_ga_pipelined(
+    const ProblemInstance &problem,
+    AsyncGAParams &params,
+    VfpgaExecuteFn execute_vfpga_batch
+);
 
 bool validate_encoding_constants(const ProblemInstance &problem, bool throw_on_error = true);
 

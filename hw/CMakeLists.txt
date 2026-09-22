@@ -42,7 +42,7 @@ set(N_STRM_AXI 2)
 set(EN_MEM 0)
 
 # Number of vFPGAs (user applications)
-set(N_REGIONS 1)
+set(N_REGIONS 2)
 
 # Since timing closure with HBM can be difficult, run place and route with optimizations 
 set(BUILD_OPT 1)
@@ -50,12 +50,11 @@ set(BUILD_OPT 1)
 # Confirm that the selected options are allowed
 validation_checks_hw()
 
-# Load a user application in Configuration #0, Region #0 
-# Configurations become important in partial reconfiguration (PR) flows, covered in example Example 10
-# Region is equal to zero, since we only have one vFPGA
-# The macro load_apps(...) will look for a file vfgpa_top.svh in the specified folder (in this case src/)
+# Load user applications in Configuration #0 for both regions
+# The macro load_apps(...) will look for a file vfpga_top.svh in the specified folder (in this case src/)
 load_apps (
     VFPGA_C0_0 "src"
+    VFPGA_C0_1 "src"
 )
 
 set(HLS_SW_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../sw/src")

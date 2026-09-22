@@ -61,8 +61,14 @@ target_link_libraries(${EXEC} PUBLIC Coyote)
 find_package(Boost REQUIRED COMPONENTS program_options)
 target_link_libraries(${EXEC} PUBLIC Boost::program_options)
 
+find_package(Threads REQUIRED)
+
 # Standalone encode/decode unit test (no Coyote dependency)
 add_executable(test_encode_decode ${TARGET_DIR}/test_encode_decode.cpp ${CVRP_SOURCES})
 
 # Standalone GA unit tests (no Coyote dependency)
 add_executable(ga_test ${TARGET_DIR}/ga_test.cpp ${CVRP_SOURCES})
+
+# Standalone Async Multi-vFPGA pipeline test (no Coyote dependency)
+add_executable(test_async_pipeline ${TARGET_DIR}/test_async_pipeline.cpp ${CVRP_SOURCES})
+target_link_libraries(test_async_pipeline PUBLIC Threads::Threads)

@@ -46,6 +46,8 @@
 #include "ga_encoding_constants.hpp"
 #include "ga_streaming.hpp"
 #include "ga.hpp"
+#include "batch_job.hpp"
+#include "safe_queue.hpp"
 #include "problem_parser.hpp"
 
 // Default vFPGA to assign cThreads to; for designs with one region (vFPGA) this is the only possible value
@@ -88,10 +90,14 @@ int main(int argc, char *argv[]) {
     std::string vrp_file;
     int precision = 1;
     int two_opt_k = 0;
+    unsigned int num_vfpgas = 2;
+    std::size_t micro_batch_size = 0;
 
     boost::program_options::options_description runtime_options("Coyote CVRP GA Options");
     runtime_options.add_options()
         ("help,h", "Produce help message")
+        ("num_vfpgas,n", boost::program_options::value<unsigned int>(&num_vfpgas)->default_value(2), "Number of Coyote vFPGAs to use simultaneously")
+        ("batch_size,b", boost::program_options::value<std::size_t>(&micro_batch_size)->default_value(0), "Micro-batch size per stream (0 = auto-calculate based on pop_size / (2 * num_vfpgas))")
         ("population_size_multiplier,p", boost::program_options::value<std::size_t>(&population_size_multiplier)->default_value(20), "Population size multiplier (population_size = dimension * multiplier)")
         ("n_generations,g", boost::program_options::value<std::size_t>(&n_generations)->default_value(100), "Number of generations")
         ("n_best_keep,k", boost::program_options::value<double>(&n_best_keep)->default_value(5.0), "Percentage of best individuals to keep across generations (e.g. 5.0 for 5%)")
@@ -110,6 +116,10 @@ int main(int argc, char *argv[]) {
         return EXIT_SUCCESS;
     }
 
+    if (num_vfpgas == 0) {
+        throw std::invalid_argument("num_vfpgas must be greater than 0");
+    }
+
     if (population_size_multiplier == 0) {
         throw std::invalid_argument("population_size_multiplier must be greater than 0");
     }
@@ -119,6 +129,8 @@ int main(int argc, char *argv[]) {
     }
 
     HEADER("CLI PARAMETERS:");
+    std::cout << "Number of vFPGAs: " << num_vfpgas << std::endl;
+    std::cout << "Micro-batch size: " << (micro_batch_size == 0 ? "AUTO" : std::to_string(micro_batch_size)) << std::endl;
     std::cout << "Population size multiplier: " << population_size_multiplier << std::endl;
     std::cout << "Number of generations: " << n_generations << std::endl;
     std::cout << "Percentage of best individuals to keep: " << n_best_keep << "%" << std::endl;
@@ -150,105 +162,66 @@ int main(int argc, char *argv[]) {
     std::cout << "Total population size: " << pop_size << std::endl;
     std::cout << "Max subtours: " << max_subtours << std::endl;
 
-    // Obtain Coyote thread
-    coyote::cThread coyote_thread(DEFAULT_VFPGA_ID, getpid());
-
-    // Allocate memory in Coyote style using hugepages (HPF)
-    // Stream 0 and Stream 1 have dedicated page-aligned hugepage buffers (Issue 3)
-    std::uint8_t *src_mem_0 = allocate_buffer(coyote_thread, half_pop_bytes);
-    std::uint8_t *src_mem_1 = allocate_buffer(coyote_thread, half_pop_bytes);
-    std::uint8_t *dst_mem_0 = allocate_buffer(coyote_thread, half_pop_bytes);
-    std::uint8_t *dst_mem_1 = allocate_buffer(coyote_thread, half_pop_bytes);
-
-    if (!src_mem_0 || !src_mem_1 || !dst_mem_0 || !dst_mem_1) {
-        throw std::runtime_error("Could not allocate Coyote hugepage buffers; exiting...");
-    }
-
-    // pop_mem is purely a CPU-side host scratchpad; allocate standard 64-byte aligned memory
-    // only when running GA, saving hugepages and FPGA TLB entries (Issue 2)
-    std::unique_ptr<std::uint8_t[], void(*)(void*)> pop_mem(nullptr, std::free);
-    if (!smoke_test) {
-        void *ptr = nullptr;
-        if (posix_memalign(&ptr, AXI_BYTES, pop_bytes) != 0 || !ptr) {
-            throw std::bad_alloc();
-        }
-        pop_mem.reset(reinterpret_cast<std::uint8_t *>(ptr));
-    }
-
-    // Setup Scatter-Gather descriptors for Stream 0 and Stream 1
-    coyote::localSg src_sg_0 = { .addr = src_mem_0, .len = static_cast<uint32_t>(half_pop_bytes), .stream = true, .dest = 0 };
-    coyote::localSg src_sg_1 = { .addr = src_mem_1, .len = static_cast<uint32_t>(half_pop_bytes), .stream = true, .dest = 1 };
-
-    coyote::localSg dst_sg_0 = { .addr = dst_mem_0, .len = static_cast<uint32_t>(half_pop_bytes), .stream = true, .dest = 0 };
-    coyote::localSg dst_sg_1 = { .addr = dst_mem_1, .len = static_cast<uint32_t>(half_pop_bytes), .stream = true, .dest = 1 };
-
-    // Program kernel configuration registers
-    const uint32_t reg_num_ind = static_cast<uint32_t>(num_ind_per_stream);
-    const uint32_t reg_num_cities = problem.dimension - 1;
-
-    // Initialize node cache on FPGA via Stream 0 beforehand
-    std::cout << "Initializing node cache on FPGA beforehand via stream 0..." << std::endl;
-    const std::vector<uint8_t> cache_bytes = encode_node_cache(problem);
-    std::uint8_t *cache_mem = allocate_buffer(coyote_thread, cache_bytes.size());
-    if (!cache_mem) {
-        throw std::runtime_error("Could not allocate Coyote hugepage buffer for cache; exiting...");
-    }
-    std::memcpy(cache_mem, cache_bytes.data(), cache_bytes.size());
-
-    coyote::localSg cache_sg = {
-        .addr = cache_mem,
-        .len = static_cast<uint32_t>(cache_bytes.size()),
-        .stream = true,
-        .dest = 0
-    };
-
-    coyote_thread.setCSR(reg_num_ind, CSR_NUM_INDIVIDUALS);
-    coyote_thread.setCSR(reg_num_cities, CSR_NUM_CITIES);
-    coyote_thread.setCSR(problem.capacity, CSR_VEHICLE_CAPACITY);
-    coyote_thread.setCSR(two_opt_k, CSR_TWO_OPT_K);
-    coyote_thread.setCSR(max_subtours, CSR_MAX_SUBTOURS);
-    coyote_thread.setCSR(1, CSR_TWO_OPT_ENABLE_PRECHECK);
-    coyote_thread.setCSR(seed, SEED);
-
-    coyote_thread.setCSR(1, CSR_INIT_CITY_CACHE); // Dedicated register to trigger cache initialization
-    coyote_thread.setCSR(CSR_CONTROL_START, CSR_CONTROL);
-
-    coyote_thread.invoke(coyote::CoyoteOper::LOCAL_READ, cache_sg);
-    while (coyote_thread.checkCompleted(coyote::CoyoteOper::LOCAL_READ) != 1) {}
-    
-    std::cout << "Node cache successfully initialized on FPGA." << std::endl;
-
-    coyote_thread.setCSR(0, CSR_INIT_CITY_CACHE);
-
-    if(coyote_thread.getCSR(CSR_NUM_INDIVIDUALS) == reg_num_ind &&
-       coyote_thread.getCSR(CSR_NUM_CITIES) == reg_num_cities &&
-       coyote_thread.getCSR(CSR_VEHICLE_CAPACITY) == problem.capacity &&
-       coyote_thread.getCSR(CSR_INIT_CITY_CACHE) == 0 &&
-       coyote_thread.getCSR(CSR_TWO_OPT_K) == static_cast<uint32_t>(two_opt_k) &&
-       coyote_thread.getCSR(CSR_MAX_SUBTOURS) == static_cast<uint32_t>(max_subtours) &&
-       coyote_thread.getCSR(CSR_TWO_OPT_ENABLE_PRECHECK) == 1 &&
-       coyote_thread.getCSR(SEED) == seed) {
-        std::cout << "Successfully programmed vFPGA kernel configuration registers." << std::endl;
-    } else {
-        std::cerr << "Error: Failed to program vFPGA kernel configuration registers." << std::endl;
-        return EXIT_FAILURE;
-    }
-
-    auto create_new_generation = [&]() {
-        coyote_thread.clearCompleted();
-
-        coyote_thread.setCSR(CSR_CONTROL_START, CSR_CONTROL);
-
-        // Queue operations on Stream 0 (parents 1) and Stream 1 (parents 2)
-        coyote_thread.invoke(coyote::CoyoteOper::LOCAL_TRANSFER, src_sg_0, dst_sg_0);
-        coyote_thread.invoke(coyote::CoyoteOper::LOCAL_TRANSFER, src_sg_1, dst_sg_1);
-
-        // Wait for transfers to complete
-        while (coyote_thread.checkCompleted(coyote::CoyoteOper::LOCAL_TRANSFER) != 2) {}
-    };
-
     if (smoke_test) {
         HEADER("SMOKE TEST (1 GENERATION ON FPGA)");
+        coyote::cThread coyote_thread(DEFAULT_VFPGA_ID, getpid());
+
+        std::uint8_t *src_mem_0 = allocate_buffer(coyote_thread, half_pop_bytes);
+        std::uint8_t *src_mem_1 = allocate_buffer(coyote_thread, half_pop_bytes);
+        std::uint8_t *dst_mem_0 = allocate_buffer(coyote_thread, half_pop_bytes);
+        std::uint8_t *dst_mem_1 = allocate_buffer(coyote_thread, half_pop_bytes);
+
+        if (!src_mem_0 || !src_mem_1 || !dst_mem_0 || !dst_mem_1) {
+            throw std::runtime_error("Could not allocate Coyote hugepage buffers; exiting...");
+        }
+
+        coyote::localSg src_sg_0 = { .addr = src_mem_0, .len = static_cast<uint32_t>(half_pop_bytes), .stream = true, .dest = 0 };
+        coyote::localSg src_sg_1 = { .addr = src_mem_1, .len = static_cast<uint32_t>(half_pop_bytes), .stream = true, .dest = 1 };
+        coyote::localSg dst_sg_0 = { .addr = dst_mem_0, .len = static_cast<uint32_t>(half_pop_bytes), .stream = true, .dest = 0 };
+        coyote::localSg dst_sg_1 = { .addr = dst_mem_1, .len = static_cast<uint32_t>(half_pop_bytes), .stream = true, .dest = 1 };
+
+        const uint32_t reg_num_ind = static_cast<uint32_t>(num_ind_per_stream);
+        const uint32_t reg_num_cities = problem.dimension - 1;
+
+        std::cout << "Initializing node cache on FPGA beforehand via stream 0..." << std::endl;
+        const std::vector<uint8_t> cache_bytes = encode_node_cache(problem);
+        std::uint8_t *cache_mem = allocate_buffer(coyote_thread, cache_bytes.size());
+        if (!cache_mem) {
+            throw std::runtime_error("Could not allocate Coyote hugepage buffer for cache; exiting...");
+        }
+        std::memcpy(cache_mem, cache_bytes.data(), cache_bytes.size());
+
+        coyote::localSg cache_sg = {
+            .addr = cache_mem,
+            .len = static_cast<uint32_t>(cache_bytes.size()),
+            .stream = true,
+            .dest = 0
+        };
+
+        coyote_thread.setCSR(reg_num_ind, CSR_NUM_INDIVIDUALS);
+        coyote_thread.setCSR(reg_num_cities, CSR_NUM_CITIES);
+        coyote_thread.setCSR(problem.capacity, CSR_VEHICLE_CAPACITY);
+        coyote_thread.setCSR(two_opt_k, CSR_TWO_OPT_K);
+        coyote_thread.setCSR(max_subtours, CSR_MAX_SUBTOURS);
+        coyote_thread.setCSR(1, CSR_TWO_OPT_ENABLE_PRECHECK);
+        coyote_thread.setCSR(seed, SEED);
+
+        coyote_thread.setCSR(1, CSR_INIT_CITY_CACHE);
+        coyote_thread.setCSR(CSR_CONTROL_START, CSR_CONTROL);
+
+        coyote_thread.invoke(coyote::CoyoteOper::LOCAL_READ, cache_sg);
+        while (coyote_thread.checkCompleted(coyote::CoyoteOper::LOCAL_READ) != 1) {}
+        std::cout << "Node cache successfully initialized on FPGA." << std::endl;
+        coyote_thread.setCSR(0, CSR_INIT_CITY_CACHE);
+
+        auto create_new_generation = [&]() {
+            coyote_thread.clearCompleted();
+            coyote_thread.setCSR(CSR_CONTROL_START, CSR_CONTROL);
+            coyote_thread.invoke(coyote::CoyoteOper::LOCAL_TRANSFER, src_sg_0, dst_sg_0);
+            coyote_thread.invoke(coyote::CoyoteOper::LOCAL_TRANSFER, src_sg_1, dst_sg_1);
+            while (coyote_thread.checkCompleted(coyote::CoyoteOper::LOCAL_TRANSFER) != 2) {}
+        };
+
         std::cout << "Generating initial population for smoke test..." << std::endl;
         const std::vector<Individual> init_pop_0 = build_initial_population(problem, num_ind_per_stream, seed);
         const std::vector<Individual> init_pop_1 = build_initial_population(problem, num_ind_per_stream, seed ^ 0xBEEF);
@@ -294,20 +267,143 @@ int main(int argc, char *argv[]) {
             return EXIT_FAILURE;
         }
     } else {
-        HEADER("RUNNING GA ON FPGA");
-        GAParams params;
+        // Pipelined Multi-vFPGA GA execution across num_vfpgas
+        std::vector<std::unique_ptr<coyote::cThread>> coyote_threads;
+        coyote_threads.reserve(num_vfpgas);
+        for (unsigned int vfid = 0; vfid < num_vfpgas; ++vfid) {
+            coyote_threads.emplace_back(std::make_unique<coyote::cThread>(vfid, getpid()));
+        }
+
+        // Initialize node cache on all vFPGAs beforehand via Stream 0
+        std::cout << "Initializing node cache on " << num_vfpgas << " vFPGA(s) beforehand via stream 0..." << std::endl;
+        const std::vector<uint8_t> cache_bytes = encode_node_cache(problem);
+        for (unsigned int vfid = 0; vfid < num_vfpgas; ++vfid) {
+            std::uint8_t *cache_mem = allocate_buffer(*coyote_threads[vfid], cache_bytes.size());
+            if (!cache_mem) {
+                throw std::runtime_error("Could not allocate Coyote hugepage buffer for cache on vFPGA " + std::to_string(vfid));
+            }
+            std::memcpy(cache_mem, cache_bytes.data(), cache_bytes.size());
+
+            coyote::localSg cache_sg = {
+                .addr = cache_mem,
+                .len = static_cast<uint32_t>(cache_bytes.size()),
+                .stream = true,
+                .dest = 0
+            };
+
+            coyote_threads[vfid]->setCSR(1, CSR_INIT_CITY_CACHE);
+            coyote_threads[vfid]->setCSR(CSR_CONTROL_START, CSR_CONTROL);
+
+            coyote_threads[vfid]->invoke(coyote::CoyoteOper::LOCAL_READ, cache_sg);
+            while (coyote_threads[vfid]->checkCompleted(coyote::CoyoteOper::LOCAL_READ) != 1) {}
+            coyote_threads[vfid]->setCSR(0, CSR_INIT_CITY_CACHE);
+        }
+        std::cout << "Node cache successfully initialized on all " << num_vfpgas << " vFPGA(s)." << std::endl;
+
+        // Determine micro-batch size
+        std::size_t batch_ind_per_stream = micro_batch_size;
+        if (batch_ind_per_stream == 0) {
+            batch_ind_per_stream = (pop_size / 2) / num_vfpgas;
+        }
+        if (batch_ind_per_stream == 0) {
+            batch_ind_per_stream = 1;
+        }
+        validate_streaming_params(batch_ind_per_stream, two_opt_k, max_subtours);
+        const std::size_t batch_bytes = batch_ind_per_stream * bytes_per_individual;
+
+        std::cout << "Micro-batch size: " << batch_ind_per_stream << " individuals/stream ("
+                  << (2 * batch_ind_per_stream) << " offspring per batch, "
+                  << batch_bytes << " bytes per stream)" << std::endl;
+
+        // Program kernel configuration registers on all vFPGAs
+        const uint32_t reg_num_ind = static_cast<uint32_t>(batch_ind_per_stream);
+        const uint32_t reg_num_cities = problem.dimension - 1;
+
+        for (unsigned int vfid = 0; vfid < num_vfpgas; ++vfid) {
+            const uint32_t vfpga_seed = seed ^ (0x9E3779B9u * (vfid + 1));
+            coyote_threads[vfid]->setCSR(reg_num_ind, CSR_NUM_INDIVIDUALS);
+            coyote_threads[vfid]->setCSR(reg_num_cities, CSR_NUM_CITIES);
+            coyote_threads[vfid]->setCSR(problem.capacity, CSR_VEHICLE_CAPACITY);
+            coyote_threads[vfid]->setCSR(two_opt_k, CSR_TWO_OPT_K);
+            coyote_threads[vfid]->setCSR(max_subtours, CSR_MAX_SUBTOURS);
+            coyote_threads[vfid]->setCSR(1, CSR_TWO_OPT_ENABLE_PRECHECK);
+            coyote_threads[vfid]->setCSR(vfpga_seed, SEED);
+
+            if (coyote_threads[vfid]->getCSR(CSR_NUM_INDIVIDUALS) != reg_num_ind ||
+                coyote_threads[vfid]->getCSR(CSR_NUM_CITIES) != reg_num_cities ||
+                coyote_threads[vfid]->getCSR(CSR_VEHICLE_CAPACITY) != static_cast<uint64_t>(problem.capacity)) {
+                std::cerr << "Error: Failed to program vFPGA " << vfid << " kernel configuration registers." << std::endl;
+                return EXIT_FAILURE;
+            }
+        }
+        std::cout << "Successfully programmed vFPGA kernel configuration registers on all " << num_vfpgas << " vFPGAs." << std::endl;
+
+        // Allocate double-buffered slots per vFPGA
+        const std::size_t slots_per_vfpga = 2;
+        std::vector<BatchBufferSlot> buffer_slots;
+        for (unsigned int vfid = 0; vfid < num_vfpgas; ++vfid) {
+            for (std::size_t s = 0; s < slots_per_vfpga; ++s) {
+                std::uint8_t *src_0 = allocate_buffer(*coyote_threads[vfid], batch_bytes);
+                std::uint8_t *src_1 = allocate_buffer(*coyote_threads[vfid], batch_bytes);
+                std::uint8_t *dst_0 = allocate_buffer(*coyote_threads[vfid], batch_bytes);
+                std::uint8_t *dst_1 = allocate_buffer(*coyote_threads[vfid], batch_bytes);
+
+                if (!src_0 || !src_1 || !dst_0 || !dst_1) {
+                    throw std::runtime_error("Could not allocate Coyote hugepage buffers for vFPGA " + std::to_string(vfid));
+                }
+
+                BatchBufferSlot slot;
+                slot.slot_id = static_cast<int>(vfid * slots_per_vfpga + s);
+                slot.vfid = static_cast<int>(vfid);
+                slot.num_ind_per_stream = batch_ind_per_stream;
+                slot.src_buf_0 = src_0;
+                slot.src_buf_1 = src_1;
+                slot.dst_buf_0 = dst_0;
+                slot.dst_buf_1 = dst_1;
+                buffer_slots.push_back(slot);
+            }
+        }
+
+        // Host population scratchpad
+        std::unique_ptr<std::uint8_t[], void(*)(void*)> pop_mem(nullptr, std::free);
+        void *ptr = nullptr;
+        if (posix_memalign(&ptr, AXI_BYTES, pop_bytes) != 0 || !ptr) {
+            throw std::bad_alloc();
+        }
+        pop_mem.reset(reinterpret_cast<std::uint8_t *>(ptr));
+
+        // Hardware batch execution callback
+        auto execute_vfpga_batch = [&](int vfid, const BatchJob &job) {
+            auto &c_thread = *coyote_threads[vfid];
+            c_thread.clearCompleted();
+            c_thread.setCSR(CSR_CONTROL_START, CSR_CONTROL);
+
+            coyote::localSg src_sg_0 = { .addr = job.src_buf_0, .len = static_cast<uint32_t>(batch_bytes), .stream = true, .dest = 0 };
+            coyote::localSg src_sg_1 = { .addr = job.src_buf_1, .len = static_cast<uint32_t>(batch_bytes), .stream = true, .dest = 1 };
+            coyote::localSg dst_sg_0 = { .addr = job.dst_buf_0, .len = static_cast<uint32_t>(batch_bytes), .stream = true, .dest = 0 };
+            coyote::localSg dst_sg_1 = { .addr = job.dst_buf_1, .len = static_cast<uint32_t>(batch_bytes), .stream = true, .dest = 1 };
+
+            c_thread.invoke(coyote::CoyoteOper::LOCAL_TRANSFER, src_sg_0, dst_sg_0);
+            c_thread.invoke(coyote::CoyoteOper::LOCAL_TRANSFER, src_sg_1, dst_sg_1);
+
+            while (c_thread.checkCompleted(coyote::CoyoteOper::LOCAL_TRANSFER) != 2) {
+                std::this_thread::yield();
+            }
+        };
+
+        HEADER("RUNNING ASYNC PIPELINED GA ON " + std::to_string(num_vfpgas) + " vFPGAs");
+        AsyncGAParams params;
         params.pop_size = pop_size;
         params.n_generations = n_generations;
         params.n_best_keep = n_best_keep;
         params.seed = seed;
         params.two_opt_k = two_opt_k;
-        params.buffer_src_0 = src_mem_0;
-        params.buffer_src_1 = src_mem_1;
-        params.buffer_dst_0 = dst_mem_0;
-        params.buffer_dst_1 = dst_mem_1;
+        params.num_vfpgas = num_vfpgas;
+        params.num_ind_per_stream = batch_ind_per_stream;
+        params.buffer_slots = buffer_slots;
         params.buffer_pop = pop_mem.get();
 
-        GASummary summary = run_ga(problem, params, create_new_generation);
+        GASummary summary = run_ga_pipelined(problem, params, execute_vfpga_batch);
         summary.print();
     }
 
