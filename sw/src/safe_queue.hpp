@@ -12,7 +12,7 @@
 #include <queue>
 #include <utility>
 
-template <typename T>
+template <typename T, typename Compare = std::greater<T>>
 class SafeQueue {
 public:
     SafeQueue() = default;
@@ -28,7 +28,7 @@ public:
             std::lock_guard<std::mutex> lock(mutex_);
             queue_.push(std::move(value));
         }
-        cv_.notify_one();
+        cv_.notify_all();
     }
 
     std::optional<T> pop() {
@@ -37,7 +37,7 @@ public:
         if (queue_.empty()) {
             return std::nullopt;
         }
-        T item = std::move(queue_.front());
+        T item = std::move(const_cast<T&>(queue_.top()));
         queue_.pop();
         return item;
     }
@@ -47,9 +47,38 @@ public:
         if (queue_.empty()) {
             return false;
         }
-        value = std::move(queue_.front());
+        value = std::move(const_cast<T&>(queue_.top()));
         queue_.pop();
         return true;
+    }
+
+    template <typename Predicate>
+    std::optional<T> pop_if(Predicate pred) {
+        std::unique_lock<std::mutex> lock(mutex_);
+        cv_.wait(lock, [this, &pred]() {
+            return shutdown_ || (!queue_.empty() && pred(queue_.top()));
+        });
+        if (queue_.empty() || !pred(queue_.top())) {
+            return std::nullopt;
+        }
+        T item = std::move(const_cast<T&>(queue_.top()));
+        queue_.pop();
+        return item;
+    }
+
+    template <typename IdType>
+    std::optional<T> pop_expected(IdType expected_id) {
+        return pop_if([expected_id](const T &item) {
+            return item.batch_id == expected_id;
+        });
+    }
+
+    std::optional<T> top() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (queue_.empty()) {
+            return std::nullopt;
+        }
+        return queue_.top();
     }
 
     void shutdown() {
@@ -76,7 +105,7 @@ public:
     }
 
 private:
-    std::queue<T> queue_;
+    std::priority_queue<T, std::vector<T>, Compare> queue_;
     mutable std::mutex mutex_;
     std::condition_variable cv_;
     bool shutdown_ = false;

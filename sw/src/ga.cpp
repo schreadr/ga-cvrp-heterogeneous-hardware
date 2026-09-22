@@ -731,6 +731,7 @@ GASummary run_ga_pipelined(
 
         BatchJob job;
         job.batch_id = batches_dispatched++;
+        job.batch_seed = new_seed();
         job.vfid = slot.vfid;
         job.slot_id = slot.slot_id;
         job.num_ind_per_stream = batch_ind_per_stream;
@@ -744,10 +745,10 @@ GASummary run_ga_pipelined(
 
     const std::size_t log_interval_batches = std::max<std::size_t>(1, total_batches_to_process / 10);
 
-    // Continuous streaming loop: collect finished offspring, merge, and dispatch next batch
+    // Continuous streaming loop: collect finished offspring in deterministic in-order sequence
     while (batches_completed < total_batches_to_process) {
         auto t_wait_start = std::chrono::steady_clock::now();
-        auto finished_job_opt = offspring_queue.pop();
+        auto finished_job_opt = offspring_queue.pop_expected(batches_completed);
         auto t_wait_end = std::chrono::steady_clock::now();
         summary.timings.offspring_generation_ms += std::chrono::duration<double, std::milli>(t_wait_end - t_wait_start).count();
 
@@ -779,6 +780,7 @@ GASummary run_ga_pipelined(
             summary.timings.parent_selection_ms += std::chrono::duration<double, std::milli>(t_sel_end - t_sel_start).count();
 
             finished_job.batch_id = batches_dispatched++;
+            finished_job.batch_seed = new_seed();
             parent_queues[finished_job.vfid].push(std::move(finished_job));
         }
 

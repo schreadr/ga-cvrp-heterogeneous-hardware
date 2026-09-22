@@ -190,6 +190,137 @@ void test_run_ga_pipelined_simulation(std::size_t num_vfpgas) {
               << ", Wall Time=" << summary.timings.total_time_ms << " ms]\n";
 }
 
+void test_safe_queue_priority_and_pop_expected() {
+    std::cout << "Test 3: SafeQueue priority order & pop_expected...\n";
+    SafeQueue<BatchJob> q;
+
+    BatchJob j2; j2.batch_id = 2;
+    BatchJob j0; j0.batch_id = 0;
+    BatchJob j1; j1.batch_id = 1;
+
+    // Push out of order: 2, 0, 1
+    q.push(j2);
+    q.push(j0);
+    q.push(j1);
+
+    // Min-heap order should pop 0, 1, 2
+    auto p0 = q.pop();
+    auto p1 = q.pop();
+    auto p2 = q.pop();
+
+    if (!p0 || p0->batch_id != 0 || !p1 || p1->batch_id != 1 || !p2 || p2->batch_id != 2) {
+        std::cerr << "FAIL: SafeQueue min-heap ordering mismatch.\n";
+        std::exit(EXIT_FAILURE);
+    }
+
+    // Test pop_expected with asynchronous arrival
+    std::thread producer([&q]() {
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        BatchJob j_high; j_high.batch_id = 10;
+        q.push(j_high);
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        BatchJob j_target; j_target.batch_id = 5;
+        q.push(j_target);
+    });
+
+    // Wait specifically for batch 5 even though 10 arrived first
+    auto res = q.pop_expected(5);
+    producer.join();
+
+    if (!res || res->batch_id != 5) {
+        std::cerr << "FAIL: pop_expected failed to wait for target batch.\n";
+        std::exit(EXIT_FAILURE);
+    }
+
+    // Now batch 10 should be next
+    auto res2 = q.pop();
+    if (!res2 || res2->batch_id != 10) {
+        std::cerr << "FAIL: Remaining batch in priority queue mismatch.\n";
+        std::exit(EXIT_FAILURE);
+    }
+
+    std::cout << "PASS [test_safe_queue_priority_and_pop_expected]\n";
+}
+
+void test_run_ga_pipelined_reproducibility() {
+    std::cout << "Test 4: run_ga_pipelined reproducibility with N=4 and jitter...\n";
+    ProblemInstance problem = create_toy_problem();
+    const std::size_t pop_size = 20;
+    const std::size_t n_generations = 10;
+    const int beats_per_ind = get_total_axi_beats(problem.dimension - 1);
+    const std::size_t bytes_per_ind = beats_per_ind * AXI_BYTES;
+    const std::size_t pop_bytes = pop_size * bytes_per_ind;
+    const std::size_t batch_ind_per_stream = 5;
+    const std::size_t batch_bytes = batch_ind_per_stream * bytes_per_ind;
+
+    auto run_simulation = [&](uint32_t run_seed) -> GASummary {
+        AsyncGAParams params;
+        params.pop_size = pop_size;
+        params.n_generations = n_generations;
+        params.n_best_keep = 10.0;
+        params.seed = run_seed;
+        params.two_opt_k = 1;
+        params.num_vfpgas = 4;
+        params.num_ind_per_stream = batch_ind_per_stream;
+
+        std::vector<std::uint8_t> pop_mem(pop_bytes);
+        params.buffer_pop = pop_mem.data();
+
+        const std::size_t slots_per_vfpga = 2;
+        std::vector<std::vector<std::uint8_t>> storage_src0;
+        std::vector<std::vector<std::uint8_t>> storage_src1;
+        std::vector<std::vector<std::uint8_t>> storage_dst0;
+        std::vector<std::vector<std::uint8_t>> storage_dst1;
+
+        for (std::size_t v = 0; v < 4; ++v) {
+            for (std::size_t s = 0; s < slots_per_vfpga; ++s) {
+                storage_src0.emplace_back(batch_bytes, 0);
+                storage_src1.emplace_back(batch_bytes, 0);
+                storage_dst0.emplace_back(batch_bytes, 0);
+                storage_dst1.emplace_back(batch_bytes, 0);
+
+                BatchBufferSlot slot;
+                slot.slot_id = static_cast<int>(v * slots_per_vfpga + s);
+                slot.vfid = static_cast<int>(v);
+                slot.num_ind_per_stream = batch_ind_per_stream;
+                slot.src_buf_0 = storage_src0.back().data();
+                slot.src_buf_1 = storage_src1.back().data();
+                slot.dst_buf_0 = storage_dst0.back().data();
+                slot.dst_buf_1 = storage_dst1.back().data();
+                params.buffer_slots.push_back(slot);
+            }
+        }
+
+        auto mock_vfpga_executor = [&](int vfid, const BatchJob &job) {
+            // Introduce intentional randomized jitter per vFPGA to simulate out-of-order completion
+            int jitter_us = 50 + (rand() % 150);
+            std::this_thread::sleep_for(std::chrono::microseconds(jitter_us));
+
+            std::memcpy(job.dst_buf_0, job.src_buf_0, job.num_ind_per_stream * bytes_per_ind);
+            std::memcpy(job.dst_buf_1, job.src_buf_1, job.num_ind_per_stream * bytes_per_ind);
+        };
+
+        return run_ga_pipelined(problem, params, mock_vfpga_executor);
+    };
+
+    GASummary r1 = run_simulation(0x1234ABCD);
+    GASummary r2 = run_simulation(0x1234ABCD);
+
+    if (r1.best_fitness != r2.best_fitness) {
+        std::cerr << "FAIL: Reproducibility check failed! Fitness 1: " << r1.best_fitness
+                  << ", Fitness 2: " << r2.best_fitness << "\n";
+        std::exit(EXIT_FAILURE);
+    }
+
+    if (r1.best_individual != r2.best_individual) {
+        std::cerr << "FAIL: Reproducibility check failed! Best individuals differ.\n";
+        std::exit(EXIT_FAILURE);
+    }
+
+    std::cout << "PASS [test_run_ga_pipelined_reproducibility: bit-exact match across jittered runs]\n";
+}
+
 } // namespace
 
 int main() {
@@ -199,9 +330,11 @@ int main() {
 
     test_safe_queue_basic();
     test_safe_queue_multithreaded();
+    test_safe_queue_priority_and_pop_expected();
     test_run_ga_pipelined_simulation(1);
     test_run_ga_pipelined_simulation(2);
     test_run_ga_pipelined_simulation(4);
+    test_run_ga_pipelined_reproducibility();
 
     std::cout << "========================================\n";
     std::cout << "Result: All Async Pipeline Tests Passed!\n";

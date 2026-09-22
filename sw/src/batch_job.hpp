@@ -34,6 +34,16 @@ struct BatchJob {
     std::uint8_t *src_buf_1 = nullptr;
     std::uint8_t *dst_buf_0 = nullptr;
     std::uint8_t *dst_buf_1 = nullptr;
+
+    uint32_t batch_seed = 0;
+
+    bool operator>(const BatchJob &other) const {
+        return batch_id > other.batch_id;
+    }
+
+    bool operator<(const BatchJob &other) const {
+        return batch_id < other.batch_id;
+    }
 };
 
 #endif // BATCH_JOB_HPP

@@ -39,12 +39,10 @@ public:
         seed(seed_val);
     }
 
-    /// Initialize the generator with seed_val if uninitialized or if seed has changed.
+    /// Initialize the generator with seed_val.
     inline void init(uint64_t seed_val) {
         #pragma HLS INLINE
-        if (!initialized || seed_val != last_seed) {
-            seed(seed_val);
-        }
+        seed(seed_val);
     }
 
     void seed(uint64_t seed_val) {

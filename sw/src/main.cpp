@@ -374,6 +374,7 @@ int main(int argc, char *argv[]) {
         auto execute_vfpga_batch = [&](int vfid, const BatchJob &job) {
             auto &c_thread = *coyote_threads[vfid];
             c_thread.clearCompleted();
+            c_thread.setCSR(job.batch_seed, CSR_SEED);
             c_thread.setCSR(CSR_CONTROL_START, CSR_CONTROL);
 
             coyote::localSg src_sg_0 = { .addr = job.src_buf_0, .len = static_cast<uint32_t>(batch_bytes), .stream = true, .dest = 0 };
