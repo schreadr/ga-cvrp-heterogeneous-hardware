@@ -50,14 +50,12 @@ int run_repair_fitness_test() {
     CityData cache[MAX_CACHE_ENTRIES];
     for (std::size_t i = 0; i < problem.nodes.size(); ++i) {
         cache[i] = CityData{
-            Coord(problem.nodes[i].x),
-            Coord(problem.nodes[i].y),
+            Point{Coord(problem.nodes[i].x), Coord(problem.nodes[i].y)},
             Capacity(problem.nodes[i].demand)
         };
     }
     cache[kNumCities] = CityData{
-        Coord(problem.depot.x),
-        Coord(problem.depot.y),
+        Point{Coord(problem.depot.x), Coord(problem.depot.y)},
         0
     };
 
@@ -124,14 +122,12 @@ int run_repair_fitness_test_border_cases() {
     CityData cache[MAX_CACHE_ENTRIES];
     for (std::size_t i = 0; i < problem.nodes.size(); ++i) {
         cache[i] = CityData{
-            Coord(problem.nodes[i].x),
-            Coord(problem.nodes[i].y),
+            Point{Coord(problem.nodes[i].x), Coord(problem.nodes[i].y)},
             Capacity(problem.nodes[i].demand)
         };
     }
     cache[kNumCities_border_cases] = CityData{
-        Coord(problem.depot.x),
-        Coord(problem.depot.y),
+        Point{Coord(problem.depot.x), Coord(problem.depot.y)},
         0
     };
 

@@ -45,7 +45,6 @@ static void two_opt_software(
     int &worker_idx,
     const ProblemInstance &problem,
     CityIndex two_opt_k,
-    CityIndex max_subtours,
     bool enable_precheck = false
 ) {
     const int DEPOT = problem.dimension - 1;
@@ -56,10 +55,8 @@ static void two_opt_software(
 
     long long total_delta = 0;
     size_t subtour_start = 0;
-    CityIndex subtours_processed = 0;
 
     while (subtour_start < ind.tour.size()) {
-        subtours_processed++;
         size_t subtour_end = subtour_start;
         while (subtour_end < ind.tour.size() && !ind.tour[subtour_end].depot_after) {
             subtour_end++;
@@ -174,23 +171,20 @@ int run_two_opt_test() {
     CityData cache[MAX_CACHE_ENTRIES];
     for (std::size_t i = 0; i < problem.nodes.size(); ++i) {
         cache[i] = CityData{
-            Coord(problem.nodes[i].x),
-            Coord(problem.nodes[i].y),
+            Point{Coord(problem.nodes[i].x), Coord(problem.nodes[i].y)},
             Capacity(problem.nodes[i].demand)
         };
     }
     cache[kNumCities] = CityData{
-        Coord(problem.depot.x),
-        Coord(problem.depot.y),
+        Point{Coord(problem.depot.x), Coord(problem.depot.y)},
         0
     };
 
     tb_push_individuals(input, problem, input_population);
 
-    const int max_subtours = std::max(calc_max_n_subtours(problem), 10);
     const uint32_t seed_two_opt = 42;
     
-    two_opt(input, output, kNumIndividuals, CityIndex(kNumCities), CityIndex(kTwoOptK), CityIndex(max_subtours), false, cache, seed_two_opt);
+    two_opt(input, output, kNumIndividuals, CityIndex(kNumCities), CityIndex(kTwoOptK), false, cache, seed_two_opt);
 
     const std::vector<Individual> result = tb_pull_individuals(output, problem, kNumIndividuals);
     
@@ -202,7 +196,7 @@ int run_two_opt_test() {
     }
     int worker_idx = 0;
     for (int i = 0; i < kNumIndividuals; ++i) {
-        two_opt_software(expected_population[i], sw_rngs, worker_idx, problem, CityIndex(kTwoOptK), CityIndex(max_subtours), false);
+        two_opt_software(expected_population[i], sw_rngs, worker_idx, problem, CityIndex(kTwoOptK), false);
     }
 
     std::cout << "Verifying Outputs..." << std::endl;

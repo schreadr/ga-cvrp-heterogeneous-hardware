@@ -223,7 +223,6 @@ static void process_stream(
     CityIndex num_cities,
     Capacity vehicle_capacity,
     CityIndex two_opt_k,
-    CityIndex max_subtours,
     bool two_opt_enable_precheck,
     uint32_t seed_cx_mut,
     uint32_t seed_two_opt0,
@@ -265,8 +264,8 @@ static void process_stream(
     mutate(stream_cx_1, mutate_pairs_1, stream_mut_1, num_individuals, num_cities);
     repair_fitness(stream_mut_0, stream_repaired_0, num_individuals, num_cities, vehicle_capacity, cache_0);
     repair_fitness(stream_mut_1, stream_repaired_1, num_individuals, num_cities, vehicle_capacity, cache_1);
-    two_opt(stream_repaired_0, stream_opt_0, num_individuals, num_cities, two_opt_k, max_subtours, two_opt_enable_precheck, cache_2opt_0, seed_two_opt0);
-    two_opt(stream_repaired_1, stream_opt_1, num_individuals, num_cities, two_opt_k, max_subtours, two_opt_enable_precheck, cache_2opt_1, seed_two_opt1);
+    two_opt(stream_repaired_0, stream_opt_0, num_individuals, num_cities, two_opt_k, two_opt_enable_precheck, cache_2opt_0, seed_two_opt0);
+    two_opt(stream_repaired_1, stream_opt_1, num_individuals, num_cities, two_opt_k, two_opt_enable_precheck, cache_2opt_1, seed_two_opt1);
     consumer(stream_opt_0, out0, num_individuals, num_cities);
     consumer(stream_opt_1, out1, num_individuals, num_cities);
 }
@@ -289,7 +288,6 @@ void processing_node(
     int vehicle_capacity,
     int init_city_cache,
     int two_opt_k,
-    int max_subtours,
     int two_opt_enable_precheck,
     uint32_t seed,
     int *dbg_num_individuals,
@@ -305,9 +303,8 @@ void processing_node(
     #pragma HLS INTERFACE s_axilite port=vehicle_capacity offset=0x20 bundle=control
     #pragma HLS INTERFACE s_axilite port=init_city_cache offset=0x28 bundle=control
     #pragma HLS INTERFACE s_axilite port=two_opt_k offset=0x30 bundle=control
-    #pragma HLS INTERFACE s_axilite port=max_subtours offset=0x38 bundle=control
-    #pragma HLS INTERFACE s_axilite port=two_opt_enable_precheck offset=0x40 bundle=control
-    #pragma HLS INTERFACE s_axilite port=seed offset=0x48 bundle=control
+    #pragma HLS INTERFACE s_axilite port=two_opt_enable_precheck offset=0x38 bundle=control
+    #pragma HLS INTERFACE s_axilite port=seed offset=0x40 bundle=control
 
     #pragma HLS INTERFACE ap_vld port=dbg_num_individuals
     #pragma HLS INTERFACE ap_vld port=dbg_num_cities
@@ -322,6 +319,6 @@ void processing_node(
         uint32_t seed_cx_mut   = seed;
         uint32_t seed_two_opt0 = seed ^ 0x55555555u;
         uint32_t seed_two_opt1 = seed ^ 0xAAAAAAAAu;
-        process_stream(in0, out0, in1, out1, num_individuals, CityIndex(num_cities), Capacity(vehicle_capacity), CityIndex(two_opt_k), CityIndex(max_subtours), bool(two_opt_enable_precheck != 0), seed_cx_mut, seed_two_opt0, seed_two_opt1);
+        process_stream(in0, out0, in1, out1, num_individuals, CityIndex(num_cities), Capacity(vehicle_capacity), CityIndex(two_opt_k), bool(two_opt_enable_precheck != 0), seed_cx_mut, seed_two_opt0, seed_two_opt1);
     }
 }

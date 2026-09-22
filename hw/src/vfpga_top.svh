@@ -39,9 +39,8 @@
 //   setCSR(vehicle_capacity, 4)  -> byte offset 0x20
 //   setCSR(init_city_cache,  5)  -> byte offset 0x28
 //   setCSR(two_opt_k,        6)  -> byte offset 0x30
-//   setCSR(max_subtours,     7)  -> byte offset 0x38
-//   setCSR(two_opt_enable_precheck, 8) -> byte offset 0x40
-//   setCSR(seed,             9)  -> byte offset 0x48
+//   setCSR(two_opt_enable_precheck, 7) -> byte offset 0x38
+//   setCSR(seed,             8)  -> byte offset 0x40
 // (Coyote CSRs are 64-bit wide, hence the CSR index equals offset / 8; the
 // offsets 0x00-0x0F are reserved by the AXI4-Lite control block.)
 //

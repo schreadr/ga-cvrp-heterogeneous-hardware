@@ -133,7 +133,6 @@ int run_integration_test(){
     const std::size_t total_bytes_1 = enc_1.size();
 
     const int two_opt_k = 0;
-    const int max_subtours = calc_max_n_subtours(problem);
     const uint32_t seed = 42;
 
     int dbg_indiv0, dbg_cities;
@@ -147,7 +146,6 @@ int run_integration_test(){
                     problem.capacity,
                     1,
                     two_opt_k,
-                    max_subtours,
                     0,
                     seed,
                     &dbg_indiv0, &dbg_cities);
@@ -163,7 +161,6 @@ int run_integration_test(){
                     problem.capacity,
                     0,
                     two_opt_k,
-                    max_subtours,
                     0,
                     seed,
                     &dbg_indiv0, &dbg_cities);
@@ -265,7 +262,6 @@ int run_integration_test_border_cases() {
     const std::size_t total_bytes_1 = enc_1.size();
 
     const int two_opt_k = 0;
-    const int max_subtours = calc_max_n_subtours(problem);
     const uint32_t seed = 17;
 
     int dbg_indiv0, dbg_cities;
@@ -279,7 +275,6 @@ int run_integration_test_border_cases() {
                     problem.capacity,
                     1,
                     two_opt_k,
-                    max_subtours,
                     0,
                     seed,
                     &dbg_indiv0, &dbg_cities);
@@ -295,7 +290,6 @@ int run_integration_test_border_cases() {
                     problem.capacity,
                     0,
                     two_opt_k,
-                    max_subtours,
                     0,
                     seed,
                     &dbg_indiv0, &dbg_cities);
@@ -381,9 +375,6 @@ int run_integration_test(const std::string& vrp_path, int two_opt_k) {
     const ProblemInstance problem = parse_vrp(vrp_path);
     validate_encoding_constants(problem);
 
-    const int max_subtours = calc_max_n_subtours(problem);
-    std::cout << "Calculated max subtours: " << max_subtours << std::endl;
-
     const std::size_t num_ind = 100;
     const uint32_t seed = 12648430;
 
@@ -408,7 +399,6 @@ int run_integration_test(const std::string& vrp_path, int two_opt_k) {
                     problem.capacity,
                     1,
                     two_opt_k,
-                    max_subtours,
                     0,
                     seed,
                     &dbg_indiv0, &dbg_cities);
@@ -424,7 +414,6 @@ int run_integration_test(const std::string& vrp_path, int two_opt_k) {
                     problem.capacity,
                     0,
                     two_opt_k,
-                    max_subtours,
                     0,
                     seed,
                     &dbg_indiv0, &dbg_cities);

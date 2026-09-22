@@ -42,12 +42,11 @@ struct Point {
 };
 
 struct CityData {
-    Coord x;
-    Coord y;
+    Point coord;
     Capacity demand;
 
     bool operator==(const CityData &other) const {
-        return x == other.x && y == other.y && demand == other.demand;
+        return coord == other.coord && demand == other.demand;
     }
     bool operator!=(const CityData &other) const {
         return !(*this == other);
@@ -319,7 +318,7 @@ static inline Point get_coord(const CityCacheEntry &entry) {
 
 static inline Point get_coord(const CityData &cd) {
     #pragma HLS INLINE
-    return Point{cd.x, cd.y};
+    return cd.coord;
 }
 
 static inline Capacity get_demand(const CityCacheEntry &entry) {
@@ -339,7 +338,7 @@ static inline CityData consume_next_city_data(CityCacheBeat &beat) {
     CityCacheEntry entry = consume_next_cache_entry(beat);
     Point coord = get_coord(entry);
     Capacity demand = get_demand(entry);
-    return CityData{coord.x, coord.y, demand};
+    return CityData{coord, demand};
 }
 
 static inline RandomNumber consume_next_random(AxiBeat &beat) {

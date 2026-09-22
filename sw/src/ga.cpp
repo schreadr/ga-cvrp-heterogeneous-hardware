@@ -596,7 +596,6 @@ GASummary run_ga(const ProblemInstance& problem, GAParams& params, std::function
     population_to_buffer(population, pop_buffer, problem.dimension);
 
     const std::size_t n_keep = std::min(pop_size, static_cast<std::size_t>(std::round(pop_size * (params.n_best_keep / 100.0))));
-    const int max_subtours = calc_max_n_subtours(problem);
     auto init_end = std::chrono::steady_clock::now();
     summary.timings.init_time_ms = std::chrono::duration<double, std::milli>(init_end - init_start).count();
 

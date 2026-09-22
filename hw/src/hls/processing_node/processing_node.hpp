@@ -14,7 +14,6 @@ void processing_node(
     int vehicle_capacity,
     int init_city_cache,
     int two_opt_k,
-    int max_subtours,
     int two_opt_enable_precheck,
     uint32_t seed,
     int *dbg_num_individuals,

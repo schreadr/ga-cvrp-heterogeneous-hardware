@@ -432,7 +432,6 @@ static void two_opt_streaming(
     int num_individuals,
     CityIndex num_cities,
     CityIndex two_opt_k,
-    CityIndex max_subtours,
     bool enable_precheck,
     const CityData local_cache[N_TWO_OPT_WORKERS][MAX_CACHE_ENTRIES],
     uint32_t seed_two_opt
@@ -504,7 +503,6 @@ void two_opt(
     int num_individuals,
     CityIndex num_cities,
     CityIndex two_opt_k,
-    CityIndex max_subtours,
     bool enable_precheck,
     const CityData city_cache[MAX_CACHE_ENTRIES],
     uint32_t seed_two_opt
@@ -517,7 +515,7 @@ void two_opt(
 
     two_opt_streaming(
         in, out,
-        num_individuals, num_cities, two_opt_k, max_subtours,
+        num_individuals, num_cities, two_opt_k,
         enable_precheck,
         local_cache,
         seed_two_opt

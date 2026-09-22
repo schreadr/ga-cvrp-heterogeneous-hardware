@@ -17,7 +17,6 @@ void two_opt(
     int num_individuals,
     CityIndex num_cities,
     CityIndex two_opt_k,
-    CityIndex max_subtours,
     bool enable_precheck,
     const CityData city_cache[MAX_CACHE_ENTRIES],
     uint32_t seed_two_opt
