@@ -9,7 +9,7 @@
 
 
 // Problem & Coordinate Constants
-#define COORD_BITS                  24
+#define COORD_BITS                  20
 #define CAPACITY_BITS               16
 #define MAX_CITIES                  1023
 #define MAX_CITIES_LOG2             10
