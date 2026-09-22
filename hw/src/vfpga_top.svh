@@ -41,6 +41,7 @@
 //   setCSR(two_opt_k,        6)  -> byte offset 0x30
 //   setCSR(max_subtours,     7)  -> byte offset 0x38
 //   setCSR(two_opt_enable_precheck, 8) -> byte offset 0x40
+//   setCSR(seed,             9)  -> byte offset 0x48
 // (Coyote CSRs are 64-bit wide, hence the CSR index equals offset / 8; the
 // offsets 0x00-0x0F are reserved by the AXI4-Lite control block.)
 //
@@ -183,13 +184,6 @@ processing_node_hls_ip inst_pn(
     .out1_TVALID   (axis_host_send[1].tvalid),
     .out1_TREADY   (axis_host_send[1].tready),
 
-    // AXI-Stream input random
-    .in_random_TDATA  (axis_host_recv[2].tdata),
-    .in_random_TKEEP  (axis_host_recv[2].tkeep),
-    .in_random_TLAST  (axis_host_recv[2].tlast),
-    .in_random_TVALID (axis_host_recv[2].tvalid),
-    .in_random_TREADY (axis_host_recv[2].tready),
-
     // debug
     .dbg_num_individuals     (dbg_num_ind),
     .dbg_num_individuals_ap_vld(dbg_num_ind_vld),
@@ -203,7 +197,6 @@ always_comb sq_rd.tie_off_m();
 always_comb sq_wr.tie_off_m();
 always_comb cq_rd.tie_off_s();
 always_comb cq_wr.tie_off_s();
-always_comb axis_host_send[2].tie_off_m();
 
 // NOTE: ILA disabled to eliminate routing congestion and timing violations caused by 2,126 probe nets.
 /*

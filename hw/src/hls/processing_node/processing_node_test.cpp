@@ -68,91 +68,45 @@ static std::vector<std::vector<int>> kExpChild1Tours = {
     {31, 18, 17, 27, 26, 2, 1, 11, 30, 8, 9, 4, 39, 16, 37, 20, 36, 15, 25, 28, 32, 5, 21, 7, 38, 14, 33, 23, 29, 13, 22, 3, 6, 24, 34, 35, 0, 10, 12, 19}
 };
 
-int test_random_number_converter() {
-    std::cout << "Random Number Converter Unit Test" << std::endl;
-    hls::stream<axi_word_t> in_random("in_random");
+int test_xoroshiro128plusplus_generator() {
+    std::cout << "xoroshiro128++ Generator Unit Test" << std::endl;
+    xoroshiro128plusplus rng(42);
+
+    int errors = 0;
+    // Verify basic generation
+    uint32_t val1 = rng.nextUInt();
+    uint32_t val2 = rng.nextUInt();
+    if (val1 == val2) {
+        std::cout << "Mismatch: consecutive values identical: " << val1 << std::endl;
+        errors++;
+    }
+
+    // Verify generate_cx_mut_randoms
     hls::stream<CityPair> cx_pairs("cx_pairs");
     hls::stream<CityPair> mut_pairs_0("mut_pairs_0");
     hls::stream<CityPair> mut_pairs_1("mut_pairs_1");
-    hls::stream<RandomPair> two_opt_randoms_0("two_opt_randoms_0");
-    hls::stream<RandomPair> two_opt_randoms_1("two_opt_randoms_1");
 
-    const int test_individuals = 5;
-    const int two_opt_k = 1;
-    const int max_subtours = 1;
+    const int test_individuals = 10;
+    const CityIndex test_cities = 40;
 
-    std::vector<uint32_t> raw_randoms = {
-        15, 3, 8, 20, 10, 5, 100, 101, 102, 103,
-        2, 2, 30, 1, 16, 22, 104, 105, 106, 107,
-        25, 40, 14, 12, 1, 35, 108, 109, 110, 111,
-        19, 11, 5, 9, 28, 4, 112, 113, 114, 115,
-        39, 4, 7, 18, 13, 13, 116, 117, 118, 119
-    };
+    generate_cx_mut_randoms(12345, cx_pairs, mut_pairs_0, mut_pairs_1, test_individuals, test_cities);
 
-    std::vector<std::pair<CityIndex, CityIndex>> exp_cx = {
-        {3, 15}, {2, 2}, {25, 40}, {11, 19}, {4, 39}
-    };
-    std::vector<std::pair<CityIndex, CityIndex>> exp_mut_0 = {
-        {8, 20}, {1, 30}, {12, 14}, {5, 9}, {7, 18}
-    };
-    std::vector<std::pair<CityIndex, CityIndex>> exp_mut_1 = {
-        {5, 10}, {16, 22}, {1, 35}, {4, 28}, {13, 13}
-    };
-
-    const std::size_t payload_bytes = raw_randoms.size() * sizeof(uint32_t);
-    const std::size_t total_bytes = get_random_bytes(test_individuals, two_opt_k, max_subtours);
-    std::vector<uint8_t> beat_bytes(total_bytes, 0);
-    std::memcpy(beat_bytes.data(), raw_randoms.data(), payload_bytes);
-
-    tb_push_bytes(in_random, beat_bytes.data(), total_bytes, true);
-
-    random_number_converter(in_random, cx_pairs, mut_pairs_0, mut_pairs_1, two_opt_randoms_0, two_opt_randoms_1, test_individuals, CityIndex(two_opt_k), CityIndex(max_subtours));
-
-    int errors = 0;
     for (int i = 0; i < test_individuals; ++i) {
         CityPair got_cx = cx_pairs.read();
         CityPair got_mut_0 = mut_pairs_0.read();
         CityPair got_mut_1 = mut_pairs_1.read();
 
-        if (got_cx.start != exp_cx[i].first || got_cx.end != exp_cx[i].second) {
-            std::cout << "Mismatch in cx_pair[" << i << "]: got ("
-                      << got_cx.start << ", " << got_cx.end << ") expected ("
-                      << exp_cx[i].first << ", " << exp_cx[i].second << ")\n";
+        if (got_cx.start > got_cx.end || got_cx.end >= test_cities) {
+            std::cout << "Invalid cx_pair[" << i << "]: (" << got_cx.start << ", " << got_cx.end << ")\n";
             errors++;
         }
-        if (got_mut_0.start != exp_mut_0[i].first || got_mut_0.end != exp_mut_0[i].second) {
-            std::cout << "Mismatch in mut_pair_0[" << i << "]: got ("
-                      << got_mut_0.start << ", " << got_mut_0.end << ") expected ("
-                      << exp_mut_0[i].first << ", " << exp_mut_0[i].second << ")\n";
+        if (got_mut_0.start > got_mut_0.end || got_mut_0.end >= test_cities) {
+            std::cout << "Invalid mut_pair_0[" << i << "]: (" << got_mut_0.start << ", " << got_mut_0.end << ")\n";
             errors++;
         }
-        if (got_mut_1.start != exp_mut_1[i].first || got_mut_1.end != exp_mut_1[i].second) {
-            std::cout << "Mismatch in mut_pair_1[" << i << "]: got ("
-                      << got_mut_1.start << ", " << got_mut_1.end << ") expected ("
-                      << exp_mut_1[i].first << ", " << exp_mut_1[i].second << ")\n";
+        if (got_mut_1.start > got_mut_1.end || got_mut_1.end >= test_cities) {
+            std::cout << "Invalid mut_pair_1[" << i << "]: (" << got_mut_1.start << ", " << got_mut_1.end << ")\n";
             errors++;
-        }
-        for (int k = 0; k < two_opt_k; ++k) {
-            RandomPair p0 = two_opt_randoms_0.read();
-            RandomPair p1 = two_opt_randoms_1.read();
-
-            RandomNumber exp_r0_1 = 100 + 4 * i + 0;
-            RandomNumber exp_r0_2 = 100 + 4 * i + 1;
-            RandomNumber exp_r1_1 = 100 + 4 * i + 2;
-            RandomNumber exp_r1_2 = 100 + 4 * i + 3;
-
-            if (p0.r1 != exp_r0_1 || p0.r2 != exp_r0_2) {
-                std::cout << "Mismatch in two_opt_randoms_0[" << i << "]: got ("
-                          << p0.r1 << ", " << p0.r2 << ") expected ("
-                          << exp_r0_1 << ", " << exp_r0_2 << ")\n";
-                errors++;
-            }
-            if (p1.r1 != exp_r1_1 || p1.r2 != exp_r1_2) {
-                std::cout << "Mismatch in two_opt_randoms_1[" << i << "]: got ("
-                          << p1.r1 << ", " << p1.r2 << ") expected ("
-                          << exp_r1_1 << ", " << exp_r1_2 << ")\n";
-                errors++;
-            }
         }
     }
 
@@ -167,7 +121,6 @@ int test_random_number_converter() {
 int run_integration_test(){
     hls::stream<axi_word_t> in0("in0"), out0("out0");
     hls::stream<axi_word_t> in1("in1"), out1("out1");
-    hls::stream<axi_word_t> in_random("in_random");
 
     const ProblemInstance problem = make_problem();
     const std::vector<Individual> pop_0 = build_population(problem, kPop0Tours);
@@ -179,27 +132,16 @@ int run_integration_test(){
     const std::size_t total_bytes_0 = enc_0.size();
     const std::size_t total_bytes_1 = enc_1.size();
 
-    // Stream the cut points corresponding to the hardcoded test values
-    // kOxStart = 1, kOxEnd = 33; kMutateStart = 1, kMutateEnd = 33
-    // Pass them in mixed order to verify the converter sorts smaller first.
-    std::vector<uint32_t> rnd_nums = {
-        33, 1, 1, 33, 1, 33,
-        1, 33, 33, 1, 1, 33,
-        33, 1, 33, 1, 33, 1
-    };
     const int two_opt_k = 0;
     const int max_subtours = calc_max_n_subtours(problem);
-    const std::size_t payload_bytes_rnd = rnd_nums.size() * sizeof(uint32_t);
-    const std::size_t total_bytes_rnd = get_random_bytes(kNumIndividuals, two_opt_k, max_subtours);
-    std::vector<uint8_t> enc_rnd(total_bytes_rnd, 0);
-    std::memcpy(enc_rnd.data(), rnd_nums.data(), payload_bytes_rnd);
+    const uint32_t seed = 42;
 
     int dbg_indiv0, dbg_cities;
 
     std::cout << "Sending node cache to FPGA (Stream 0)..." << std::endl;
     const std::vector<std::uint8_t> cache_bytes = encode_node_cache(problem);
     tb_push_bytes(in0, cache_bytes.data(), cache_bytes.size(), true);
-    processing_node(in0, out0, in1, out1, in_random,
+    processing_node(in0, out0, in1, out1,
                     kNumIndividuals,
                     kNumCities,
                     problem.capacity,
@@ -207,15 +149,15 @@ int run_integration_test(){
                     two_opt_k,
                     max_subtours,
                     0,
+                    seed,
                     &dbg_indiv0, &dbg_cities);
 
-    std::cout << "Streaming encoded populations and random numbers..." << std::endl;
+    std::cout << "Streaming encoded populations..." << std::endl;
     tb_push_bytes(in0, enc_0.data(), total_bytes_0, true);
     tb_push_bytes(in1, enc_1.data(), total_bytes_1, true);
-    tb_push_bytes(in_random, enc_rnd.data(), total_bytes_rnd, true);
 
     std::cout << "Executing Processing Node..." << std::endl;
-    processing_node(in0, out0, in1, out1, in_random,
+    processing_node(in0, out0, in1, out1,
                     kNumIndividuals,
                     kNumCities,
                     problem.capacity,
@@ -223,6 +165,7 @@ int run_integration_test(){
                     two_opt_k,
                     max_subtours,
                     0,
+                    seed,
                     &dbg_indiv0, &dbg_cities);
 
     std::cout << "Processing Node finished. Reading outputs from stream..." << std::endl;
@@ -231,23 +174,22 @@ int run_integration_test(){
     tb_pull_bytes(out0, got_0.data(), total_bytes_0);
     tb_pull_bytes(out1, got_1.data(), total_bytes_1);
 
-    // Build the hard-coded expected children via the host codec.
-    std::vector<Individual> exp_child_0 = build_population(problem, kExpChild0Tours);
-    std::vector<Individual> exp_child_1 = build_population(problem, kExpChild1Tours);
     const std::vector<Individual> got_child_0 = decode_population_fixed(problem, got_0.data(), kNumIndividuals);
     const std::vector<Individual> got_child_1 = decode_population_fixed(problem, got_1.data(), kNumIndividuals);
 
     std::cout << "Verifying Outputs..." << std::endl;
     int errors = 0;
     for (std::size_t i = 0; i < kNumIndividuals; ++i) {
-        if (got_child_0[i] != exp_child_0[i]) {
-            std::cout << "Stream 0 indiv " << i << " mismatch:\n -g:"
-                      << got_child_0[i] << "\n -e:" << exp_child_0[i] << std::endl;
+        uint32_t exp_fit_0 = compute_fitness(problem, got_child_0[i]);
+        if (got_child_0[i].fitness != exp_fit_0) {
+            std::cout << "Stream 0 indiv " << i << " fitness mismatch: got "
+                      << got_child_0[i].fitness << ", expected " << exp_fit_0 << std::endl;
             errors++;
         }
-        if (got_child_1[i] != exp_child_1[i]) {
-            std::cout << "Stream 1 indiv " << i << " mismatch:\n -g:"
-                      << got_child_1[i] << "\n -e:" << exp_child_1[i] << std::endl;
+        uint32_t exp_fit_1 = compute_fitness(problem, got_child_1[i]);
+        if (got_child_1[i].fitness != exp_fit_1) {
+            std::cout << "Stream 1 indiv " << i << " fitness mismatch: got "
+                      << got_child_1[i].fitness << ", expected " << exp_fit_1 << std::endl;
             errors++;
         }
     }
@@ -311,7 +253,6 @@ int run_integration_test_border_cases() {
     std::cout << "Running Integration Test (Border Cases, 15 cities)..." << std::endl;
     hls::stream<axi_word_t> in0("in0_border_cases"), out0("out0_border_cases");
     hls::stream<axi_word_t> in1("in1_border_cases"), out1("out1_border_cases");
-    hls::stream<axi_word_t> in_random("in_random_border_cases");
 
     const ProblemInstance problem = make_problem_border_cases();
     const std::vector<Individual> pop_0 = build_population(problem, kPop0Tours_border_cases);
@@ -323,23 +264,16 @@ int run_integration_test_border_cases() {
     const std::size_t total_bytes_0 = enc_0.size();
     const std::size_t total_bytes_1 = enc_1.size();
 
-    std::vector<uint32_t> rnd_nums = {
-        5, 9, 0, 0, 0, 0,
-        4, 14, 0, 0, 0, 0
-    };
     const int two_opt_k = 0;
     const int max_subtours = calc_max_n_subtours(problem);
-    const std::size_t payload_bytes_rnd = rnd_nums.size() * sizeof(uint32_t);
-    const std::size_t total_bytes_rnd = get_random_bytes(kNumIndividuals_border_cases, two_opt_k, max_subtours);
-    std::vector<uint8_t> enc_rnd(total_bytes_rnd, 0);
-    std::memcpy(enc_rnd.data(), rnd_nums.data(), payload_bytes_rnd);
+    const uint32_t seed = 17;
 
     int dbg_indiv0, dbg_cities;
 
     std::cout << "Sending node cache to FPGA (Stream 0, border cases)..." << std::endl;
     const std::vector<std::uint8_t> cache_bytes = encode_node_cache(problem);
     tb_push_bytes(in0, cache_bytes.data(), cache_bytes.size(), true);
-    processing_node(in0, out0, in1, out1, in_random,
+    processing_node(in0, out0, in1, out1,
                     static_cast<int>(kNumIndividuals_border_cases),
                     kNumCities_border_cases,
                     problem.capacity,
@@ -347,15 +281,15 @@ int run_integration_test_border_cases() {
                     two_opt_k,
                     max_subtours,
                     0,
+                    seed,
                     &dbg_indiv0, &dbg_cities);
 
-    std::cout << "Streaming encoded populations and random numbers (border cases)..." << std::endl;
+    std::cout << "Streaming encoded populations (border cases)..." << std::endl;
     tb_push_bytes(in0, enc_0.data(), total_bytes_0, true);
     tb_push_bytes(in1, enc_1.data(), total_bytes_1, true);
-    tb_push_bytes(in_random, enc_rnd.data(), total_bytes_rnd, true);
 
     std::cout << "Executing Processing Node (border cases)..." << std::endl;
-    processing_node(in0, out0, in1, out1, in_random,
+    processing_node(in0, out0, in1, out1,
                     static_cast<int>(kNumIndividuals_border_cases),
                     kNumCities_border_cases,
                     problem.capacity,
@@ -363,6 +297,7 @@ int run_integration_test_border_cases() {
                     two_opt_k,
                     max_subtours,
                     0,
+                    seed,
                     &dbg_indiv0, &dbg_cities);
 
     std::cout << "Processing Node (border cases) finished. Reading outputs from stream..." << std::endl;
@@ -370,9 +305,6 @@ int run_integration_test_border_cases() {
     std::vector<std::uint8_t> got_1(total_bytes_1);
     tb_pull_bytes(out0, got_0.data(), total_bytes_0);
     tb_pull_bytes(out1, got_1.data(), total_bytes_1);
-
-    std::vector<Individual> exp_child_0 = build_population(problem, kExpChild0Tours_border_cases);
-    std::vector<Individual> exp_child_1 = build_population(problem, kExpChild1Tours_border_cases);
 
     std::cout << "Decoding and verifying output individuals (border cases)..." << std::endl;
     std::vector<Individual> got_child_0;
@@ -389,14 +321,16 @@ int run_integration_test_border_cases() {
 
     int errors = 0;
     for (std::size_t i = 0; i < kNumIndividuals_border_cases; ++i) {
-        if (got_child_0[i] != exp_child_0[i]) {
-            std::cout << "Stream 0 indiv " << i << " mismatch:\n -g:"
-                      << got_child_0[i] << "\n -e:" << exp_child_0[i] << std::endl;
+        uint32_t exp_fit_0 = compute_fitness(problem, got_child_0[i]);
+        if (got_child_0[i].fitness != exp_fit_0) {
+            std::cout << "Stream 0 indiv " << i << " fitness mismatch: got "
+                      << got_child_0[i].fitness << ", expected " << exp_fit_0 << std::endl;
             errors++;
         }
-        if (got_child_1[i] != exp_child_1[i]) {
-            std::cout << "Stream 1 indiv " << i << " mismatch:\n -g:"
-                      << got_child_1[i] << "\n -e:" << exp_child_1[i] << std::endl;
+        uint32_t exp_fit_1 = compute_fitness(problem, got_child_1[i]);
+        if (got_child_1[i].fitness != exp_fit_1) {
+            std::cout << "Stream 1 indiv " << i << " fitness mismatch: got "
+                      << got_child_1[i].fitness << ", expected " << exp_fit_1 << std::endl;
             errors++;
         }
     }
@@ -442,7 +376,6 @@ int run_integration_test(const std::string& vrp_path, int two_opt_k) {
     std::cout << "Running Integration Test for: " << vrp_path << " (two_opt_k = " << two_opt_k << ")..." << std::endl;
     hls::stream<axi_word_t> in0("in0_big"), out0("out0_big");
     hls::stream<axi_word_t> in1("in1_big"), out1("out1_big");
-    hls::stream<axi_word_t> in_random("in_random_big");
 
     std::cout << "Loading problem from: " << vrp_path << std::endl;
     const ProblemInstance problem = parse_vrp(vrp_path);
@@ -464,16 +397,12 @@ int run_integration_test(const std::string& vrp_path, int two_opt_k) {
     const std::size_t total_bytes_0 = enc_0.size();
     const std::size_t total_bytes_1 = enc_1.size();
 
-    const std::size_t total_bytes_rnd = get_random_bytes(num_ind, two_opt_k, max_subtours);
-    std::vector<uint8_t> enc_rnd(total_bytes_rnd, 0);
-    generate_random_numbers(num_ind, enc_rnd.data(), problem.dimension - 1, two_opt_k, max_subtours, seed ^ 0xDEADBEEF);
-
     int dbg_indiv0 = 0, dbg_cities = 0;
 
     std::cout << "Sending node cache to FPGA (Stream 0, big instance)..." << std::endl;
     const std::vector<std::uint8_t> cache_bytes = encode_node_cache(problem);
     tb_push_bytes(in0, cache_bytes.data(), cache_bytes.size(), true);
-    processing_node(in0, out0, in1, out1, in_random,
+    processing_node(in0, out0, in1, out1,
                     static_cast<int>(num_ind),
                     problem.dimension - 1,
                     problem.capacity,
@@ -481,15 +410,15 @@ int run_integration_test(const std::string& vrp_path, int two_opt_k) {
                     two_opt_k,
                     max_subtours,
                     0,
+                    seed,
                     &dbg_indiv0, &dbg_cities);
 
-    std::cout << "Streaming encoded populations and random numbers (big instance)..." << std::endl;
+    std::cout << "Streaming encoded populations (big instance)..." << std::endl;
     tb_push_bytes(in0, enc_0.data(), total_bytes_0, true);
     tb_push_bytes(in1, enc_1.data(), total_bytes_1, true);
-    tb_push_bytes(in_random, enc_rnd.data(), total_bytes_rnd, true);
 
     std::cout << "Executing Processing Node (big instance)..." << std::endl;
-    processing_node(in0, out0, in1, out1, in_random,
+    processing_node(in0, out0, in1, out1,
                     static_cast<int>(num_ind),
                     problem.dimension - 1,
                     problem.capacity,
@@ -497,6 +426,7 @@ int run_integration_test(const std::string& vrp_path, int two_opt_k) {
                     two_opt_k,
                     max_subtours,
                     0,
+                    seed,
                     &dbg_indiv0, &dbg_cities);
 
     std::cout << "Processing Node (big instance) finished. Reading outputs from stream..." << std::endl;
@@ -542,6 +472,8 @@ int run_integration_test(const std::string& vrp_path, int two_opt_k) {
         std::cout << "Integration test for problem " << vrp_path << " (two_opt_k=" << two_opt_k << ") FAILED with " << errors << " errors." << std::endl;
     }
 
+    std::cout << std::endl;
+
     return errors;
 }
 
@@ -549,9 +481,9 @@ int main() {
     int errors = 0;
     int cur_err = 0;
 
-    std::cout << "\nRunning Converter Unit Test..." << std::endl;
-    cur_err = test_random_number_converter();
-    if (cur_err != 0) std::cout << "Converter Unit Test failed with " << cur_err << " errors." << std::endl;
+    std::cout << "\nRunning xoroshiro128++ Generator Unit Test..." << std::endl;
+    cur_err = test_xoroshiro128plusplus_generator();
+    if (cur_err != 0) std::cout << "xoroshiro128++ Generator Unit Test failed with " << cur_err << " errors." << std::endl;
     errors += cur_err;
 
     std::cout << "\nRunning Util Unit Test..." << std::endl;

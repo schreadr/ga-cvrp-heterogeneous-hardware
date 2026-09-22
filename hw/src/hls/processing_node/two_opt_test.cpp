@@ -41,8 +41,8 @@ static ProblemInstance make_problem() {
 // Simple software 2-opt implementation
 static void two_opt_software(
     Individual &ind,
-    const std::vector<uint32_t> &rnd_stream,
-    size_t &rnd_ptr,
+    std::vector<xoroshiro128plusplus> &worker_rngs,
+    int &worker_idx,
     const ProblemInstance &problem,
     CityIndex two_opt_k,
     CityIndex max_subtours,
@@ -73,9 +73,12 @@ static void two_opt_software(
             sub[i] = ind.tour[subtour_start + i].node_id;
         }
 
+        int w = worker_idx;
+        worker_idx = (worker_idx == N_TWO_OPT_WORKERS - 1) ? 0 : (worker_idx + 1);
+
         for (CityIndex m = 0; m < two_opt_k; ++m) {
-            uint32_t r1 = rnd_stream[rnd_ptr++];
-            uint32_t r2 = rnd_stream[rnd_ptr++];
+            uint32_t r1, r2;
+            worker_rngs[w].nextPair(r1, r2);
 
             if (subtour_len >= 3) {
                 int L_rel = r1 % subtour_len;
@@ -147,10 +150,6 @@ static void two_opt_software(
         subtour_start = subtour_end + 1;
     }
 
-    if (subtours_processed < max_subtours) {
-        rnd_ptr += (max_subtours - subtours_processed) * two_opt_k * 2;
-    }
-
     ind.fitness -= total_delta;
 }
 
@@ -159,7 +158,6 @@ int run_two_opt_test() {
 
     hls::stream_of_blocks<IndividualAsBeats> input;
     hls::stream_of_blocks<IndividualAsBeats> output;
-    hls::stream<RandomPair> random_stream("random_stream");
     
     const ProblemInstance problem = make_problem();
     
@@ -190,24 +188,21 @@ int run_two_opt_test() {
     tb_push_individuals(input, problem, input_population);
 
     const int max_subtours = std::max(calc_max_n_subtours(problem), 10);
-    const int randoms_per_indiv = max_subtours * kTwoOptK * 2;
-    std::vector<uint32_t> all_randoms(kNumIndividuals * randoms_per_indiv);
-
-    std::mt19937 rng(42);
-    for (size_t i = 0; i < all_randoms.size(); i += 2) {
-        all_randoms[i] = rng();
-        all_randoms[i + 1] = rng();
-        random_stream.write(RandomPair(all_randoms[i], all_randoms[i + 1]));
-    }
+    const uint32_t seed_two_opt = 42;
     
-    two_opt(input, output, random_stream, kNumIndividuals, CityIndex(kNumCities), CityIndex(kTwoOptK), CityIndex(max_subtours), false, cache);
+    two_opt(input, output, kNumIndividuals, CityIndex(kNumCities), CityIndex(kTwoOptK), CityIndex(max_subtours), false, cache, seed_two_opt);
 
     const std::vector<Individual> result = tb_pull_individuals(output, problem, kNumIndividuals);
     
     std::vector<Individual> expected_population = input_population;
-    size_t rnd_ptr = 0;
+    std::vector<xoroshiro128plusplus> sw_rngs(N_TWO_OPT_WORKERS);
+    for (int w = 0; w < N_TWO_OPT_WORKERS; ++w) {
+        uint32_t offset = static_cast<uint32_t>(w) * 0x9E3779B9u;
+        sw_rngs[w].init(seed_two_opt ^ offset);
+    }
+    int worker_idx = 0;
     for (int i = 0; i < kNumIndividuals; ++i) {
-        two_opt_software(expected_population[i], all_randoms, rnd_ptr, problem, CityIndex(kTwoOptK), CityIndex(max_subtours), false);
+        two_opt_software(expected_population[i], sw_rngs, worker_idx, problem, CityIndex(kTwoOptK), CityIndex(max_subtours), false);
     }
 
     std::cout << "Verifying Outputs..." << std::endl;

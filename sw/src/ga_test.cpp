@@ -379,11 +379,8 @@ bool test_run_ga_in_place_buffer_shift() {
     const std::size_t half_bytes = half_pop * bytes_per_ind;
 
     const int two_opt_k = 0;
-    const int max_subtours = calc_max_n_subtours(problem);
-    const std::size_t rnd_bytes = get_random_bytes(half_pop, two_opt_k, max_subtours);
     std::vector<std::uint8_t> src_0(half_bytes, 0);
     std::vector<std::uint8_t> src_1(half_bytes, 0);
-    std::vector<std::uint8_t> src_rnd(rnd_bytes, 0);
     std::vector<std::uint8_t> dst_0(half_bytes, 0);
     std::vector<std::uint8_t> dst_1(half_bytes, 0);
     std::vector<std::uint8_t> pop_buf(total_bytes, 0);
@@ -396,7 +393,6 @@ bool test_run_ga_in_place_buffer_shift() {
     params.two_opt_k = two_opt_k;
     params.buffer_src_0 = src_0.data();
     params.buffer_src_1 = src_1.data();
-    params.buffer_src_rnd = src_rnd.data();
     params.buffer_dst_0 = dst_0.data();
     params.buffer_dst_1 = dst_1.data();
     params.buffer_pop   = pop_buf.data();

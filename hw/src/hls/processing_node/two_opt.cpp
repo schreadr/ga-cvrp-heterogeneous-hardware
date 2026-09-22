@@ -156,12 +156,15 @@ static void two_opt_worker(
     hls::stream<NodeId>      &cities_in,
     hls::stream<SubtourMeta> &meta_out,
     hls::stream<NodeId>      &cities_out,
-    hls::stream<RandomPair>  &random_in,
     CityIndex num_cities,
     CityIndex two_opt_k,
     bool enable_precheck,
-    const CityData city_cache[MAX_CACHE_ENTRIES]
+    const CityData city_cache[MAX_CACHE_ENTRIES],
+    xoroshiro128plusplus &rng,
+    uint32_t seed_worker
 ) {
+    rng.init(seed_worker);
+
     NodeId local_tour[MAX_CITIES];
     bool batch_done = false;
 
@@ -183,9 +186,8 @@ static void two_opt_worker(
 
         if (len > 0) {
             MOVE_LOOP: for (CityIndex move = 0; move < two_opt_k; ++move) {
-                RandomPair rnd = random_in.read();
-                RandomNumber r1 = rnd.r1;
-                RandomNumber r2 = rnd.r2;
+                uint32_t r1, r2;
+                rng.nextPair(r1, r2);
 
                 if (len >= 3) {
                     CityIndex L_rel = r1 % len;
@@ -284,52 +286,39 @@ static void extract_subtours(
     }
 }
 
+static void forward_subtour_cities(
+    hls::stream<NodeId> &cities_in,
+    hls::stream<NodeId> &worker_cities,
+    CityIndex length
+) {
+    FORWARD_CITIES_LOOP: for (CityIndex i = 0; i < length; ++i) {
+        #pragma HLS PIPELINE II=1
+        worker_cities.write(cities_in.read());
+    }
+}
+
 template <int N_WORKERS>
-static void dispatch_subtours_and_randoms(
+static void dispatch_subtours(
     hls::stream<SubtourMeta> &meta_in,
     hls::stream<NodeId>      &cities_in,
-    hls::stream<RandomPair>  &random_stream,
     int num_individuals,
-    CityIndex two_opt_k,
-    CityIndex max_subtours,
     hls::stream<SubtourMeta> (&worker_meta)[N_WORKERS],
-    hls::stream<NodeId>      (&worker_cities)[N_WORKERS],
-    hls::stream<RandomPair>  (&worker_randoms)[N_WORKERS]
+    hls::stream<NodeId>      (&worker_cities)[N_WORKERS]
 ) {
     int worker_idx = 0;
 
     DISPATCH_INDIV_LOOP: for (int indiv = 0; indiv < num_individuals; ++indiv) {
-        CityIndex subtours_count = 0;
         bool indiv_done = false;
 
         DISPATCH_SUBTOURS_LOOP: while (!indiv_done) {
             SubtourMeta meta = meta_in.read();
             indiv_done = meta.last_of_indiv;
-            subtours_count++;
 
             int w = worker_idx;
             worker_idx = (worker_idx == N_WORKERS - 1) ? 0 : (worker_idx + 1);
 
             worker_meta[w].write(meta);
-
-            FORWARD_CITIES_LOOP: for (CityIndex i = 0; i < meta.length; ++i) {
-                #pragma HLS PIPELINE II=1
-                worker_cities[w].write(cities_in.read());
-            }
-
-            FORWARD_RNDS_LOOP: for (CityIndex k = 0; k < two_opt_k; ++k) {
-                #pragma HLS PIPELINE II=1
-                worker_randoms[w].write(random_stream.read());
-            }
-        }
-
-        CityIndex remaining_subtours = (subtours_count < max_subtours) ?
-            CityIndex(max_subtours - subtours_count) : CityIndex(0);
-        TwoCityIndex total_drain_moves = TwoCityIndex(remaining_subtours) * TwoCityIndex(two_opt_k);
-
-        DRAIN_RANDOMS_LOOP: for (TwoCityIndex m = 0; m < total_drain_moves; ++m) {
-            #pragma HLS PIPELINE II=1
-            random_stream.read();
+            forward_subtour_cities(cities_in, worker_cities[w], meta.length);
         }
     }
 
@@ -440,13 +429,13 @@ static void init_local_cache(
 static void two_opt_streaming(
     hls::stream_of_blocks<IndividualAsBeats> &in,
     hls::stream_of_blocks<IndividualAsBeats> &out,
-    hls::stream<RandomPair> &random_stream,
     int num_individuals,
     CityIndex num_cities,
     CityIndex two_opt_k,
     CityIndex max_subtours,
     bool enable_precheck,
-    const CityData local_cache[N_TWO_OPT_WORKERS][MAX_CACHE_ENTRIES]
+    const CityData local_cache[N_TWO_OPT_WORKERS][MAX_CACHE_ENTRIES],
+    uint32_t seed_two_opt
 ) {
     #pragma HLS DATAFLOW
 
@@ -459,13 +448,12 @@ static void two_opt_streaming(
     #pragma HLS STREAM variable=worker_meta depth=4
     hls::stream<NodeId>      worker_cities[N_TWO_OPT_WORKERS];
     #pragma HLS STREAM variable=worker_cities depth=MAX_CITIES
-    hls::stream<RandomPair>  worker_random_stream[N_TWO_OPT_WORKERS];
-    #pragma HLS STREAM variable=worker_random_stream depth=MAX_TWO_OPT_K
-
     hls::stream<SubtourMeta> worker_opt_meta[N_TWO_OPT_WORKERS];
     #pragma HLS STREAM variable=worker_opt_meta depth=4
     hls::stream<NodeId>      worker_opt_cities[N_TWO_OPT_WORKERS];
     #pragma HLS STREAM variable=worker_opt_cities depth=MAX_CITIES
+    xoroshiro128plusplus worker_rng[N_TWO_OPT_WORKERS];
+    #pragma HLS ARRAY_PARTITION variable=worker_rng complete dim=1
 
     hls::stream<BeatPacket>  beat_stream;
     #pragma HLS STREAM variable=beat_stream depth=16
@@ -479,10 +467,10 @@ static void two_opt_streaming(
         meta_stream, city_stream, fitness_stream
     );
 
-    dispatch_subtours_and_randoms<N_TWO_OPT_WORKERS>(
-        meta_stream, city_stream, random_stream,
-        num_individuals, two_opt_k, max_subtours,
-        worker_meta, worker_cities, worker_random_stream
+    dispatch_subtours<N_TWO_OPT_WORKERS>(
+        meta_stream, city_stream,
+        num_individuals,
+        worker_meta, worker_cities
     );
 
     TWO_OPT_WORKERS_LOOP: for (int w = 0; w < N_TWO_OPT_WORKERS; ++w) {
@@ -490,10 +478,11 @@ static void two_opt_streaming(
         two_opt_worker(
             worker_meta[w], worker_cities[w],
             worker_opt_meta[w], worker_opt_cities[w],
-            worker_random_stream[w],
             num_cities, two_opt_k,
             enable_precheck,
-            local_cache[w]
+            local_cache[w],
+            worker_rng[w],
+            seed_two_opt ^ (static_cast<uint32_t>(w) * 0x9E3779B9u)
         );
     }
 
@@ -512,13 +501,13 @@ static void two_opt_streaming(
 void two_opt(
     hls::stream_of_blocks<IndividualAsBeats> &in,
     hls::stream_of_blocks<IndividualAsBeats> &out,
-    hls::stream<RandomPair> &random_stream,
     int num_individuals,
     CityIndex num_cities,
     CityIndex two_opt_k,
     CityIndex max_subtours,
     bool enable_precheck,
-    const CityData city_cache[MAX_CACHE_ENTRIES]
+    const CityData city_cache[MAX_CACHE_ENTRIES],
+    uint32_t seed_two_opt
 ) {
     CityData local_cache[N_TWO_OPT_WORKERS][MAX_CACHE_ENTRIES];
     #pragma HLS ARRAY_PARTITION variable=local_cache complete dim=1
@@ -527,9 +516,10 @@ void two_opt(
     init_local_cache(city_cache, local_cache);
 
     two_opt_streaming(
-        in, out, random_stream,
+        in, out,
         num_individuals, num_cities, two_opt_k, max_subtours,
         enable_precheck,
-        local_cache
+        local_cache,
+        seed_two_opt
     );
 }

@@ -66,6 +66,7 @@ constexpr uint32_t CSR_INIT_CITY_CACHE         = 0x28 / 8;
 constexpr uint32_t CSR_TWO_OPT_K               = 0x30 / 8;
 constexpr uint32_t CSR_MAX_SUBTOURS            = 0x38 / 8;
 constexpr uint32_t CSR_TWO_OPT_ENABLE_PRECHECK = 0x40 / 8;
+constexpr uint32_t SEED                        = 0x48 / 8;
 
 constexpr const char kDefaultProblemFile[] = "../../problem_instances/P-n40-k5.vrp";
 
@@ -142,7 +143,6 @@ int main(int argc, char *argv[]) {
     const std::size_t half_pop_bytes = num_ind_per_stream * bytes_per_individual;
     const int max_subtours = calc_max_n_subtours(problem);
     validate_streaming_params(num_ind_per_stream, two_opt_k, max_subtours);
-    const std::size_t random_bytes = get_random_bytes(num_ind_per_stream, two_opt_k, max_subtours);
 
     std::cout << "Loaded problem: " << problem.name << std::endl;
     std::cout << "Dimension: " << problem.dimension << std::endl;
@@ -157,11 +157,10 @@ int main(int argc, char *argv[]) {
     // Stream 0 and Stream 1 have dedicated page-aligned hugepage buffers (Issue 3)
     std::uint8_t *src_mem_0 = allocate_buffer(coyote_thread, half_pop_bytes);
     std::uint8_t *src_mem_1 = allocate_buffer(coyote_thread, half_pop_bytes);
-    std::uint8_t *src_mem_rnd = allocate_buffer(coyote_thread, random_bytes);
     std::uint8_t *dst_mem_0 = allocate_buffer(coyote_thread, half_pop_bytes);
     std::uint8_t *dst_mem_1 = allocate_buffer(coyote_thread, half_pop_bytes);
 
-    if (!src_mem_0 || !src_mem_1 || !src_mem_rnd || !dst_mem_0 || !dst_mem_1) {
+    if (!src_mem_0 || !src_mem_1 || !dst_mem_0 || !dst_mem_1) {
         throw std::runtime_error("Could not allocate Coyote hugepage buffers; exiting...");
     }
 
@@ -176,10 +175,9 @@ int main(int argc, char *argv[]) {
         pop_mem.reset(reinterpret_cast<std::uint8_t *>(ptr));
     }
 
-    // Setup Scatter-Gather descriptors for Stream 0, Stream 1, and Stream 2 (random numbers)
+    // Setup Scatter-Gather descriptors for Stream 0 and Stream 1
     coyote::localSg src_sg_0 = { .addr = src_mem_0, .len = static_cast<uint32_t>(half_pop_bytes), .stream = true, .dest = 0 };
     coyote::localSg src_sg_1 = { .addr = src_mem_1, .len = static_cast<uint32_t>(half_pop_bytes), .stream = true, .dest = 1 };
-    coyote::localSg src_sg_rnd = { .addr = src_mem_rnd, .len = static_cast<uint32_t>(random_bytes), .stream = true, .dest = 2 };
 
     coyote::localSg dst_sg_0 = { .addr = dst_mem_0, .len = static_cast<uint32_t>(half_pop_bytes), .stream = true, .dest = 0 };
     coyote::localSg dst_sg_1 = { .addr = dst_mem_1, .len = static_cast<uint32_t>(half_pop_bytes), .stream = true, .dest = 1 };
@@ -210,6 +208,7 @@ int main(int argc, char *argv[]) {
     coyote_thread.setCSR(two_opt_k, CSR_TWO_OPT_K);
     coyote_thread.setCSR(max_subtours, CSR_MAX_SUBTOURS);
     coyote_thread.setCSR(1, CSR_TWO_OPT_ENABLE_PRECHECK);
+    coyote_thread.setCSR(seed, SEED);
 
     coyote_thread.setCSR(1, CSR_INIT_CITY_CACHE); // Dedicated register to trigger cache initialization
     coyote_thread.setCSR(CSR_CONTROL_START, CSR_CONTROL);
@@ -227,7 +226,8 @@ int main(int argc, char *argv[]) {
        coyote_thread.getCSR(CSR_INIT_CITY_CACHE) == 0 &&
        coyote_thread.getCSR(CSR_TWO_OPT_K) == static_cast<uint32_t>(two_opt_k) &&
        coyote_thread.getCSR(CSR_MAX_SUBTOURS) == static_cast<uint32_t>(max_subtours) &&
-       coyote_thread.getCSR(CSR_TWO_OPT_ENABLE_PRECHECK) == 1) {
+       coyote_thread.getCSR(CSR_TWO_OPT_ENABLE_PRECHECK) == 1 &&
+       coyote_thread.getCSR(SEED) == seed) {
         std::cout << "Successfully programmed vFPGA kernel configuration registers." << std::endl;
     } else {
         std::cerr << "Error: Failed to program vFPGA kernel configuration registers." << std::endl;
@@ -239,8 +239,7 @@ int main(int argc, char *argv[]) {
 
         coyote_thread.setCSR(CSR_CONTROL_START, CSR_CONTROL);
 
-        // Queue operations on Stream 2 (random numbers), Stream 0 (parents 1), Stream 1 (parents 2)
-        coyote_thread.invoke(coyote::CoyoteOper::LOCAL_READ, src_sg_rnd);
+        // Queue operations on Stream 0 (parents 1) and Stream 1 (parents 2)
         coyote_thread.invoke(coyote::CoyoteOper::LOCAL_TRANSFER, src_sg_0, dst_sg_0);
         coyote_thread.invoke(coyote::CoyoteOper::LOCAL_TRANSFER, src_sg_1, dst_sg_1);
 
@@ -261,8 +260,6 @@ int main(int argc, char *argv[]) {
         std::memcpy(src_mem_1, enc_1.data(), half_pop_bytes);
         std::memset(dst_mem_0, 0, half_pop_bytes);
         std::memset(dst_mem_1, 0, half_pop_bytes);
-
-        generate_random_numbers(num_ind_per_stream, src_mem_rnd, reg_num_cities, two_opt_k, max_subtours, seed ^ 0xDEADBEEF);
 
         std::cout << "Invoking FPGA for 1 generation..." << std::endl;
         coyote::cBench bench(1, 0);
@@ -306,7 +303,6 @@ int main(int argc, char *argv[]) {
         params.two_opt_k = two_opt_k;
         params.buffer_src_0 = src_mem_0;
         params.buffer_src_1 = src_mem_1;
-        params.buffer_src_rnd = src_mem_rnd;
         params.buffer_dst_0 = dst_mem_0;
         params.buffer_dst_1 = dst_mem_1;
         params.buffer_pop = pop_mem.get();

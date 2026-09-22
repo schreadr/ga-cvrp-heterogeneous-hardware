@@ -580,7 +580,6 @@ GASummary run_ga(const ProblemInstance& problem, GAParams& params, std::function
     std::uint8_t *buffer_src_1 = params.buffer_src_1;
     std::uint8_t *buffer_dst_0 = params.buffer_dst_0;
     std::uint8_t *buffer_dst_1 = params.buffer_dst_1;
-    std::uint8_t *buffer_src_rnd = params.buffer_src_rnd;
     std::uint8_t *pop_buffer = params.buffer_pop;
 
     const std::size_t print_interval = std::max<std::size_t>(1, params.n_generations / 10);
@@ -603,7 +602,6 @@ GASummary run_ga(const ProblemInstance& problem, GAParams& params, std::function
         create_parent_pairs(population, parents1, parents2, new_seed());
         population_to_buffer(parents1, buffer_src_0, problem.dimension);
         population_to_buffer(parents2, buffer_src_1, problem.dimension);
-        generate_random_numbers(half_pop, buffer_src_rnd, problem.dimension - 1, params.two_opt_k, max_subtours, new_seed());
         auto t1 = std::chrono::steady_clock::now();
         
         create_new_generation();

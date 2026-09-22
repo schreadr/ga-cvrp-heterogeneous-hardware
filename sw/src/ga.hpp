@@ -148,7 +148,6 @@ struct GAParams {
 
     std::uint8_t* buffer_src_0 = nullptr;
     std::uint8_t* buffer_src_1 = nullptr;
-    std::uint8_t* buffer_src_rnd = nullptr;
     std::uint8_t* buffer_dst_0 = nullptr;
     std::uint8_t* buffer_dst_1 = nullptr;
 
