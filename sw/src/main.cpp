@@ -80,6 +80,122 @@ std::uint8_t *allocate_buffer(coyote::cThread &coyote_thread, std::size_t bytes)
     return reinterpret_cast<std::uint8_t *>(coyote_thread.getMem({coyote::CoyoteAllocType::HPF, allocation_bytes}));
 }
 
+bool run_smoke_test(int vfpga_id,
+                    const ProblemInstance &problem,
+                    std::size_t pop_size,
+                    int two_opt_k,
+                    bool two_opt_enable_precheck,
+                    std::uint32_t seed) {
+    HEADER("SMOKE TEST (1 GENERATION ON vFPGA " + std::to_string(vfpga_id) + ")");
+    coyote::cThread coyote_thread(vfpga_id, getpid());
+
+    const std::size_t num_ind_per_stream = pop_size / 2;
+    const int beats_per_individual = get_total_axi_beats(problem.dimension - 1);
+    const std::size_t bytes_per_individual = beats_per_individual * AXI_BYTES;
+    const std::size_t pop_bytes = pop_size * bytes_per_individual;
+    const std::size_t half_pop_bytes = num_ind_per_stream * bytes_per_individual;
+
+    std::uint8_t *src_mem_0 = allocate_buffer(coyote_thread, half_pop_bytes);
+    std::uint8_t *src_mem_1 = allocate_buffer(coyote_thread, half_pop_bytes);
+    std::uint8_t *dst_mem_0 = allocate_buffer(coyote_thread, half_pop_bytes);
+    std::uint8_t *dst_mem_1 = allocate_buffer(coyote_thread, half_pop_bytes);
+
+    if (!src_mem_0 || !src_mem_1 || !dst_mem_0 || !dst_mem_1) {
+        throw std::runtime_error("Could not allocate Coyote hugepage buffers for vFPGA " + std::to_string(vfpga_id) + "; exiting...");
+    }
+
+    coyote::localSg src_sg_0 = { .addr = src_mem_0, .len = static_cast<uint32_t>(half_pop_bytes), .stream = true, .dest = 0 };
+    coyote::localSg src_sg_1 = { .addr = src_mem_1, .len = static_cast<uint32_t>(half_pop_bytes), .stream = true, .dest = 1 };
+    coyote::localSg dst_sg_0 = { .addr = dst_mem_0, .len = static_cast<uint32_t>(half_pop_bytes), .stream = true, .dest = 0 };
+    coyote::localSg dst_sg_1 = { .addr = dst_mem_1, .len = static_cast<uint32_t>(half_pop_bytes), .stream = true, .dest = 1 };
+
+    const uint32_t reg_num_ind = static_cast<uint32_t>(num_ind_per_stream);
+    const uint32_t reg_num_cities = problem.dimension - 1;
+
+    std::cout << "Initializing node cache on vFPGA " << vfpga_id << " beforehand via stream 0..." << std::endl;
+    const std::vector<uint8_t> cache_bytes = encode_node_cache(problem);
+    std::uint8_t *cache_mem = allocate_buffer(coyote_thread, cache_bytes.size());
+    if (!cache_mem) {
+        throw std::runtime_error("Could not allocate Coyote hugepage buffer for cache on vFPGA " + std::to_string(vfpga_id) + "; exiting...");
+    }
+    std::memcpy(cache_mem, cache_bytes.data(), cache_bytes.size());
+
+    coyote::localSg cache_sg = {
+        .addr = cache_mem,
+        .len = static_cast<uint32_t>(cache_bytes.size()),
+        .stream = true,
+        .dest = 0
+    };
+
+    coyote_thread.setCSR(reg_num_ind, CSR_NUM_INDIVIDUALS);
+    coyote_thread.setCSR(reg_num_cities, CSR_NUM_CITIES);
+    coyote_thread.setCSR(problem.capacity, CSR_VEHICLE_CAPACITY);
+    coyote_thread.setCSR(two_opt_k, CSR_TWO_OPT_K);
+    coyote_thread.setCSR(two_opt_enable_precheck ? 1 : 0, CSR_TWO_OPT_ENABLE_PRECHECK);
+    coyote_thread.setCSR(seed, CSR_SEED);
+
+    coyote_thread.setCSR(1, CSR_INIT_CITY_CACHE);
+    coyote_thread.setCSR(CSR_CONTROL_START, CSR_CONTROL);
+
+    coyote_thread.invoke(coyote::CoyoteOper::LOCAL_READ, cache_sg);
+    while (coyote_thread.checkCompleted(coyote::CoyoteOper::LOCAL_READ) != 1) {}
+    std::cout << "Node cache successfully initialized on vFPGA " << vfpga_id << "." << std::endl;
+    coyote_thread.setCSR(0, CSR_INIT_CITY_CACHE);
+
+    auto create_new_generation = [&]() {
+        coyote_thread.clearCompleted();
+        coyote_thread.setCSR(CSR_CONTROL_START, CSR_CONTROL);
+        coyote_thread.invoke(coyote::CoyoteOper::LOCAL_TRANSFER, src_sg_0, dst_sg_0);
+        coyote_thread.invoke(coyote::CoyoteOper::LOCAL_TRANSFER, src_sg_1, dst_sg_1);
+        while (coyote_thread.checkCompleted(coyote::CoyoteOper::LOCAL_TRANSFER) != 2) {}
+    };
+
+    std::cout << "Generating initial population for smoke test on vFPGA " << vfpga_id << "..." << std::endl;
+    const std::vector<Individual> init_pop_0 = build_initial_population(problem, num_ind_per_stream, seed);
+    const std::vector<Individual> init_pop_1 = build_initial_population(problem, num_ind_per_stream, seed ^ 0xBEEF);
+
+    const std::vector<std::uint8_t> enc_0 = encode_population_fixed(problem, init_pop_0);
+    const std::vector<std::uint8_t> enc_1 = encode_population_fixed(problem, init_pop_1);
+
+    std::memcpy(src_mem_0, enc_0.data(), half_pop_bytes);
+    std::memcpy(src_mem_1, enc_1.data(), half_pop_bytes);
+    std::memset(dst_mem_0, 0, half_pop_bytes);
+    std::memset(dst_mem_1, 0, half_pop_bytes);
+
+    std::cout << "Invoking vFPGA " << vfpga_id << " for 1 generation..." << std::endl;
+    coyote::cBench bench(1, 0);
+    bench.execute(create_new_generation, [](){});
+    double throughput = ((double) pop_bytes) / (1024.0 * 1024.0 * 1e-9 * bench.getAvg());
+    std::cout << "Average throughput: " << std::setw(8) << throughput << " MB/s; " << std::endl;
+
+    std::cout << "Decoding output individuals and verifying fitness..." << std::endl;
+    const std::vector<Individual> children_0 = decode_population_fixed(problem, dst_mem_0, num_ind_per_stream);
+    const std::vector<Individual> children_1 = decode_population_fixed(problem, dst_mem_1, num_ind_per_stream);
+
+    std::vector<Individual> children;
+    children.reserve(pop_size);
+    children.insert(children.end(), children_0.begin(), children_0.end());
+    children.insert(children.end(), children_1.begin(), children_1.end());
+
+    int errors = 0;
+    for (std::size_t i = 0; i < pop_size; ++i) {
+        uint32_t exp_fit = compute_fitness(problem, children[i]);
+        if (children[i].fitness != exp_fit) {
+            std::cerr << "Mismatch in individual " << i << ": got "
+                      << children[i].fitness << ", expected " << exp_fit << std::endl;
+            errors++;
+        }
+    }
+
+    if (errors == 0) {
+        std::cout << "SMOKE TEST PASSED on vFPGA " << vfpga_id << ": Processed " << pop_size << " individuals successfully on FPGA." << std::endl;
+        return true;
+    } else {
+        std::cerr << "SMOKE TEST FAILED on vFPGA " << vfpga_id << " with " << errors << " errors." << std::endl;
+        return false;
+    }
+}
+
 int main(int argc, char *argv[]) {
     std::size_t population_size_multiplier = 0;
     std::size_t n_generations = 0;
@@ -150,11 +266,9 @@ int main(int argc, char *argv[]) {
     if (pop_size % 2 != 0) {
         pop_size += 1;
     }
-    const std::size_t num_ind_per_stream = pop_size / 2;
     const int beats_per_individual = get_total_axi_beats(problem.dimension - 1);
     const std::size_t bytes_per_individual = beats_per_individual * AXI_BYTES;
     const std::size_t pop_bytes = pop_size * bytes_per_individual;
-    const std::size_t half_pop_bytes = num_ind_per_stream * bytes_per_individual;
     const int max_subtours = calc_max_n_subtours(problem);
 
     std::cout << "Loaded problem: " << problem.name << std::endl;
@@ -164,106 +278,18 @@ int main(int argc, char *argv[]) {
     std::cout << "Max subtours: " << max_subtours << std::endl;
 
     if (smoke_test) {
-        HEADER("SMOKE TEST (1 GENERATION ON FPGA)");
-        coyote::cThread coyote_thread(DEFAULT_VFPGA_ID, getpid());
-
-        std::uint8_t *src_mem_0 = allocate_buffer(coyote_thread, half_pop_bytes);
-        std::uint8_t *src_mem_1 = allocate_buffer(coyote_thread, half_pop_bytes);
-        std::uint8_t *dst_mem_0 = allocate_buffer(coyote_thread, half_pop_bytes);
-        std::uint8_t *dst_mem_1 = allocate_buffer(coyote_thread, half_pop_bytes);
-
-        if (!src_mem_0 || !src_mem_1 || !dst_mem_0 || !dst_mem_1) {
-            throw std::runtime_error("Could not allocate Coyote hugepage buffers; exiting...");
-        }
-
-        coyote::localSg src_sg_0 = { .addr = src_mem_0, .len = static_cast<uint32_t>(half_pop_bytes), .stream = true, .dest = 0 };
-        coyote::localSg src_sg_1 = { .addr = src_mem_1, .len = static_cast<uint32_t>(half_pop_bytes), .stream = true, .dest = 1 };
-        coyote::localSg dst_sg_0 = { .addr = dst_mem_0, .len = static_cast<uint32_t>(half_pop_bytes), .stream = true, .dest = 0 };
-        coyote::localSg dst_sg_1 = { .addr = dst_mem_1, .len = static_cast<uint32_t>(half_pop_bytes), .stream = true, .dest = 1 };
-
-        const uint32_t reg_num_ind = static_cast<uint32_t>(num_ind_per_stream);
-        const uint32_t reg_num_cities = problem.dimension - 1;
-
-        std::cout << "Initializing node cache on FPGA beforehand via stream 0..." << std::endl;
-        const std::vector<uint8_t> cache_bytes = encode_node_cache(problem);
-        std::uint8_t *cache_mem = allocate_buffer(coyote_thread, cache_bytes.size());
-        if (!cache_mem) {
-            throw std::runtime_error("Could not allocate Coyote hugepage buffer for cache; exiting...");
-        }
-        std::memcpy(cache_mem, cache_bytes.data(), cache_bytes.size());
-
-        coyote::localSg cache_sg = {
-            .addr = cache_mem,
-            .len = static_cast<uint32_t>(cache_bytes.size()),
-            .stream = true,
-            .dest = 0
-        };
-
-        coyote_thread.setCSR(reg_num_ind, CSR_NUM_INDIVIDUALS);
-        coyote_thread.setCSR(reg_num_cities, CSR_NUM_CITIES);
-        coyote_thread.setCSR(problem.capacity, CSR_VEHICLE_CAPACITY);
-        coyote_thread.setCSR(two_opt_k, CSR_TWO_OPT_K);
-        coyote_thread.setCSR(two_opt_enable_precheck ? 1 : 0, CSR_TWO_OPT_ENABLE_PRECHECK);
-        coyote_thread.setCSR(seed, CSR_SEED);
-
-        coyote_thread.setCSR(1, CSR_INIT_CITY_CACHE);
-        coyote_thread.setCSR(CSR_CONTROL_START, CSR_CONTROL);
-
-        coyote_thread.invoke(coyote::CoyoteOper::LOCAL_READ, cache_sg);
-        while (coyote_thread.checkCompleted(coyote::CoyoteOper::LOCAL_READ) != 1) {}
-        std::cout << "Node cache successfully initialized on FPGA." << std::endl;
-        coyote_thread.setCSR(0, CSR_INIT_CITY_CACHE);
-
-        auto create_new_generation = [&]() {
-            coyote_thread.clearCompleted();
-            coyote_thread.setCSR(CSR_CONTROL_START, CSR_CONTROL);
-            coyote_thread.invoke(coyote::CoyoteOper::LOCAL_TRANSFER, src_sg_0, dst_sg_0);
-            coyote_thread.invoke(coyote::CoyoteOper::LOCAL_TRANSFER, src_sg_1, dst_sg_1);
-            while (coyote_thread.checkCompleted(coyote::CoyoteOper::LOCAL_TRANSFER) != 2) {}
-        };
-
-        std::cout << "Generating initial population for smoke test..." << std::endl;
-        const std::vector<Individual> init_pop_0 = build_initial_population(problem, num_ind_per_stream, seed);
-        const std::vector<Individual> init_pop_1 = build_initial_population(problem, num_ind_per_stream, seed ^ 0xBEEF);
-
-        const std::vector<std::uint8_t> enc_0 = encode_population_fixed(problem, init_pop_0);
-        const std::vector<std::uint8_t> enc_1 = encode_population_fixed(problem, init_pop_1);
-
-        std::memcpy(src_mem_0, enc_0.data(), half_pop_bytes);
-        std::memcpy(src_mem_1, enc_1.data(), half_pop_bytes);
-        std::memset(dst_mem_0, 0, half_pop_bytes);
-        std::memset(dst_mem_1, 0, half_pop_bytes);
-
-        std::cout << "Invoking FPGA for 1 generation..." << std::endl;
-        coyote::cBench bench(1, 0);
-        bench.execute(create_new_generation, [](){});
-        double throughput = ((double) pop_bytes) / (1024.0 * 1024.0 * 1e-9 * bench.getAvg());
-        std::cout << "Average throughput: " << std::setw(8) << throughput << " MB/s; " << std::endl;
-
-        std::cout << "Decoding output individuals and verifying fitness..." << std::endl;
-        const std::vector<Individual> children_0 = decode_population_fixed(problem, dst_mem_0, num_ind_per_stream);
-        const std::vector<Individual> children_1 = decode_population_fixed(problem, dst_mem_1, num_ind_per_stream);
-
-        std::vector<Individual> children;
-        children.reserve(pop_size);
-        children.insert(children.end(), children_0.begin(), children_0.end());
-        children.insert(children.end(), children_1.begin(), children_1.end());
-
-        int errors = 0;
-        for (std::size_t i = 0; i < pop_size; ++i) {
-            uint32_t exp_fit = compute_fitness(problem, children[i]);
-            if (children[i].fitness != exp_fit) {
-                std::cerr << "Mismatch in individual " << i << ": got "
-                          << children[i].fitness << ", expected " << exp_fit << std::endl;
-                errors++;
+        HEADER("SMOKE TEST (1 GENERATION ON EACH vFPGA)");
+        bool all_passed = true;
+        for (unsigned int vfid = 0; vfid < num_vfpgas; ++vfid) {
+            if (!run_smoke_test(vfid, problem, pop_size, two_opt_k, two_opt_enable_precheck, seed)) {
+                all_passed = false;
             }
         }
-
-        if (errors == 0) {
-            std::cout << "SMOKE TEST PASSED: Processed " << pop_size << " individuals successfully on FPGA." << std::endl;
+        if (all_passed) {
+            std::cout << "ALL SMOKE TESTS PASSED (" << num_vfpgas << " vFPGA(s))." << std::endl;
             return EXIT_SUCCESS;
         } else {
-            std::cerr << "SMOKE TEST FAILED with " << errors << " errors." << std::endl;
+            std::cerr << "SMOKE TEST FAILED on one or more vFPGAs." << std::endl;
             return EXIT_FAILURE;
         }
     } else {
