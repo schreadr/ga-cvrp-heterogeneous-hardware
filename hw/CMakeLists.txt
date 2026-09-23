@@ -44,6 +44,11 @@ set(EN_MEM 0)
 # Number of vFPGAs (user applications)
 set(N_REGIONS 2)
 
+# Pipeline stages across SLRs to improve timing closure
+set(NR_SH_S0 4 CACHE STRING "Shell host stage 0" FORCE)
+set(NR_DH_S0 4 CACHE STRING "Dynamic host stage 0" FORCE)
+set(NR_DH_S1 4 CACHE STRING "Dynamic host stage 1" FORCE)
+
 # Since timing closure with HBM can be difficult, run place and route with optimizations 
 set(BUILD_OPT 1)
 
