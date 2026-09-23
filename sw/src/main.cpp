@@ -300,32 +300,6 @@ int main(int argc, char *argv[]) {
             coyote_threads.emplace_back(std::make_unique<coyote::cThread>(vfid, getpid()));
         }
 
-        // Initialize node cache on all vFPGAs beforehand via Stream 0
-        std::cout << "Initializing node cache on " << num_vfpgas << " vFPGA(s) beforehand via stream 0..." << std::endl;
-        const std::vector<uint8_t> cache_bytes = encode_node_cache(problem);
-        for (unsigned int vfid = 0; vfid < num_vfpgas; ++vfid) {
-            std::uint8_t *cache_mem = allocate_buffer(*coyote_threads[vfid], cache_bytes.size());
-            if (!cache_mem) {
-                throw std::runtime_error("Could not allocate Coyote hugepage buffer for cache on vFPGA " + std::to_string(vfid));
-            }
-            std::memcpy(cache_mem, cache_bytes.data(), cache_bytes.size());
-
-            coyote::localSg cache_sg = {
-                .addr = cache_mem,
-                .len = static_cast<uint32_t>(cache_bytes.size()),
-                .stream = true,
-                .dest = 0
-            };
-
-            coyote_threads[vfid]->setCSR(1, CSR_INIT_CITY_CACHE);
-            coyote_threads[vfid]->setCSR(CSR_CONTROL_START, CSR_CONTROL);
-
-            coyote_threads[vfid]->invoke(coyote::CoyoteOper::LOCAL_READ, cache_sg);
-            while (coyote_threads[vfid]->checkCompleted(coyote::CoyoteOper::LOCAL_READ) != 1) {}
-            coyote_threads[vfid]->setCSR(0, CSR_INIT_CITY_CACHE);
-        }
-        std::cout << "Node cache successfully initialized on all " << num_vfpgas << " vFPGA(s)." << std::endl;
-
         // Determine micro-batch size
         std::size_t batch_ind_per_stream = micro_batch_size;
         if (batch_ind_per_stream == 0) {
@@ -361,6 +335,34 @@ int main(int argc, char *argv[]) {
             }
         }
         std::cout << "Successfully programmed vFPGA kernel configuration registers on all " << num_vfpgas << " vFPGAs." << std::endl;
+
+        // Initialize node cache on all vFPGAs beforehand via Stream 0
+        std::cout << "Initializing node cache on " << num_vfpgas << " vFPGA(s) beforehand via stream 0..." << std::endl;
+        const std::vector<uint8_t> cache_bytes = encode_node_cache(problem);
+        for (unsigned int vfid = 0; vfid < num_vfpgas; ++vfid) {
+            std::uint8_t *cache_mem = allocate_buffer(*coyote_threads[vfid], cache_bytes.size());
+            if (!cache_mem) {
+                throw std::runtime_error("Could not allocate Coyote hugepage buffer for cache on vFPGA " + std::to_string(vfid));
+            }
+            std::memcpy(cache_mem, cache_bytes.data(), cache_bytes.size());
+
+            coyote::localSg cache_sg = {
+                .addr = cache_mem,
+                .len = static_cast<uint32_t>(cache_bytes.size()),
+                .stream = true,
+                .dest = 0
+            };
+
+            coyote_threads[vfid]->clearCompleted();
+            coyote_threads[vfid]->setCSR(1, CSR_INIT_CITY_CACHE);
+            coyote_threads[vfid]->setCSR(CSR_CONTROL_START, CSR_CONTROL);
+
+            coyote_threads[vfid]->invoke(coyote::CoyoteOper::LOCAL_READ, cache_sg);
+            while (coyote_threads[vfid]->checkCompleted(coyote::CoyoteOper::LOCAL_READ) != 1) {}
+            coyote_threads[vfid]->setCSR(0, CSR_INIT_CITY_CACHE);
+            coyote_threads[vfid]->clearCompleted();
+        }
+        std::cout << "Node cache successfully initialized on all " << num_vfpgas << " vFPGA(s)." << std::endl;
 
         // Allocate double-buffered slots per vFPGA
         const std::size_t slots_per_vfpga = 2;

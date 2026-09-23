@@ -784,7 +784,7 @@ GASummary run_ga_pipelined(
             parent_queues[finished_job.vfid].push(std::move(finished_job));
         }
 
-        if (batches_completed % log_interval_batches == 0 || batches_completed == total_batches_to_process) {
+        if (batches_completed == 1 || batches_completed % log_interval_batches == 0 || batches_completed == total_batches_to_process) {
             const double current_best = static_cast<double>(population_vec[0].fitness) / static_cast<double>(problem.scaling);
             std::cout << "Pipelined Batch " << batches_completed << "/" << total_batches_to_process
                       << " completed. Best fitness: " << current_best << std::endl;
