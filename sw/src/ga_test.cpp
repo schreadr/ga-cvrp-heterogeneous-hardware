@@ -440,14 +440,14 @@ bool test_run_ga_in_place_buffer_shift() {
         return false;
     }
 
-    // Expected final layout in pop_buf:
+    // Expected final layout in pop_buf with parent fallback:
     // Slot 0: Offspring (fitness 102)
     // Slot 1: Offspring (fitness 111)
     // Slot 2: Parent 0 (fitness 131)  <- Shifted from slot 0 to slot 2 (j=2 > i=0)
-    // Slot 3: Offspring (fitness 147)
-    // Slot 4: Offspring (fitness 156)
-    // Slot 5: Offspring (fitness 187)
-    const std::vector<std::uint32_t> expected_fitnesses = {102, 111, 131, 147, 156, 187};
+    // Slot 3: Parent 1 (fitness 142)  <- Retained parent fallback
+    // Slot 4: Population member (fitness 150)
+    // Slot 5: Offspring (fitness 156)
+    const std::vector<std::uint32_t> expected_fitnesses = {102, 111, 131, 142, 150, 156};
 
     for (std::size_t i = 0; i < pop_size; ++i) {
         Individual ind = decode_individual_fixed(problem, params.buffer_pop + i * bytes_per_ind);
@@ -470,6 +470,52 @@ bool test_run_ga_in_place_buffer_shift() {
     }
 
     std::cout << "PASS [run_ga_in_place_buffer_shift]\n";
+    return true;
+}
+
+bool test_update_generation_with_parents() {
+    const uint8_t dummy1 = 1, dummy2 = 2, dummy3 = 3, dummy4 = 4;
+    std::vector<EncodedIndividual> parents1 = {
+        {&dummy1, 50, 1001},
+        {&dummy2, 70, 1002}
+    };
+    std::vector<EncodedIndividual> parents2 = {
+        {&dummy3, 60, 2001},
+        {&dummy4, 40, 2002}
+    };
+
+    // stream 0, child 0: fitness 45 (< 50, strictly better -> admit child)
+    // stream 0, child 1: fitness 80 (>= 70, worse -> keep parent 1)
+    // stream 1, child 0: fitness 60 (>= 60, equal -> keep parent 0)
+    // stream 1, child 1: fitness 35 (< 40, strictly better -> admit child)
+    const uint8_t c0 = 10, c1 = 11, c2 = 12, c3 = 13;
+    std::vector<EncodedIndividual> offspring = {
+        {&c0, 45, 3001},
+        {&c1, 80, 3002},
+        {&c2, 60, 3003},
+        {&c3, 35, 3004}
+    };
+
+    update_generation_with_parents(offspring, parents1, parents2);
+
+    if (offspring[0].fitness != 45 || offspring[0].bytes != &c0) {
+        std::cerr << "FAIL [test_update_generation_with_parents]: stream 0 child 0 should be admitted\n";
+        return false;
+    }
+    if (offspring[1].fitness != 70 || offspring[1].bytes != &dummy2) {
+        std::cerr << "FAIL [test_update_generation_with_parents]: stream 0 child 1 should be replaced by parent 1\n";
+        return false;
+    }
+    if (offspring[2].fitness != 60 || offspring[2].bytes != &dummy3) {
+        std::cerr << "FAIL [test_update_generation_with_parents]: stream 1 child 0 should be replaced by parent 0\n";
+        return false;
+    }
+    if (offspring[3].fitness != 35 || offspring[3].bytes != &c3) {
+        std::cerr << "FAIL [test_update_generation_with_parents]: stream 1 child 1 should be admitted\n";
+        return false;
+    }
+
+    std::cout << "PASS [test_update_generation_with_parents]\n";
     return true;
 }
 
@@ -707,6 +753,7 @@ int main() {
 
     // run_ga tests
     run("run_ga (in-place pop_buffer shift integrity)", test_run_ga_in_place_buffer_shift);
+    run("update_generation_with_parents (parent fallback)", test_update_generation_with_parents);
 
     // validate_encoding_constants tests ("validate the validation")
     run("validate_encoding_constants (valid instance)", test_validate_constants_valid);

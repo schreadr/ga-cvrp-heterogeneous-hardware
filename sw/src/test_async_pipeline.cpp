@@ -169,6 +169,12 @@ void test_run_ga_pipelined_simulation(std::size_t num_vfpgas) {
         // Simulate hardware processing latency
         std::this_thread::sleep_for(std::chrono::microseconds(100));
 
+        // Verify parents are attached to BatchJob
+        if (job.parents1.size() != job.num_ind_per_stream || job.parents2.size() != job.num_ind_per_stream) {
+            std::cerr << "FAIL: BatchJob parents vectors not populated on job.\n";
+            std::exit(EXIT_FAILURE);
+        }
+
         // Copy parent bytes to destination offspring bytes
         std::memcpy(job.dst_buf_0, job.src_buf_0, job.num_ind_per_stream * bytes_per_ind);
         std::memcpy(job.dst_buf_1, job.src_buf_1, job.num_ind_per_stream * bytes_per_ind);
@@ -296,6 +302,11 @@ void test_run_ga_pipelined_reproducibility() {
             // Introduce intentional randomized jitter per vFPGA to simulate out-of-order completion
             int jitter_us = 50 + (rand() % 150);
             std::this_thread::sleep_for(std::chrono::microseconds(jitter_us));
+
+            if (job.parents1.size() != job.num_ind_per_stream || job.parents2.size() != job.num_ind_per_stream) {
+                std::cerr << "FAIL: BatchJob parents vectors not populated on job in reproducibility test.\n";
+                std::exit(EXIT_FAILURE);
+            }
 
             std::memcpy(job.dst_buf_0, job.src_buf_0, job.num_ind_per_stream * bytes_per_ind);
             std::memcpy(job.dst_buf_1, job.src_buf_1, job.num_ind_per_stream * bytes_per_ind);

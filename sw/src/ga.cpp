@@ -450,6 +450,29 @@ std::vector<Individual> build_initial_population(const ProblemInstance &problem,
 }
 
 /**
+ * Updates offspring in-place using parent fallback: a child is admitted into the new generation
+ * only if its fitness is strictly better than the parent in the parents array with the same index
+ * (stream 0 vs 1). Otherwise, the parent is retained in its place.
+ */
+void update_generation_with_parents(
+    std::vector<EncodedIndividual> &offspring,
+    const std::vector<EncodedIndividual> &parents1,
+    const std::vector<EncodedIndividual> &parents2
+) {
+    const std::size_t n = std::min(parents1.size(), parents2.size());
+    for (std::size_t j = 0; j < n; ++j) {
+        // Stream 0: Child 0 vs Parent 0
+        if (offspring[j].fitness >= parents1[j].fitness) {
+            offspring[j] = parents1[j];
+        }
+        // Stream 1: Child 1 vs Parent 1
+        if (offspring[n + j].fitness >= parents2[j].fitness) {
+            offspring[n + j] = parents2[j];
+        }
+    }
+}
+
+/**
  * Update the population with the new generation, keeping the best n_keep_best individuals over both generations. The new generation is sorted by fitness in ascending order (lower fitness is better). Duplicates are handled by replacing them with individuals from the new generation.
  */
 void update_population(std::vector<EncodedIndividual> &population, std::vector<EncodedIndividual> &new_generation, std::vector<EncodedIndividual> &new_population, int n_keep_best){
@@ -611,6 +634,7 @@ GASummary run_ga(const ProblemInstance& problem, GAParams& params, std::function
 
         population_from_buffer(buffer_dst_0, half_pop, next_generation, problem.dimension, 0);
         population_from_buffer(buffer_dst_1, half_pop, next_generation, problem.dimension, half_pop);
+        update_generation_with_parents(next_generation.get(), parents1, parents2);
         update_population(population, next_generation, next_population, n_keep);
         std::swap(population, next_population);
         population_to_buffer(population, pop_buffer, problem.dimension, true);
@@ -739,6 +763,8 @@ GASummary run_ga_pipelined(
         job.src_buf_1 = slot.src_buf_1;
         job.dst_buf_0 = slot.dst_buf_0;
         job.dst_buf_1 = slot.dst_buf_1;
+        job.parents1 = parents1;
+        job.parents2 = parents2;
 
         parent_queues[job.vfid].push(std::move(job));
     }
@@ -764,6 +790,8 @@ GASummary run_ga_pipelined(
         population_from_buffer(finished_job.dst_buf_0, finished_job.num_ind_per_stream, batch_offspring, problem.dimension, 0);
         population_from_buffer(finished_job.dst_buf_1, finished_job.num_ind_per_stream, batch_offspring, problem.dimension, finished_job.num_ind_per_stream);
 
+        update_generation_with_parents(batch_offspring, finished_job.parents1, finished_job.parents2);
+
         update_population(population_vec, batch_offspring, next_population_vec, n_keep);
         std::swap(population_vec, next_population_vec);
         population_to_buffer(population_vec, params.buffer_pop, problem.dimension, true);
@@ -781,6 +809,8 @@ GASummary run_ga_pipelined(
 
             finished_job.batch_id = batches_dispatched++;
             finished_job.batch_seed = new_seed();
+            finished_job.parents1 = parents1;
+            finished_job.parents2 = parents2;
             parent_queues[finished_job.vfid].push(std::move(finished_job));
         }
 

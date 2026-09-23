@@ -120,26 +120,6 @@ std::uint64_t hash_genome(const std::uint8_t *bytes, std::size_t length);
  */
 const char *get_hash_backend_name();
 
-struct EncodedIndividual {
-    const std::uint8_t* bytes = nullptr;
-    std::uint32_t fitness = 0;
-    std::uint64_t hash = 0;
-
-    bool operator<(const EncodedIndividual& other) const {
-        if (fitness != other.fitness) {
-            return fitness < other.fitness;
-        }
-        return hash < other.hash;
-    }
-
-    bool operator==(const EncodedIndividual& other) const {
-        return fitness == other.fitness && hash == other.hash;
-    }
-
-    bool operator!=(const EncodedIndividual& other) const {
-        return !(*this == other);
-    }
-};
 
 struct GAParams {
     std::size_t pop_size;
@@ -189,6 +169,17 @@ Individual build_individual(const ProblemInstance &problem, const std::vector<in
  * shuffling / rotating / reversing the customer order with a fixed seed.
  */
 std::vector<Individual> build_initial_population(const ProblemInstance &problem, std::size_t population_size, std::uint32_t population_seed);
+
+/*
+ * Updates offspring in-place using parent fallback: a child is admitted into the new generation
+ * only if its fitness is strictly better than the parent in the parents array with the same index
+ * (stream 0 vs 1). Otherwise, the parent is retained in its place.
+ */
+void update_generation_with_parents(
+    std::vector<EncodedIndividual> &offspring,
+    const std::vector<EncodedIndividual> &parents1,
+    const std::vector<EncodedIndividual> &parents2
+);
 
 /*
  * Update the population with the new generation, keeping the best n_keep_best individuals over both generations. The new generation is sorted by fitness in ascending order (lower fitness is better). No duplicates are allowed in the new population. If a duplicate is found, it is replaced by the next best individual from the current population.
