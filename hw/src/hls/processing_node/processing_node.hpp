@@ -16,6 +16,8 @@ void processing_node(
     int two_opt_k,
     int two_opt_enable_precheck,
     uint32_t seed,
+    int crossover_prob,
+    int mutation_prob,
     int *dbg_num_individuals,
     int *dbg_num_cities
 );

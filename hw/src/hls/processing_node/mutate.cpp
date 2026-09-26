@@ -51,7 +51,7 @@ void mutate_core(
     IndividualAsBeats &p,
     CityPair cut_points,
     IndividualAsBeats &c,
-    int num_cities
+    CityIndex num_cities
 ) {
     CityIndex start_idx = cut_points.start;
     CityIndex end_idx = cut_points.end;
@@ -81,12 +81,19 @@ void mutate(
     hls::stream<CityPair> &mutate_pairs,
     hls::stream_of_blocks<IndividualAsBeats> &out,
     int num_individuals,
-    int num_cities
+    CityIndex num_cities,
+    Probability mutation_prob
 ) {
     MUTATE_INDIV_LOOP: for (int i = 0; i < num_individuals; i++) {
         hls::read_lock<IndividualAsBeats> p(in);
         hls::write_lock<IndividualAsBeats> c(out);
         CityPair cut_points = mutate_pairs.read();
-        mutate_core(p, cut_points, c, num_cities);
+        CityPair eff_cut_points;
+        if (cut_points.prob_rnd <= mutation_prob) {
+            eff_cut_points = cut_points;
+        } else {
+            eff_cut_points = CityPair(0, 0, cut_points.prob_rnd);
+        }
+        mutate_core(p, eff_cut_points, c, num_cities);
     }
 }

@@ -115,23 +115,40 @@ static void generate_random_city_indices(
     static xoroshiro128plusplus rng;
     rng.init(seed_cx_mut);
 
-    int total_randoms = num_individuals * 6;
-    CityIndex prev_rnd = 0;
-    RAND_GEN_LOOP: for (int i = 0; i < total_randoms; ++i) {
+    int total_steps = num_individuals * 9;
+    ap_uint<2> step = 0;
+    Probability rnd_prob = 0;
+    CityIndex rnd0 = 0;
+
+    RAND_GEN_LOOP: for (int i = 0; i < total_steps; ++i) {
         #pragma HLS PIPELINE II=1
-        CityIndex rnd = rng.nextUInt(num_cities);
-        if ((i & 1) == 1) {
-            CityPair pair;
-            if (prev_rnd <= rnd) {
-                pair.start = prev_rnd;
-                pair.end = rnd;
-            } else {
-                pair.start = rnd;
-                pair.end = prev_rnd;
+        switch (step) {
+            case 0:
+                rnd_prob = rng.nextUInt(100) + 1;
+                step = 1;
+                break;
+            case 1:
+                rnd0 = rng.nextUInt(num_cities);
+                step = 2;
+                break;
+            case 2: {
+                CityIndex rnd1 = rng.nextUInt(num_cities);
+                CityPair pair;
+                if (rnd0 <= rnd1) {
+                    pair.start = rnd0;
+                    pair.end = rnd1;
+                } else {
+                    pair.start = rnd1;
+                    pair.end = rnd0;
+                }
+                pair.prob_rnd = rnd_prob;
+                random_city_pairs.write(pair);
+                step = 0;
+                break;
             }
-            random_city_pairs.write(pair);
-        } else {
-            prev_rnd = rnd;
+            default:
+                step = 0;
+                break;
         }
     }
 }
@@ -226,7 +243,9 @@ static void process_stream(
     bool two_opt_enable_precheck,
     uint32_t seed_cx_mut,
     uint32_t seed_two_opt0,
-    uint32_t seed_two_opt1
+    uint32_t seed_two_opt1,
+    Probability crossover_prob,
+    Probability mutation_prob
 ) {
     #pragma HLS DATAFLOW
 
@@ -259,9 +278,9 @@ static void process_stream(
     producer(in0, stream_0, num_individuals, num_cities);
     producer(in1, stream_1, num_individuals, num_cities);
     generate_cx_mut_randoms(seed_cx_mut, crossover_pairs, mutate_pairs_0, mutate_pairs_1, num_individuals, num_cities);
-    crossover(stream_0, stream_1, crossover_pairs, stream_cx_0, stream_cx_1, num_individuals, num_cities);
-    mutate(stream_cx_0, mutate_pairs_0, stream_mut_0, num_individuals, num_cities);
-    mutate(stream_cx_1, mutate_pairs_1, stream_mut_1, num_individuals, num_cities);
+    crossover(stream_0, stream_1, crossover_pairs, stream_cx_0, stream_cx_1, num_individuals, num_cities, crossover_prob);
+    mutate(stream_cx_0, mutate_pairs_0, stream_mut_0, num_individuals, num_cities, mutation_prob);
+    mutate(stream_cx_1, mutate_pairs_1, stream_mut_1, num_individuals, num_cities, mutation_prob);
     repair_fitness(stream_mut_0, stream_repaired_0, num_individuals, num_cities, vehicle_capacity, cache_0);
     repair_fitness(stream_mut_1, stream_repaired_1, num_individuals, num_cities, vehicle_capacity, cache_1);
     two_opt(stream_repaired_0, stream_opt_0, num_individuals, num_cities, two_opt_k, two_opt_enable_precheck, cache_2opt_0, seed_two_opt0);
@@ -290,6 +309,8 @@ void processing_node(
     int two_opt_k,
     int two_opt_enable_precheck,
     uint32_t seed,
+    int crossover_prob,
+    int mutation_prob,
     int *dbg_num_individuals,
     int *dbg_num_cities
 ) {
@@ -305,6 +326,8 @@ void processing_node(
     #pragma HLS INTERFACE s_axilite port=two_opt_k offset=0x30 bundle=control
     #pragma HLS INTERFACE s_axilite port=two_opt_enable_precheck offset=0x38 bundle=control
     #pragma HLS INTERFACE s_axilite port=seed offset=0x40 bundle=control
+    #pragma HLS INTERFACE s_axilite port=crossover_prob offset=0x48 bundle=control
+    #pragma HLS INTERFACE s_axilite port=mutation_prob offset=0x50 bundle=control
 
     #pragma HLS INTERFACE ap_vld port=dbg_num_individuals
     #pragma HLS INTERFACE ap_vld port=dbg_num_cities
@@ -319,6 +342,6 @@ void processing_node(
         uint32_t seed_cx_mut   = seed;
         uint32_t seed_two_opt0 = seed ^ 0x55555555u;
         uint32_t seed_two_opt1 = seed ^ 0xAAAAAAAAu;
-        process_stream(in0, out0, in1, out1, num_individuals, CityIndex(num_cities), Capacity(vehicle_capacity), CityIndex(two_opt_k), bool(two_opt_enable_precheck != 0), seed_cx_mut, seed_two_opt0, seed_two_opt1);
+        process_stream(in0, out0, in1, out1, num_individuals, CityIndex(num_cities), Capacity(vehicle_capacity), CityIndex(two_opt_k), bool(two_opt_enable_precheck != 0), seed_cx_mut, seed_two_opt0, seed_two_opt1, Probability(crossover_prob), Probability(mutation_prob));
     }
 }

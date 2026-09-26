@@ -62,7 +62,8 @@ void crossover(
     hls::stream_of_blocks<IndividualAsBeats> &out0,
     hls::stream_of_blocks<IndividualAsBeats> &out1,
     int num_individuals,
-    int num_cities
+    CityIndex num_cities,
+    Probability crossover_prob
 ) {
     BeatIndex total_city_beats = get_total_city_beats(num_cities);
     CROSSOVER_INDIV_LOOP: for (int i = 0; i < num_individuals; i++) {
@@ -81,8 +82,15 @@ void crossover(
         ap_uint<MAX_CITIES> taken0 = 0;
         ap_uint<MAX_CITIES> taken1 = 0;
 
-        CityIndex start_idx = cut_points.start;
-        CityIndex end_idx = cut_points.end;
+        CityIndex start_idx;
+        CityIndex end_idx;
+        if (cut_points.prob_rnd <= crossover_prob) {
+            start_idx = cut_points.start;
+            end_idx = cut_points.end;
+        } else {
+            start_idx = 0;
+            end_idx = num_cities - 1;
+        }
         StartEndData start_end_data = get_start_end_data(start_idx, end_idx);
 
         BeatIndex itrs = start_end_data.end_beat - start_end_data.start_beat + 1;
@@ -119,7 +127,7 @@ void crossover(
                 }
             }
 
-            OR_REDUCE: for (int i = 0; i < HW_CITIES_PER_BEAT; ++i) {
+            OR_REDUCE: for (CityBeatIndex i = 0; i < HW_CITIES_PER_BEAT; ++i) {
                 #pragma HLS UNROLL
                 taken0 |= mask0[i];
                 taken1 |= mask1[i];

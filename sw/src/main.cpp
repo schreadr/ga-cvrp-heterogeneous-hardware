@@ -68,6 +68,8 @@ constexpr uint32_t CSR_INIT_CITY_CACHE         = 0x28 / 8;
 constexpr uint32_t CSR_TWO_OPT_K               = 0x30 / 8;
 constexpr uint32_t CSR_TWO_OPT_ENABLE_PRECHECK = 0x38 / 8;
 constexpr uint32_t CSR_SEED                    = 0x40 / 8;
+constexpr uint32_t CSR_CROSSOVER_PROB          = 0x48 / 8;
+constexpr uint32_t CSR_MUTATION_PROB           = 0x50 / 8;
 
 constexpr const char kDefaultProblemFile[] = "../../problem_instances/P-n40-k5.vrp";
 
@@ -133,6 +135,8 @@ bool run_smoke_test(int vfpga_id,
     coyote_thread.setCSR(two_opt_k, CSR_TWO_OPT_K);
     coyote_thread.setCSR(two_opt_enable_precheck ? 1 : 0, CSR_TWO_OPT_ENABLE_PRECHECK);
     coyote_thread.setCSR(seed, CSR_SEED);
+    coyote_thread.setCSR(100, CSR_CROSSOVER_PROB);
+    coyote_thread.setCSR(100, CSR_MUTATION_PROB);
 
     coyote_thread.setCSR(1, CSR_INIT_CITY_CACHE);
     coyote_thread.setCSR(CSR_CONTROL_START, CSR_CONTROL);
@@ -206,6 +210,8 @@ int main(int argc, char *argv[]) {
     int precision = 1;
     int two_opt_k = 0;
     bool two_opt_enable_precheck = true;
+    int crossover_prob = 100;
+    int mutation_prob = 100;
     unsigned int num_vfpgas = 2;
     std::size_t micro_batch_size = 0;
 
@@ -222,7 +228,9 @@ int main(int argc, char *argv[]) {
         ("vrp_file,f", boost::program_options::value<std::string>(&vrp_file)->default_value(kDefaultProblemFile), "Path to the CVRP instance file")
         ("precision,r", boost::program_options::value<int>(&precision)->default_value(1), "Coordinate precision scaling factor (higher precision in sqrt calculation)")
         ("two_opt_k,o", boost::program_options::value<int>(&two_opt_k)->default_value(0), "Number of 2-opt iterations per subtour")
-        ("two_opt_enable_precheck", boost::program_options::value<bool>(&two_opt_enable_precheck)->default_value(true), "Enable precheck for 2-opt moves");
+        ("two_opt_enable_precheck", boost::program_options::value<bool>(&two_opt_enable_precheck)->default_value(true), "Enable precheck for 2-opt moves")
+        ("crossover_prob", boost::program_options::value<int>(&crossover_prob)->default_value(100), "Crossover probability (0 to 100)")
+        ("mutation_prob", boost::program_options::value<int>(&mutation_prob)->default_value(100), "Mutation probability (0 to 100)");
 
     boost::program_options::variables_map command_line_arguments;
     boost::program_options::store(boost::program_options::parse_command_line(argc, argv, runtime_options), command_line_arguments);
@@ -245,6 +253,14 @@ int main(int argc, char *argv[]) {
         throw std::invalid_argument("precision must not be smaller than 1");
     }
 
+    if (crossover_prob < 0 || crossover_prob > 100) {
+        throw std::invalid_argument("crossover_prob must be between 0 and 100");
+    }
+
+    if (mutation_prob < 0 || mutation_prob > 100) {
+        throw std::invalid_argument("mutation_prob must be between 0 and 100");
+    }
+
     HEADER("CLI PARAMETERS:");
     std::cout << "Number of vFPGAs: " << num_vfpgas << std::endl;
     std::cout << "Micro-batch size: " << (micro_batch_size == 0 ? "AUTO" : std::to_string(micro_batch_size)) << std::endl;
@@ -255,6 +271,8 @@ int main(int argc, char *argv[]) {
     std::cout << "Precision: " << precision << std::endl;
     std::cout << "Two-opt k: " << two_opt_k << std::endl;
     std::cout << "Two-opt enable precheck: " << (two_opt_enable_precheck ? "ENABLED" : "DISABLED") << std::endl;
+    std::cout << "Crossover probability: " << crossover_prob << "%" << std::endl;
+    std::cout << "Mutation probability: " << mutation_prob << "%" << std::endl;
     std::cout << "Smoke test mode: " << (smoke_test ? "ENABLED" : "DISABLED") << std::endl;
     std::cout << "Genome hasher: " << get_hash_backend_name() << std::endl;
     std::cout << "VRP file: " << vrp_file << std::endl << std::endl;
@@ -326,6 +344,8 @@ int main(int argc, char *argv[]) {
             coyote_threads[vfid]->setCSR(two_opt_k, CSR_TWO_OPT_K);
             coyote_threads[vfid]->setCSR(two_opt_enable_precheck ? 1 : 0, CSR_TWO_OPT_ENABLE_PRECHECK);
             coyote_threads[vfid]->setCSR(vfpga_seed, CSR_SEED);
+            coyote_threads[vfid]->setCSR(crossover_prob, CSR_CROSSOVER_PROB);
+            coyote_threads[vfid]->setCSR(mutation_prob, CSR_MUTATION_PROB);
 
             if (coyote_threads[vfid]->getCSR(CSR_NUM_INDIVIDUALS) != reg_num_ind ||
                 coyote_threads[vfid]->getCSR(CSR_NUM_CITIES) != reg_num_cities ||

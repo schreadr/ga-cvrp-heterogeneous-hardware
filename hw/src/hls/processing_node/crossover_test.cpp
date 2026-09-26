@@ -89,7 +89,8 @@ int run_crossover_test() {
     std::cout << "Executing Crossover..." << std::endl;
     crossover(in0, in1, crossover_pairs, out0, out1,
               static_cast<int>(kNumIndividuals),
-              kNumCities);
+              kNumCities,
+              100);
 
     std::cout << "Reading children from block streams..." << std::endl;
     const std::vector<Individual> child_0 = tb_pull_individuals(out0, problem, kNumIndividuals);
@@ -205,7 +206,8 @@ int run_crossover_test_border_cases() {
     std::cout << "Executing Crossover (border cases)..." << std::endl;
     crossover(in0, in1, crossover_pairs, out0, out1,
               static_cast<int>(kNumIndividuals_border_cases),
-              kNumCities_border_cases);
+              kNumCities_border_cases,
+              100);
 
     std::cout << "Reading children from block streams..." << std::endl;
     int errors = 0;
@@ -240,6 +242,104 @@ int run_crossover_test_border_cases() {
         std::cout << "BORDER CASES CROSSOVER TEST PASSED!" << std::endl;
     } else {
         std::cout << "BORDER CASES CROSSOVER TEST FAILED with " << errors << " errors." << std::endl;
+    }
+
+    return errors;
+}
+
+int run_crossover_prob_zero_test() {
+    std::cout << "Crossover Probability Zero Unit Test (prob=0 should copy parents)" << std::endl;
+    hls::stream_of_blocks<IndividualAsBeats> in0;
+    hls::stream_of_blocks<IndividualAsBeats> out0;
+    hls::stream_of_blocks<IndividualAsBeats> in1;
+    hls::stream_of_blocks<IndividualAsBeats> out1;
+
+    const ProblemInstance problem = make_problem();
+    const std::vector<Individual> pop_0 = build_population(problem, kPop0Tours, kFitness0Base);
+    const std::vector<Individual> pop_1 = build_population(problem, kPop1Tours, kFitness1Base);
+
+    tb_push_individuals(in0, problem, pop_0);
+    tb_push_individuals(in1, problem, pop_1);
+
+    hls::stream<CityPair> crossover_pairs("crossover_pairs_prob_zero");
+    for (std::size_t i = 0; i < kNumIndividuals; ++i) {
+        crossover_pairs.write(CityPair(1, 33, 1));
+    }
+
+    crossover(in0, in1, crossover_pairs, out0, out1,
+              static_cast<int>(kNumIndividuals),
+              CityIndex(kNumCities),
+              0);
+
+    const std::vector<Individual> child_0 = tb_pull_individuals(out0, problem, kNumIndividuals);
+    const std::vector<Individual> child_1 = tb_pull_individuals(out1, problem, kNumIndividuals);
+
+    int errors = 0;
+    for (std::size_t i = 0; i < kNumIndividuals; ++i) {
+        if (child_0[i] != pop_0[i]) {
+            std::cout << "Stream 0 indiv " << i << " did not match parent 0 when prob=0\n";
+            errors++;
+        }
+        if (child_1[i] != pop_1[i]) {
+            std::cout << "Stream 1 indiv " << i << " did not match parent 1 when prob=0\n";
+            errors++;
+        }
+    }
+
+    if (errors == 0) {
+        std::cout << "CROSSOVER PROB ZERO TEST PASSED!" << std::endl;
+    } else {
+        std::cout << "CROSSOVER PROB ZERO TEST FAILED with " << errors << " errors." << std::endl;
+    }
+
+    return errors;
+}
+
+int run_crossover_prob_100_test() {
+    std::cout << "Crossover Probability 100 Unit Test (prob=100 should always apply crossover)" << std::endl;
+    hls::stream_of_blocks<IndividualAsBeats> in0;
+    hls::stream_of_blocks<IndividualAsBeats> out0;
+    hls::stream_of_blocks<IndividualAsBeats> in1;
+    hls::stream_of_blocks<IndividualAsBeats> out1;
+
+    const ProblemInstance problem = make_problem();
+    const std::vector<Individual> pop_0 = build_population(problem, kPop0Tours, kFitness0Base);
+    const std::vector<Individual> pop_1 = build_population(problem, kPop1Tours, kFitness1Base);
+
+    tb_push_individuals(in0, problem, pop_0);
+    tb_push_individuals(in1, problem, pop_1);
+
+    hls::stream<CityPair> crossover_pairs("crossover_pairs_prob_100");
+    for (std::size_t i = 0; i < kNumIndividuals; ++i) {
+        crossover_pairs.write(CityPair(1, 33, 100));
+    }
+
+    crossover(in0, in1, crossover_pairs, out0, out1,
+              static_cast<int>(kNumIndividuals),
+              CityIndex(kNumCities),
+              100);
+
+    const std::vector<Individual> child_0 = tb_pull_individuals(out0, problem, kNumIndividuals);
+    const std::vector<Individual> child_1 = tb_pull_individuals(out1, problem, kNumIndividuals);
+    const std::vector<Individual> exp_child_0 = build_population(problem, kExpChild0Tours, kFitness0Base);
+    const std::vector<Individual> exp_child_1 = build_population(problem, kExpChild1Tours, kFitness1Base);
+
+    int errors = 0;
+    for (std::size_t i = 0; i < kNumIndividuals; ++i) {
+        if (child_0[i] != exp_child_0[i]) {
+            std::cout << "Stream 0 indiv " << i << " did not match exp_child_0 when prob=100\n";
+            errors++;
+        }
+        if (child_1[i] != exp_child_1[i]) {
+            std::cout << "Stream 1 indiv " << i << " did not match exp_child_1 when prob=100\n";
+            errors++;
+        }
+    }
+
+    if (errors == 0) {
+        std::cout << "CROSSOVER PROB 100 TEST PASSED!" << std::endl;
+    } else {
+        std::cout << "CROSSOVER PROB 100 TEST FAILED with " << errors << " errors." << std::endl;
     }
 
     return errors;

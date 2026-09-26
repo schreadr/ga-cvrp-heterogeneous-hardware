@@ -9,7 +9,7 @@ void mutate_core(
     IndividualAsBeats &p,
     CityPair cut_points,
     IndividualAsBeats &c,
-    int num_cities
+    CityIndex num_cities
 );
 
 void mutate(
@@ -17,7 +17,8 @@ void mutate(
     hls::stream<CityPair> &mutate_pairs,
     hls::stream_of_blocks<IndividualAsBeats> &out,
     int num_individuals,
-    int num_cities
+    CityIndex num_cities,
+    Probability mutation_prob
 );
 
 #endif // MUTATE_HPP

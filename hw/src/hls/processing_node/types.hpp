@@ -71,16 +71,18 @@ struct CoordElement {
 // ----------------------------------------------------------------------------
 typedef ap_uint<CITY_BITS>     City;
 typedef ap_uint<FITNESS_BITS>  Fitness;
+typedef ap_uint<8>             Probability;
 
 struct CityPair {
     CityIndex start;
     CityIndex end;
+    Probability prob_rnd;
 
-    CityPair() : start(0), end(0) {}
-    CityPair(CityIndex s, CityIndex e) : start(s), end(e) {}
+    CityPair() : start(0), end(0), prob_rnd(0) {}
+    CityPair(CityIndex s, CityIndex e, Probability p = 0) : start(s), end(e), prob_rnd(p) {}
 
     bool operator==(const CityPair &other) const {
-        return start == other.start && end == other.end;
+        return start == other.start && end == other.end && prob_rnd == other.prob_rnd;
     }
 };
 

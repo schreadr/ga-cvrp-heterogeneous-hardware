@@ -96,16 +96,16 @@ int test_xoroshiro128plusplus_generator() {
         CityPair got_mut_0 = mut_pairs_0.read();
         CityPair got_mut_1 = mut_pairs_1.read();
 
-        if (got_cx.start > got_cx.end || got_cx.end >= test_cities) {
-            std::cout << "Invalid cx_pair[" << i << "]: (" << got_cx.start << ", " << got_cx.end << ")\n";
+        if (got_cx.start > got_cx.end || got_cx.end >= test_cities || got_cx.prob_rnd < 1 || got_cx.prob_rnd > 100) {
+            std::cout << "Invalid cx_pair[" << i << "]: (" << got_cx.start << ", " << got_cx.end << ", prob: " << got_cx.prob_rnd << ")\n";
             errors++;
         }
-        if (got_mut_0.start > got_mut_0.end || got_mut_0.end >= test_cities) {
-            std::cout << "Invalid mut_pair_0[" << i << "]: (" << got_mut_0.start << ", " << got_mut_0.end << ")\n";
+        if (got_mut_0.start > got_mut_0.end || got_mut_0.end >= test_cities || got_mut_0.prob_rnd < 1 || got_mut_0.prob_rnd > 100) {
+            std::cout << "Invalid mut_pair_0[" << i << "]: (" << got_mut_0.start << ", " << got_mut_0.end << ", prob: " << got_mut_0.prob_rnd << ")\n";
             errors++;
         }
-        if (got_mut_1.start > got_mut_1.end || got_mut_1.end >= test_cities) {
-            std::cout << "Invalid mut_pair_1[" << i << "]: (" << got_mut_1.start << ", " << got_mut_1.end << ")\n";
+        if (got_mut_1.start > got_mut_1.end || got_mut_1.end >= test_cities || got_mut_1.prob_rnd < 1 || got_mut_1.prob_rnd > 100) {
+            std::cout << "Invalid mut_pair_1[" << i << "]: (" << got_mut_1.start << ", " << got_mut_1.end << ", prob: " << got_mut_1.prob_rnd << ")\n";
             errors++;
         }
     }
@@ -148,6 +148,8 @@ int run_integration_test(){
                     two_opt_k,
                     0,
                     seed,
+                    100,
+                    100,
                     &dbg_indiv0, &dbg_cities);
 
     std::cout << "Streaming encoded populations..." << std::endl;
@@ -163,6 +165,8 @@ int run_integration_test(){
                     two_opt_k,
                     0,
                     seed,
+                    100,
+                    100,
                     &dbg_indiv0, &dbg_cities);
 
     std::cout << "Processing Node finished. Reading outputs from stream..." << std::endl;
@@ -277,6 +281,8 @@ int run_integration_test_border_cases() {
                     two_opt_k,
                     0,
                     seed,
+                    100,
+                    100,
                     &dbg_indiv0, &dbg_cities);
 
     std::cout << "Streaming encoded populations (border cases)..." << std::endl;
@@ -292,6 +298,8 @@ int run_integration_test_border_cases() {
                     two_opt_k,
                     0,
                     seed,
+                    100,
+                    100,
                     &dbg_indiv0, &dbg_cities);
 
     std::cout << "Processing Node (border cases) finished. Reading outputs from stream..." << std::endl;
@@ -401,6 +409,8 @@ int run_integration_test(const std::string& vrp_path, int two_opt_k) {
                     two_opt_k,
                     0,
                     seed,
+                    100,
+                    100,
                     &dbg_indiv0, &dbg_cities);
 
     std::cout << "Streaming encoded populations (big instance)..." << std::endl;
@@ -416,6 +426,8 @@ int run_integration_test(const std::string& vrp_path, int two_opt_k) {
                     two_opt_k,
                     0,
                     seed,
+                    100,
+                    100,
                     &dbg_indiv0, &dbg_cities);
 
     std::cout << "Processing Node (big instance) finished. Reading outputs from stream..." << std::endl;
@@ -490,6 +502,16 @@ int main() {
     if (cur_err != 0) std::cout << "Mutate Border Cases Unit Test failed with " << cur_err << " errors." << std::endl;
     errors += cur_err;
 
+    std::cout << "\nRunning Mutate Probability Zero Unit Test..." << std::endl;
+    cur_err = run_mutate_prob_zero_test();
+    if (cur_err != 0) std::cout << "Mutate Probability Zero Unit Test failed with " << cur_err << " errors." << std::endl;
+    errors += cur_err;
+
+    std::cout << "\nRunning Mutate Probability 100 Unit Test..." << std::endl;
+    cur_err = run_mutate_prob_100_test();
+    if (cur_err != 0) std::cout << "Mutate Probability 100 Unit Test failed with " << cur_err << " errors." << std::endl;
+    errors += cur_err;
+
     std::cout << "\nRunning Crossover Unit Test..." << std::endl;
     cur_err = run_crossover_test();
     if (cur_err != 0) std::cout << "Crossover Unit Test failed with " << cur_err << " errors." << std::endl;
@@ -498,6 +520,16 @@ int main() {
     std::cout << "\nRunning Crossover Border Cases Unit Test..." << std::endl;
     cur_err = run_crossover_test_border_cases();
     if (cur_err != 0) std::cout << "Crossover Border Cases Unit Test failed with " << cur_err << " errors." << std::endl;
+    errors += cur_err;
+
+    std::cout << "\nRunning Crossover Probability Zero Unit Test..." << std::endl;
+    cur_err = run_crossover_prob_zero_test();
+    if (cur_err != 0) std::cout << "Crossover Probability Zero Unit Test failed with " << cur_err << " errors." << std::endl;
+    errors += cur_err;
+
+    std::cout << "\nRunning Crossover Probability 100 Unit Test..." << std::endl;
+    cur_err = run_crossover_prob_100_test();
+    if (cur_err != 0) std::cout << "Crossover Probability 100 Unit Test failed with " << cur_err << " errors." << std::endl;
     errors += cur_err;
 
     std::cout << "\nRunning Repair/Fitness Unit Test..." << std::endl;

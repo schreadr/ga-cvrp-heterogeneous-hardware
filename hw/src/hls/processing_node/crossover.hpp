@@ -12,7 +12,8 @@ void crossover(
     hls::stream_of_blocks<IndividualAsBeats> &out0,
     hls::stream_of_blocks<IndividualAsBeats> &out1,
     int num_individuals,
-    int num_cities
+    CityIndex num_cities,
+    Probability crossover_prob
 );
 
 #endif // CROSSOVER_HPP
