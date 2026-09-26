@@ -67,23 +67,6 @@
 #define MAX_CACHE_BEATS              ((MAX_CACHE_ENTRIES + NODE_CACHE_ENTRIES_PER_BEAT - 1) / NODE_CACHE_ENTRIES_PER_BEAT)
 
 
-// Random Number Stream Constants
-#define RANDOM_BITS                 32
-#define RANDOM_BITS_LOG2             5 // log2(RANDOM_BITS)
-#define RANDOM_UPPER_BOUND          ((1ULL << RANDOM_BITS) - 1ULL)
-
-#define RANDOMS_PER_INDIV_CROSSOVER  2 // 2 cut points for crossover
-#define RANDOMS_PER_INDIV_MUTATE_0   2 // 2 cut points for mutate 0
-#define RANDOMS_PER_INDIV_MUTATE_1   2 // 2 cut points for mutate 1
-#define RANDOMS_PER_2OPT_MOVE        2 // 2 random numbers per 2-opt move
-
-static inline int get_randoms_per_indiv(int two_opt_k, int max_subtours) {
-    return RANDOMS_PER_INDIV_CROSSOVER + RANDOMS_PER_INDIV_MUTATE_0 + RANDOMS_PER_INDIV_MUTATE_1 + 2 * (max_subtours * two_opt_k * RANDOMS_PER_2OPT_MOVE);
-}
-
-#define RANDOMS_PER_BEAT            (AXI_BEAT_WIDTH / RANDOM_BITS) // 16
-#define RANDOMS_PER_BEAT_LOG2        4 // log2(RANDOMS_PER_BEAT)
-
 static void assert_power_of_two(int x) {
     assert(x && !(x & (x - 1)));
 }
@@ -132,12 +115,6 @@ static_block {
     assert(MAX_CACHE_ENTRIES == MAX_CITIES + 1);
     assert(MAX_CACHE_BEATS == (MAX_CACHE_ENTRIES + NODE_CACHE_ENTRIES_PER_BEAT - 1) / NODE_CACHE_ENTRIES_PER_BEAT);
 
-    // Random Numbers
-    assert_power_of_two(RANDOM_BITS);
-    assert_power_of_two(RANDOMS_PER_BEAT);
-    assert(RANDOMS_PER_BEAT * RANDOM_BITS == AXI_BEAT_WIDTH);
-    assert((1ULL << RANDOM_BITS_LOG2) == RANDOM_BITS);
-    assert((1ULL << RANDOMS_PER_BEAT_LOG2) == RANDOMS_PER_BEAT);
 }
 
 // Host / AXI stream beat calculation helpers
@@ -152,14 +129,6 @@ static inline int get_total_axi_beats(int num_cities) {
 static inline int get_total_cache_beats(int num_cities) {
     int total_entries = num_cities + 1; // customers + depot
     return (total_entries + NODE_CACHE_ENTRIES_PER_BEAT - 1) >> NODE_CACHE_ENTRIES_PER_BEAT_LOG2;
-}
-
-static inline int get_total_random_beats(int num_individuals, int two_opt_k, int max_subtours) {
-    return (num_individuals * get_randoms_per_indiv(two_opt_k, max_subtours) + RANDOMS_PER_BEAT - 1) >> RANDOMS_PER_BEAT_LOG2;
-}
-
-static inline std::size_t get_random_bytes(int num_individuals, int two_opt_k, int max_subtours) {
-    return static_cast<std::size_t>(get_total_random_beats(num_individuals, two_opt_k, max_subtours)) * AXI_BYTES;
 }
 
 #endif // GA_ENCODING_CONSTANTS_HPP

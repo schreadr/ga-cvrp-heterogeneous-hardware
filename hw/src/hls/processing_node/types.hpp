@@ -18,7 +18,6 @@ typedef ap_uint<MAX_CITIES_LOG2 + 1>                  CityIndex;
 typedef ap_uint<2 * (MAX_CITIES_LOG2 + 1)>            TwoCityIndex;
 typedef ap_uint<HW_MAX_BEATS_LOG2 + 1>                BeatIndex;
 typedef ap_uint<HW_CITIES_PER_BEAT_LOG2 + 1>          CityBeatIndex;
-typedef ap_uint<RANDOMS_PER_BEAT_LOG2 + 1>            BeatRandomIndex;
 typedef ap_uint<NODE_CACHE_ENTRIES_PER_BEAT_LOG2 + 1> BeatCacheIndex;
 typedef ap_uint<HW_BEATS_PER_AXI_BEAT_LOG2 + 1>       BeatAxiIndex;
 
@@ -108,22 +107,7 @@ typedef ap_axiu<AXI_BEAT_WIDTH, 0, 0, 0> axi_word_t;
 typedef Beat                            IndividualAsBeats[HW_MAX_BEATS];
 typedef AxiBeat                         CityCacheBeat;
 typedef ap_uint<NODE_CACHE_ENTRY_BITS>  CityCacheEntry;
-typedef ap_uint<RANDOM_BITS>            RandomNumber;
 
-struct RandomPair {
-    RandomNumber r1;
-    RandomNumber r2;
-
-    RandomPair() : r1(0), r2(0) {}
-    RandomPair(RandomNumber a, RandomNumber b) : r1(a), r2(b) {}
-
-    bool operator==(const RandomPair &other) const {
-        return r1 == other.r1 && r2 == other.r2;
-    }
-    bool operator!=(const RandomPair &other) const {
-        return !(*this == other);
-    }
-};
 
 struct StartEndData {
     const BeatIndex start_beat;
@@ -343,12 +327,6 @@ static inline CityData consume_next_city_data(CityCacheBeat &beat) {
     return CityData{coord, demand};
 }
 
-static inline RandomNumber consume_next_random(AxiBeat &beat) {
-    #pragma HLS INLINE
-    RandomNumber rnd = beat.range(RANDOM_BITS - 1, 0);
-    beat >>= RANDOM_BITS;
-    return rnd;
-}
 
 static inline Beat consume_next_hw_beat(AxiBeat &beat) {
     #pragma HLS INLINE

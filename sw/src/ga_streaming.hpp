@@ -76,13 +76,5 @@ void population_from_buffer(
 
 void population_to_buffer(std::vector<EncodedIndividual> &population, std::uint8_t* bytes, int problem_dimension, bool reversedOrder=false);
 
-void generate_random_numbers(
-    std::size_t num_individuals,
-    std::uint8_t *buffer,
-    int num_cities,
-    int two_opt_k,
-    int max_subtours,
-    std::uint64_t seed
-);
 
 #endif
