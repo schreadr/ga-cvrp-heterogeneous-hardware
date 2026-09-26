@@ -165,8 +165,8 @@ std::uint32_t compute_fitness(const ProblemInstance &problem, const Individual &
 Individual build_individual(const ProblemInstance &problem, const std::vector<int> &customer_order);
 
 /*
- * Build a deterministic initial population of population_size individuals by
- * shuffling / rotating / reversing the customer order with a fixed seed.
+ * Build a deterministic initial population of population_size distinct individuals by
+ * drawing unique permutations with a fixed seed.
  */
 std::vector<Individual> build_initial_population(const ProblemInstance &problem, std::size_t population_size, std::uint32_t population_seed);
 

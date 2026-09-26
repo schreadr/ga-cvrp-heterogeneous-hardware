@@ -38,6 +38,7 @@
 #include <random>
 #include <stdexcept>
 #include <thread>
+#include <set>
 
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
 #define HAS_X86_CRC32 1
@@ -423,6 +424,10 @@ std::vector<Individual> build_initial_population(const ProblemInstance &problem,
     std::vector<Individual> population;
     population.reserve(population_size);
 
+    if (population_size == 0) {
+        return population;
+    }
+
     std::mt19937 rng(seed);
 
     std::vector<int> customer_ids;
@@ -431,19 +436,25 @@ std::vector<Individual> build_initial_population(const ProblemInstance &problem,
         customer_ids.push_back(id);
     }
 
-    for (std::size_t individual_idx = 0; individual_idx < population_size; ++individual_idx) {
-        std::vector<int> order = customer_ids;
-        std::shuffle(order.begin(), order.end(), rng);
+    std::set<std::vector<int>> unique_permutations;
 
-        if (!order.empty()) {
-            const std::size_t rotate_by = individual_idx % order.size();
-            std::rotate(order.begin(), order.begin() + static_cast<std::ptrdiff_t>(rotate_by), order.end());
-            if ((individual_idx & 1u) != 0u) {
-                std::reverse(order.begin(), order.end());
-            }
+    std::vector<int> order = customer_ids;
+    std::size_t attempts = 0;
+    const std::size_t max_attempts = 2 * population_size;
+
+    while (unique_permutations.size() < population_size) {
+        if (attempts >= max_attempts) {
+            throw std::runtime_error("Failed to generate " + std::to_string(population_size) +
+                                     " distinct individuals in initial population after " +
+                                     std::to_string(max_attempts) + " attempts.");
         }
+        attempts++;
+        std::shuffle(order.begin(), order.end(), rng);
+        unique_permutations.insert(order);
+    }
 
-        population.push_back(build_individual(problem, order));
+    for (const auto &permutation : unique_permutations) {
+        population.push_back(build_individual(problem, permutation));
     }
 
     return population;
