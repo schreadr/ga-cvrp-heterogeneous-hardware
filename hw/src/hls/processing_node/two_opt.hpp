@@ -198,11 +198,11 @@ inline void two_opt_worker(
         if (len > 0) {
             MOVE_LOOP: for (CityIndex move = 0; move < two_opt_k; ++move) {
                 uint32_t r1, r2;
-                rng.nextPair(r1, r2);
+                rng.nextPair(len, r1, r2);
 
                 if (len >= 3) {
-                    CityIndex L_rel = r1 % len;
-                    CityIndex R_rel = r2 % len;
+                    CityIndex L_rel = r1;
+                    CityIndex R_rel = r2;
 
                     if (L_rel > R_rel) {
                         CityIndex tmp = L_rel;

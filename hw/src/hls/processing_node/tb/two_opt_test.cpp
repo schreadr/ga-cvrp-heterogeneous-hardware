@@ -75,11 +75,11 @@ static void two_opt_software(
 
         for (CityIndex m = 0; m < two_opt_k; ++m) {
             uint32_t r1, r2;
-            worker_rngs[w].nextPair(r1, r2);
+            worker_rngs[w].nextPair(subtour_len, r1, r2);
 
             if (subtour_len >= 3) {
-                int L_rel = r1 % subtour_len;
-                int R_rel = r2 % subtour_len;
+                int L_rel = r1;
+                int R_rel = r2;
                 if (L_rel > R_rel) std::swap(L_rel, R_rel);
 
                 if (L_rel != R_rel) {

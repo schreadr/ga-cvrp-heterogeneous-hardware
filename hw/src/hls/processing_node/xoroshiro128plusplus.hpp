@@ -85,10 +85,10 @@ public:
         return static_cast<uint32_t>(next());
     }
 
-    /// Generate a uniformly distributed 32-bit integer in [0, bound)
+    /// Generate a uniformly distributed 32-bit integer in [0, bound) using Lemire's fast range reduction
     inline uint32_t nextUInt(uint32_t bound) {
         #pragma HLS INLINE
-        return bound > 0 ? static_cast<uint32_t>(nextUInt() % bound) : 0;
+        return bound > 0 ? static_cast<uint32_t>((static_cast<uint64_t>(nextUInt()) * bound) >> 32) : 0;
     }
 
     /// Extract two independent 32-bit random integers from a single 64-bit step
@@ -97,6 +97,16 @@ public:
         uint64_t v = next();
         r1 = static_cast<uint32_t>(v);
         r2 = static_cast<uint32_t>(v >> 32);
+    }
+
+    /// Extract two independent 32-bit random integers in [0, bound) from a single 64-bit step using Lemire's fast range reduction
+    inline void nextPair(uint32_t bound, uint32_t &r1, uint32_t &r2) {
+        #pragma HLS INLINE
+        uint64_t v = next();
+        uint32_t v1 = static_cast<uint32_t>(v);
+        uint32_t v2 = static_cast<uint32_t>(v >> 32);
+        r1 = bound > 0 ? static_cast<uint32_t>((static_cast<uint64_t>(v1) * bound) >> 32) : 0;
+        r2 = bound > 0 ? static_cast<uint32_t>((static_cast<uint64_t>(v2) * bound) >> 32) : 0;
     }
 };
 
