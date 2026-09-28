@@ -42,12 +42,19 @@ else()
     add_subdirectory(../../../sw ${CMAKE_BINARY_DIR}/coyote)
 endif()
 
-# Directory containing the executable(s) to be compiled
-set(TARGET_DIR "${CMAKE_SOURCE_DIR}/src/")
+# Directories containing sources and tests
+set(TARGET_DIR "${CMAKE_SOURCE_DIR}/src")
+set(TEST_DIR "${CMAKE_SOURCE_DIR}/tests")
+
+include_directories(${TARGET_DIR})
 
 # Common CVRP sources (no Coyote dependency)
 set(CVRP_SOURCES
-    ${TARGET_DIR}/ga.cpp
+    ${TARGET_DIR}/cvrp_types.cpp
+    ${TARGET_DIR}/genome_hash.cpp
+    ${TARGET_DIR}/ga_operators.cpp
+    ${TARGET_DIR}/encoding_validator.cpp
+    ${TARGET_DIR}/ga_engine.cpp
     ${TARGET_DIR}/ga_streaming.cpp
     ${TARGET_DIR}/problem_parser.cpp
 )
@@ -64,11 +71,11 @@ target_link_libraries(${EXEC} PUBLIC Boost::program_options)
 find_package(Threads REQUIRED)
 
 # Standalone encode/decode unit test (no Coyote dependency)
-add_executable(test_encode_decode ${TARGET_DIR}/test_encode_decode.cpp ${CVRP_SOURCES})
+add_executable(test_encode_decode ${TEST_DIR}/test_encode_decode.cpp ${CVRP_SOURCES})
 
 # Standalone GA unit tests (no Coyote dependency)
-add_executable(ga_test ${TARGET_DIR}/ga_test.cpp ${CVRP_SOURCES})
+add_executable(ga_test ${TEST_DIR}/ga_test.cpp ${CVRP_SOURCES})
 
 # Standalone Async Multi-vFPGA pipeline test (no Coyote dependency)
-add_executable(test_async_pipeline ${TARGET_DIR}/test_async_pipeline.cpp ${CVRP_SOURCES})
+add_executable(test_async_pipeline ${TEST_DIR}/test_async_pipeline.cpp ${CVRP_SOURCES})
 target_link_libraries(test_async_pipeline PUBLIC Threads::Threads)

@@ -206,8 +206,27 @@ bool test_node_cache_encode(const ProblemInstance &problem) {
 
 } // namespace
 
+#include <fstream>
+
+static std::string find_vrp_file(const std::string &arg_path) {
+    if (!arg_path.empty()) {
+        std::ifstream test_f(arg_path);
+        if (test_f.good()) return arg_path;
+    }
+    const std::vector<std::string> candidates = {
+        "problem_instances/P-n40-k5.vrp",
+        "../problem_instances/P-n40-k5.vrp",
+        "../../problem_instances/P-n40-k5.vrp"
+    };
+    for (const auto &c : candidates) {
+        std::ifstream f(c);
+        if (f.good()) return c;
+    }
+    return arg_path.empty() ? "problem_instances/P-n40-k5.vrp" : arg_path;
+}
+
 int main(int argc, char *argv[]) {
-    const std::string vrp_file = (argc > 1) ? argv[1] : kDefaultProblemFile;
+    const std::string vrp_file = find_vrp_file((argc > 1) ? argv[1] : "");
 
     try {
         const ProblemInstance problem = parse_vrp(vrp_file);

@@ -409,11 +409,11 @@ bool test_run_ga_in_place_buffer_shift() {
         parent1_before = decode_individual_fixed(problem, params.buffer_pop + 1 * bytes_per_ind);
 
         // 2. Supply offspring across stream 0 and stream 1
-        // Parent 0 has fitness 131, Parent 1 has fitness 142.
+        // Parent 0 has fitness 111, Parent 1 has fitness 123.
         std::vector<Individual> offspring_0 = {
-            build_individual(problem, {4, 3, 2, 1, 0}), // fitness 102 (< 131)
-            build_individual(problem, {0, 1, 4, 3, 2}), // fitness 111 (< 131)
-            build_individual(problem, {1, 3, 2, 0, 4})  // fitness 147 (> 142)
+            build_individual(problem, {4, 3, 2, 1, 0}), // fitness 102 (< 111)
+            build_individual(problem, {0, 1, 4, 3, 2}), // fitness 111 (== 111)
+            build_individual(problem, {1, 3, 2, 0, 4})  // fitness 147 (> 111)
         };
         std::vector<Individual> offspring_1 = {
             build_individual(problem, {1, 3, 4, 0, 2}), // fitness 156
@@ -434,7 +434,7 @@ bool test_run_ga_in_place_buffer_shift() {
     }
 
     // Verify initial parents had the expected fitnesses
-    if (parent0_before.fitness != 131 || parent1_before.fitness != 142) {
+    if (parent0_before.fitness != 111 || parent1_before.fitness != 123) {
         std::cerr << "FAIL [run_ga_in_place_buffer_shift]: initial parent fitness mismatch: p0="
                   << parent0_before.fitness << ", p1=" << parent1_before.fitness << "\n";
         return false;
@@ -442,12 +442,12 @@ bool test_run_ga_in_place_buffer_shift() {
 
     // Expected final layout in pop_buf with parent fallback:
     // Slot 0: Offspring (fitness 102)
-    // Slot 1: Offspring (fitness 111)
-    // Slot 2: Parent 0 (fitness 131)  <- Shifted from slot 0 to slot 2 (j=2 > i=0)
-    // Slot 3: Parent 1 (fitness 142)  <- Retained parent fallback
-    // Slot 4: Population member (fitness 150)
-    // Slot 5: Offspring (fitness 156)
-    const std::vector<std::uint32_t> expected_fitnesses = {102, 111, 131, 142, 150, 156};
+    // Slot 1: Parent 0 (fitness 111)   <- Shifted from slot 0 to slot 1 (j=1 > i=0)
+    // Slot 2: Offspring (fitness 111)
+    // Slot 3: Parent 1 (fitness 123)   <- Shifted from slot 1 to slot 3 (j=3 > i=1)
+    // Slot 4: Population member (fitness 133)
+    // Slot 5: Population member (fitness 150)
+    const std::vector<std::uint32_t> expected_fitnesses = {102, 111, 111, 123, 133, 150};
 
     for (std::size_t i = 0; i < pop_size; ++i) {
         Individual ind = decode_individual_fixed(problem, params.buffer_pop + i * bytes_per_ind);
@@ -462,10 +462,17 @@ bool test_run_ga_in_place_buffer_shift() {
         }
     }
 
-    // Check that Parent 0 shifted from slot 0 to slot 2 and preserved its exact tour
-    Individual slot2 = decode_individual_fixed(problem, params.buffer_pop + 2 * bytes_per_ind);
-    if (!(slot2 == parent0_before)) {
-        std::cerr << "FAIL [run_ga_in_place_buffer_shift]: slot 2 corrupted, does not match Parent 0\n";
+    // Check that Parent 0 shifted from slot 0 to slot 1 and preserved its exact tour
+    Individual slot1 = decode_individual_fixed(problem, params.buffer_pop + 1 * bytes_per_ind);
+    if (!(slot1 == parent0_before)) {
+        std::cerr << "FAIL [run_ga_in_place_buffer_shift]: slot 1 corrupted, does not match Parent 0\n";
+        return false;
+    }
+
+    // Check that Parent 1 shifted from slot 1 to slot 3 and preserved its exact tour
+    Individual slot3 = decode_individual_fixed(problem, params.buffer_pop + 3 * bytes_per_ind);
+    if (!(slot3 == parent1_before)) {
+        std::cerr << "FAIL [run_ga_in_place_buffer_shift]: slot 3 corrupted, does not match Parent 1\n";
         return false;
     }
 

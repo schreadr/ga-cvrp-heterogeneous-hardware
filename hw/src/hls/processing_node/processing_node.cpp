@@ -5,16 +5,6 @@
 #include "two_opt.hpp"
 #include <hls_streamofblocks.h>
 
-// added these for compilation with coyote
-#ifndef CSIM_BUILD
-
-#include "util.cpp"
-#include "crossover.cpp"
-#include "mutate.cpp"
-#include "repair_fitness.cpp"
-#include "two_opt.cpp"
-
-#endif
 
 static inline Beat consume_next_hw_beat(
     hls::stream<axi_word_t> &in_stream,
