@@ -282,14 +282,6 @@ static void process_stream(
     consumer(stream_opt_1, out1, num_individuals, num_cities);
 }
 
-static void drive_debug_probes(
-    int num_individuals,  int num_cities,
-    int *dbg_individuals, int *dbg_num_cities
-) {
-    *dbg_individuals = num_individuals;
-    *dbg_num_cities = num_cities;
-}
-
 void processing_node(
     hls::stream<axi_word_t> &in0,
     hls::stream<axi_word_t> &out0,
@@ -303,9 +295,7 @@ void processing_node(
     int two_opt_enable_precheck,
     uint32_t seed,
     int crossover_prob,
-    int mutation_prob,
-    int *dbg_num_individuals,
-    int *dbg_num_cities
+    int mutation_prob
 ) {
     #pragma HLS INTERFACE axis port=in0
     #pragma HLS INTERFACE axis port=out0
@@ -322,12 +312,7 @@ void processing_node(
     #pragma HLS INTERFACE s_axilite port=crossover_prob offset=0x48 bundle=control
     #pragma HLS INTERFACE s_axilite port=mutation_prob offset=0x50 bundle=control
 
-    #pragma HLS INTERFACE ap_vld port=dbg_num_individuals
-    #pragma HLS INTERFACE ap_vld port=dbg_num_cities
-
     #pragma HLS INTERFACE s_axilite port=return bundle=control
-
-    drive_debug_probes(num_individuals, num_cities, dbg_num_individuals, dbg_num_cities);
 
     if (init_city_cache) {
         init_node_cache(in0, num_cities);

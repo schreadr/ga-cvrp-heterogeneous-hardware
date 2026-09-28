@@ -135,8 +135,6 @@ int run_integration_test(){
     const int two_opt_k = 0;
     const uint32_t seed = 42;
 
-    int dbg_indiv0, dbg_cities;
-
     std::cout << "Sending node cache to FPGA (Stream 0)..." << std::endl;
     const std::vector<std::uint8_t> cache_bytes = encode_node_cache(problem);
     tb_push_bytes(in0, cache_bytes.data(), cache_bytes.size(), true);
@@ -149,8 +147,7 @@ int run_integration_test(){
                     0,
                     seed,
                     100,
-                    100,
-                    &dbg_indiv0, &dbg_cities);
+                    100);
 
     std::cout << "Streaming encoded populations..." << std::endl;
     tb_push_bytes(in0, enc_0.data(), total_bytes_0, true);
@@ -166,8 +163,7 @@ int run_integration_test(){
                     0,
                     seed,
                     100,
-                    100,
-                    &dbg_indiv0, &dbg_cities);
+                    100);
 
     std::cout << "Processing Node finished. Reading outputs from stream..." << std::endl;
     std::vector<std::uint8_t> got_0(total_bytes_0);
@@ -268,8 +264,6 @@ int run_integration_test_border_cases() {
     const int two_opt_k = 0;
     const uint32_t seed = 17;
 
-    int dbg_indiv0, dbg_cities;
-
     std::cout << "Sending node cache to FPGA (Stream 0, border cases)..." << std::endl;
     const std::vector<std::uint8_t> cache_bytes = encode_node_cache(problem);
     tb_push_bytes(in0, cache_bytes.data(), cache_bytes.size(), true);
@@ -282,8 +276,7 @@ int run_integration_test_border_cases() {
                     0,
                     seed,
                     100,
-                    100,
-                    &dbg_indiv0, &dbg_cities);
+                    100);
 
     std::cout << "Streaming encoded populations (border cases)..." << std::endl;
     tb_push_bytes(in0, enc_0.data(), total_bytes_0, true);
@@ -299,8 +292,7 @@ int run_integration_test_border_cases() {
                     0,
                     seed,
                     100,
-                    100,
-                    &dbg_indiv0, &dbg_cities);
+                    100);
 
     std::cout << "Processing Node (border cases) finished. Reading outputs from stream..." << std::endl;
     std::vector<std::uint8_t> got_0(total_bytes_0);
@@ -396,8 +388,6 @@ int run_integration_test(const std::string& vrp_path, int two_opt_k) {
     const std::size_t total_bytes_0 = enc_0.size();
     const std::size_t total_bytes_1 = enc_1.size();
 
-    int dbg_indiv0 = 0, dbg_cities = 0;
-
     std::cout << "Sending node cache to FPGA (Stream 0, big instance)..." << std::endl;
     const std::vector<std::uint8_t> cache_bytes = encode_node_cache(problem);
     tb_push_bytes(in0, cache_bytes.data(), cache_bytes.size(), true);
@@ -410,8 +400,7 @@ int run_integration_test(const std::string& vrp_path, int two_opt_k) {
                     0,
                     seed,
                     100,
-                    100,
-                    &dbg_indiv0, &dbg_cities);
+                    100);
 
     std::cout << "Streaming encoded populations (big instance)..." << std::endl;
     tb_push_bytes(in0, enc_0.data(), total_bytes_0, true);
@@ -427,8 +416,7 @@ int run_integration_test(const std::string& vrp_path, int two_opt_k) {
                     0,
                     seed,
                     100,
-                    100,
-                    &dbg_indiv0, &dbg_cities);
+                    100);
 
     std::cout << "Processing Node (big instance) finished. Reading outputs from stream..." << std::endl;
     std::vector<std::uint8_t> got_0(total_bytes_0);

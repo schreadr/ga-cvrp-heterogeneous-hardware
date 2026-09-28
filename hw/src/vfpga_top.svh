@@ -118,13 +118,6 @@ axil_ctrl_dwidth_64_32 inst_axil_ctrl_dwidth (
 );
 
 
-// debug vars
-
-wire [31:0] dbg_num_ind;
-wire        dbg_num_ind_vld;
-
-wire [31:0] dbg_num_cit;
-wire        dbg_num_cit_vld;
 
 /////////////////////////////////////////////////////////
 //               PROCESSING NODE (HLS)                //
@@ -181,13 +174,7 @@ processing_node_hls_ip inst_pn(
     .out1_TKEEP    (axis_host_send[1].tkeep),
     .out1_TLAST    (axis_host_send[1].tlast),
     .out1_TVALID   (axis_host_send[1].tvalid),
-    .out1_TREADY   (axis_host_send[1].tready),
-
-    // debug
-    .dbg_num_individuals     (dbg_num_ind),
-    .dbg_num_individuals_ap_vld(dbg_num_ind_vld),
-    .dbg_num_cities (dbg_num_cit),
-    .dbg_num_cities_ap_vld(dbg_num_cit_vld)
+    .out1_TREADY   (axis_host_send[1].tready)
 );
 
 // Tie-off unused signals to avoid synthesis problems
@@ -216,11 +203,6 @@ ila_processing_node inst_ila_processing_node (
     .probe12(axis_host_send[1].tvalid),  // 1 bit
     .probe13(axis_host_send[1].tready),  // 1 bit
     .probe14(axis_host_send[1].tlast),   // 1 bit
-    .probe15(axis_host_send[1].tdata),    // 512 bits
-
-    .probe16     (dbg_num_ind),
-    .probe17     (dbg_num_ind_vld),
-    .probe18     (dbg_num_cit),
-    .probe19     (dbg_num_cit_vld)
+    .probe15(axis_host_send[1].tdata)    // 512 bits
 );
 */
