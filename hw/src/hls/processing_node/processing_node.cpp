@@ -112,17 +112,20 @@ static void generate_random_city_indices(
 
     RAND_GEN_LOOP: for (int i = 0; i < total_steps; ++i) {
         #pragma HLS PIPELINE II=1
+        uint32_t bound = (step == 0) ? 100 : static_cast<uint32_t>(num_cities);
+        uint32_t rnd = rng.nextUInt(bound);
+
         switch (step) {
             case 0:
-                rnd_prob = rng.nextUInt(100) + 1;
+                rnd_prob = rnd + 1;
                 step = 1;
                 break;
             case 1:
-                rnd0 = rng.nextUInt(num_cities);
+                rnd0 = rnd;
                 step = 2;
                 break;
             case 2: {
-                CityIndex rnd1 = rng.nextUInt(num_cities);
+                CityIndex rnd1 = rnd;
                 CityPair pair;
                 if (rnd0 <= rnd1) {
                     pair.start = rnd0;
