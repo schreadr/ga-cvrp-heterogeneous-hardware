@@ -207,7 +207,6 @@ int main(int argc, char *argv[]) {
     std::uint32_t seed = 0;
     bool smoke_test = false;
     std::string vrp_file;
-    int precision = 1;
     int two_opt_k = 0;
     bool two_opt_enable_precheck = true;
     int crossover_prob = 100;
@@ -226,7 +225,6 @@ int main(int argc, char *argv[]) {
         ("seed,s", boost::program_options::value<std::uint32_t>(&seed)->default_value(0xC0FFEEu), "Random seed")
         ("smoke_test,t", boost::program_options::bool_switch(&smoke_test), "Run a single generation smoke test on FPGA and exit")
         ("vrp_file,f", boost::program_options::value<std::string>(&vrp_file)->default_value(kDefaultProblemFile), "Path to the CVRP instance file")
-        ("precision,r", boost::program_options::value<int>(&precision)->default_value(1), "Coordinate precision scaling factor (higher precision in sqrt calculation)")
         ("two_opt_k,o", boost::program_options::value<int>(&two_opt_k)->default_value(0), "Number of 2-opt iterations per subtour")
         ("two_opt_enable_precheck", boost::program_options::value<bool>(&two_opt_enable_precheck)->default_value(true), "Enable precheck for 2-opt moves")
         ("crossover_prob", boost::program_options::value<int>(&crossover_prob)->default_value(100), "Crossover probability (0 to 100)")
@@ -249,10 +247,6 @@ int main(int argc, char *argv[]) {
         throw std::invalid_argument("population_size_multiplier must be greater than 0");
     }
 
-    if (precision < 1) {
-        throw std::invalid_argument("precision must not be smaller than 1");
-    }
-
     if (crossover_prob < 0 || crossover_prob > 100) {
         throw std::invalid_argument("crossover_prob must be between 0 and 100");
     }
@@ -268,7 +262,6 @@ int main(int argc, char *argv[]) {
     std::cout << "Number of generations: " << n_generations << std::endl;
     std::cout << "Percentage of best individuals to keep: " << n_best_keep << "%" << std::endl;
     std::cout << "Seed: " << seed << std::endl;
-    std::cout << "Precision: " << precision << std::endl;
     std::cout << "Two-opt k: " << two_opt_k << std::endl;
     std::cout << "Two-opt enable precheck: " << (two_opt_enable_precheck ? "ENABLED" : "DISABLED") << std::endl;
     std::cout << "Crossover probability: " << crossover_prob << "%" << std::endl;
@@ -277,7 +270,7 @@ int main(int argc, char *argv[]) {
     std::cout << "Genome hasher: " << get_hash_backend_name() << std::endl;
     std::cout << "VRP file: " << vrp_file << std::endl << std::endl;
 
-    const ProblemInstance problem = parse_vrp(vrp_file, precision);
+    const ProblemInstance problem = parse_vrp(vrp_file);
     validate_encoding_constants(problem);
 
     std::size_t pop_size = problem.dimension * population_size_multiplier;
@@ -292,6 +285,7 @@ int main(int argc, char *argv[]) {
     std::cout << "Loaded problem: " << problem.name << std::endl;
     std::cout << "Dimension: " << problem.dimension << std::endl;
     std::cout << "Vehicle capacity: " << problem.capacity << std::endl;
+    std::cout << "Precision: " << problem.scaling << std::endl;
     std::cout << "Total population size: " << pop_size << std::endl;
     std::cout << "Max subtours: " << max_subtours << std::endl;
 

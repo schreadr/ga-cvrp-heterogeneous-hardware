@@ -59,7 +59,7 @@ bool validate_encoding_constants(const ProblemInstance &problem, bool throw_on_e
         failed = true;
     }
 
-    int max_fitness = 2 * std::ceil(std::sqrt(max_trans_x * max_trans_x + max_trans_y * max_trans_y)) * (problem.dimension - 1);
+    uint64_t max_fitness = static_cast<uint64_t>(2.0 * std::ceil(std::sqrt(static_cast<double>(max_trans_x) * max_trans_x + static_cast<double>(max_trans_y) * max_trans_y)) * (problem.dimension - 1));
     int expected_fitness_bits = bit_width(max_fitness);
     if (FITNESS_BITS < expected_fitness_bits) {
         std::cout << "FITNESS_BITS is too small for the given problem instance (max fitness must fit in). Required: " + std::to_string(expected_fitness_bits) << std::endl;

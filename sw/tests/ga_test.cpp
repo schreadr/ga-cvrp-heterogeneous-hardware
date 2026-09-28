@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -20,6 +21,7 @@
 
 #include "ga.hpp"
 #include "ga_streaming.hpp"
+#include "problem_parser.hpp"
 
 namespace {
 
@@ -726,6 +728,41 @@ bool test_calc_max_n_subtours() {
     return true;
 }
 
+bool test_calculate_highest_precision() {
+    // P-n40-k5: span_x = 58, span_y = 59, dimension = 40 (num_cities = 39)
+    // max_coord = (1 << 20) - 1 = 1048575. 1048575 / 59 = 17772.
+    int p40 = calculate_highest_precision(58.0, 59.0, 40);
+    if (p40 != 17772) {
+        std::cerr << "FAIL [test_calculate_highest_precision]: expected 17772 for P-n40-k5 params, got " << p40 << "\n";
+        return false;
+    }
+
+    // P-n16-k8: span_x = 35, span_y = 42, dimension = 16 (num_cities = 15)
+    // 1048575 / 42 = 24966.
+    int p16 = calculate_highest_precision(35.0, 42.0, 16);
+    if (p16 != 24966) {
+        std::cerr << "FAIL [test_calculate_highest_precision]: expected 24966 for P-n16-k8 params, got " << p16 << "\n";
+        return false;
+    }
+
+    // Edge case: zero span
+    int p_zero = calculate_highest_precision(0.0, 0.0, 10);
+    if (p_zero != (1 << COORD_BITS) - 1) {
+        std::cerr << "FAIL [test_calculate_highest_precision]: expected max_coord for zero span, got " << p_zero << "\n";
+        return false;
+    }
+
+    // Edge case: span larger than max_coord returns 1
+    int p_large = calculate_highest_precision(1 << (COORD_BITS + 1), 10.0, 10);
+    if (p_large != 1) {
+        std::cerr << "FAIL [test_calculate_highest_precision]: expected 1 for oversized span, got " << p_large << "\n";
+        return false;
+    }
+
+    std::cout << "PASS [test_calculate_highest_precision]\n";
+    return true;
+}
+
 } // namespace
 
 int main() {
@@ -771,6 +808,9 @@ int main() {
 
     // calc_max_n_subtours test
     run("calc_max_n_subtours", test_calc_max_n_subtours);
+
+    // precision tests
+    run("calculate_highest_precision", test_calculate_highest_precision);
 
     std::cout << "========================================\n";
     std::cout << "Result: " << passed << " / " << total << " tests passed.\n";

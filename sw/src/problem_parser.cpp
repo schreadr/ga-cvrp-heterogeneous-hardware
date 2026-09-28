@@ -53,9 +53,34 @@ std::string value_after_colon(const std::string &line) {
     return trim(line.substr(colon + 1));
 }
 
+int calculate_highest_precision(double span_x, double span_y, int dimension) {
+    constexpr uint64_t max_coord = (1ULL << COORD_BITS) - 1ULL;
+    constexpr uint64_t max_fitness = (1ULL << FITNESS_BITS) - 1ULL;
+
+    double max_span = std::max(span_x, span_y);
+    if (max_span <= 0.0) {
+        return static_cast<int>(max_coord);
+    }
+
+    double p_coord = static_cast<double>(max_coord) / max_span;
+
+    int num_cities = dimension - 1;
+    double p_fitness = p_coord;
+    if (num_cities > 0) {
+        double diag = std::sqrt(span_x * span_x + span_y * span_y);
+        if (diag > 0.0) {
+            double max_diag = static_cast<double>(max_fitness / (2ULL * static_cast<uint64_t>(num_cities)));
+            p_fitness = max_diag / diag;
+        }
+    }
+
+    int precision = static_cast<int>(std::floor(std::min(p_coord, p_fitness)));
+    return std::max(1, precision);
+}
+
 ProblemInstance parse_vrp(const std::string &path, int precision) {
-    if (precision < 1) {
-        throw std::invalid_argument("precision must not be smaller than 1");
+    if (precision < 0) {
+        throw std::invalid_argument("precision must not be negative");
     }
     std::ifstream input(path);
     if (!input.is_open()) {
@@ -63,8 +88,13 @@ ProblemInstance parse_vrp(const std::string &path, int precision) {
     }
 
     ProblemInstance problem;
-    problem.scaling = precision;
-    std::vector<ProblemNode> all_nodes;
+    struct RawCoord {
+        int id = 0;
+        double x = 0.0;
+        double y = 0.0;
+        int demand = 0;
+    };
+    std::vector<RawCoord> raw_nodes;
     int expected_dimension = -1;
     int depot_id = -1;
 
@@ -103,7 +133,7 @@ ProblemInstance parse_vrp(const std::string &path, int precision) {
                 problem.name = value_after_colon(line);
             } else if (line.rfind("DIMENSION", 0) == 0) {
                 expected_dimension = std::stoi(value_after_colon(line));
-                all_nodes.resize(static_cast<std::size_t>(expected_dimension) + 1);
+                raw_nodes.resize(static_cast<std::size_t>(expected_dimension) + 1);
             } else if (line.rfind("CAPACITY", 0) == 0) {
                 problem.capacity = std::stoi(value_after_colon(line));
             }
@@ -113,17 +143,17 @@ ProblemInstance parse_vrp(const std::string &path, int precision) {
         if (section == Section::NodeCoords) {
             std::istringstream iss(line);
             int id;
-            int x;
-            int y;
+            double x;
+            double y;
             if (!(iss >> id >> x >> y)) {
                 throw std::runtime_error("Failed to parse NODE_COORD_SECTION line: " + line);
             }
-            if (all_nodes.empty()) {
+            if (raw_nodes.empty()) {
                 throw std::runtime_error("DIMENSION must appear before NODE_COORD_SECTION");
             }
-            int scaled_x = x * precision;
-            int scaled_y = y * precision;
-            all_nodes.at(static_cast<std::size_t>(id)) = ProblemNode{id, scaled_x, scaled_y, 0};
+            raw_nodes.at(static_cast<std::size_t>(id)).id = id;
+            raw_nodes.at(static_cast<std::size_t>(id)).x = x;
+            raw_nodes.at(static_cast<std::size_t>(id)).y = y;
             continue;
         }
 
@@ -134,10 +164,10 @@ ProblemInstance parse_vrp(const std::string &path, int precision) {
             if (!(iss >> id >> demand)) {
                 throw std::runtime_error("Failed to parse DEMAND_SECTION line: " + line);
             }
-            if (all_nodes.empty()) {
+            if (raw_nodes.empty()) {
                 throw std::runtime_error("DIMENSION must appear before DEMAND_SECTION");
             }
-            all_nodes.at(static_cast<std::size_t>(id)).demand = demand;
+            raw_nodes.at(static_cast<std::size_t>(id)).demand = demand;
             continue;
         }
 
@@ -156,7 +186,7 @@ ProblemInstance parse_vrp(const std::string &path, int precision) {
         }
     }
 
-    if (expected_dimension <= 0 || all_nodes.size() != static_cast<std::size_t>(expected_dimension) + 1) {
+    if (expected_dimension <= 0 || raw_nodes.size() != static_cast<std::size_t>(expected_dimension) + 1) {
         throw std::runtime_error("VRP file did not provide a valid DIMENSION");
     }
     if (problem.capacity <= 0) {
@@ -169,20 +199,35 @@ ProblemInstance parse_vrp(const std::string &path, int precision) {
     problem.dimension = expected_dimension;
 
     // Normalize coordinates by subtracting minimum x / y (including depot)
-    int min_x = std::numeric_limits<int>::max();
-    int min_y = std::numeric_limits<int>::max();
+    double min_x = std::numeric_limits<double>::infinity();
+    double max_x = -std::numeric_limits<double>::infinity();
+    double min_y = std::numeric_limits<double>::infinity();
+    double max_y = -std::numeric_limits<double>::infinity();
     for (int id = 1; id <= problem.dimension; ++id) {
-        min_x = std::min(min_x, all_nodes.at(static_cast<std::size_t>(id)).x);
-        min_y = std::min(min_y, all_nodes.at(static_cast<std::size_t>(id)).y);
+        min_x = std::min(min_x, raw_nodes.at(static_cast<std::size_t>(id)).x);
+        max_x = std::max(max_x, raw_nodes.at(static_cast<std::size_t>(id)).x);
+        min_y = std::min(min_y, raw_nodes.at(static_cast<std::size_t>(id)).y);
+        max_y = std::max(max_y, raw_nodes.at(static_cast<std::size_t>(id)).y);
     }
 
-    int max_trans_x = std::numeric_limits<int>::min();
-    int max_trans_y = std::numeric_limits<int>::min();
+    double span_x = max_x - min_x;
+    double span_y = max_y - min_y;
+
+    if (precision <= 0) {
+        precision = calculate_highest_precision(span_x, span_y, problem.dimension);
+    }
+    problem.scaling = precision;
+
+    std::vector<ProblemNode> all_nodes(static_cast<std::size_t>(problem.dimension) + 1);
     for (int id = 1; id <= problem.dimension; ++id) {
-        all_nodes.at(static_cast<std::size_t>(id)).x -= min_x;
-        all_nodes.at(static_cast<std::size_t>(id)).y -= min_y;
-        max_trans_x = std::max(max_trans_x, all_nodes.at(static_cast<std::size_t>(id)).x);
-        max_trans_y = std::max(max_trans_y, all_nodes.at(static_cast<std::size_t>(id)).y);
+        int scaled_x = static_cast<int>(std::round((raw_nodes.at(static_cast<std::size_t>(id)).x - min_x) * precision));
+        int scaled_y = static_cast<int>(std::round((raw_nodes.at(static_cast<std::size_t>(id)).y - min_y) * precision));
+        all_nodes.at(static_cast<std::size_t>(id)) = ProblemNode{
+            id,
+            scaled_x,
+            scaled_y,
+            raw_nodes.at(static_cast<std::size_t>(id)).demand
+        };
     }
 
     // Separate depot from customers: depot is stored separately, customers get 0-based indices
@@ -199,3 +244,4 @@ ProblemInstance parse_vrp(const std::string &path, int precision) {
 
     return problem;
 }
+

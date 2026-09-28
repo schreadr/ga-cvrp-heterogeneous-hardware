@@ -37,11 +37,20 @@
 #include "ga.hpp"
 
 /*
+ * Calculate the highest possible coordinate precision factor for a given coordinate span
+ * and problem dimension such that coordinates fit in COORD_BITS and maximum fitness fits
+ * in FITNESS_BITS.
+ */
+int calculate_highest_precision(double span_x, double span_y, int dimension);
+
+/*
  * Parse a CVRP instance file. Coordinates are scaled by precision (to allow higher
  * precision in sqrt distance calculations) and normalized by subtracting the minimum
  * x / y so that they fit into the COORD_BITS-wide encoding fields.
+ * If precision is <= 0 (the default), it is automatically set to the highest
+ * possible value that fits within COORD_BITS and FITNESS_BITS.
  */
-ProblemInstance parse_vrp(const std::string &path, int precision = 1);
+ProblemInstance parse_vrp(const std::string &path, int precision = 0);
 
 
 #endif
