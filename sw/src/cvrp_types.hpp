@@ -92,6 +92,4 @@ Individual build_individual(const ProblemInstance &problem, const std::vector<in
  */
 std::vector<Individual> build_initial_population(const ProblemInstance &problem, std::size_t population_size, std::uint32_t population_seed);
 
-int calc_max_n_subtours(const ProblemInstance &problem);
-
 #endif // CVRP_TYPES_HPP

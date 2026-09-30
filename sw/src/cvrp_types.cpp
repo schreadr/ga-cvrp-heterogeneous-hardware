@@ -7,31 +7,6 @@
 #include <stdexcept>
 #include <string>
 
-int calc_max_n_subtours(const ProblemInstance &problem) {
-    if (problem.nodes.empty()) return 0;
-    std::vector<int> demands;
-    demands.reserve(problem.nodes.size());
-    for (const auto &node : problem.nodes) {
-        demands.push_back(node.demand);
-    }
-    std::sort(demands.rbegin(), demands.rend());
-
-    int k_min = 0;
-    int load = 0;
-    for (int d : demands) {
-        if (load + d <= problem.capacity) {
-            load += d;
-            k_min++;
-        } else {
-            break;
-        }
-    }
-    if (k_min == 0) k_min = 1;
-
-    int num_customers = static_cast<int>(problem.nodes.size());
-    return (num_customers + k_min - 1) / k_min;
-}
-
 std::uint32_t floor_euclidean_distance(const ProblemNode &lhs, const ProblemNode &rhs) {
     const long long dx = static_cast<long long>(lhs.x) - static_cast<long long>(rhs.x);
     const long long dy = static_cast<long long>(lhs.y) - static_cast<long long>(rhs.y);

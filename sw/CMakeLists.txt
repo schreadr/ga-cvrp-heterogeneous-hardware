@@ -61,7 +61,7 @@ set(CVRP_SOURCES
 
 # Create build targets and link against required libraries
 set(EXEC test)
-add_executable(${EXEC} ${TARGET_DIR}/main.cpp ${CVRP_SOURCES})
+add_executable(${EXEC} ${TARGET_DIR}/main.cpp ${TARGET_DIR}/coyote_ga.cpp ${CVRP_SOURCES})
 
 target_link_libraries(${EXEC} PUBLIC Coyote)
 

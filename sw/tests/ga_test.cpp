@@ -677,57 +677,6 @@ bool test_validate_constants_max_cities_overflow() {
     return true;
 }
 
-bool test_calc_max_n_subtours() {
-    ProblemInstance p1;
-    p1.dimension = 6;
-    p1.capacity = 30;
-    p1.nodes = {
-        ProblemNode{1, 0, 0, 10},
-        ProblemNode{2, 0, 0, 20},
-        ProblemNode{3, 0, 0, 15},
-        ProblemNode{4, 0, 0, 10},
-        ProblemNode{5, 0, 0, 5}
-    };
-    // Demands: 20, 15, 10, 10, 5. Capacity: 30.
-    // Largest fitting: 20 <= 30; 20 + 15 = 35 > 30 => k_min = 1.
-    // N = 5 customers => ceil(5 / 1) = 5 max subtours.
-    int subtours1 = calc_max_n_subtours(p1);
-    if (subtours1 != 5) {
-        std::cerr << "FAIL [test_calc_max_n_subtours]: expected 5 for p1, got " << subtours1 << "\n";
-        return false;
-    }
-
-    ProblemInstance p2;
-    p2.dimension = 7;
-    p2.capacity = 100;
-    p2.nodes = {
-        ProblemNode{1, 0, 0, 30},
-        ProblemNode{2, 0, 0, 30},
-        ProblemNode{3, 0, 0, 30},
-        ProblemNode{4, 0, 0, 30},
-        ProblemNode{5, 0, 0, 30},
-        ProblemNode{6, 0, 0, 30}
-    };
-    // Demands: 30, 30, 30, 30, 30, 30. Capacity: 100.
-    // Largest fitting: 30 + 30 + 30 = 90 <= 100; 90 + 30 = 120 > 100 => k_min = 3.
-    // N = 6 customers => ceil(6 / 3) = 2 max subtours.
-    int subtours2 = calc_max_n_subtours(p2);
-    if (subtours2 != 2) {
-        std::cerr << "FAIL [test_calc_max_n_subtours]: expected 2 for p2, got " << subtours2 << "\n";
-        return false;
-    }
-
-    // Empty instance
-    ProblemInstance empty_p;
-    if (calc_max_n_subtours(empty_p) != 0) {
-        std::cerr << "FAIL [test_calc_max_n_subtours]: expected 0 for empty problem\n";
-        return false;
-    }
-
-    std::cout << "PASS [test_calc_max_n_subtours]\n";
-    return true;
-}
-
 bool test_calculate_highest_precision() {
     // P-n40-k5: span_x = 58, span_y = 59, dimension = 40 (num_cities = 39)
     // max_coord = (1 << 20) - 1 = 1048575. 1048575 / 59 = 17772.
@@ -805,9 +754,6 @@ int main() {
     run("validate_encoding_constants (capacity overflow)", test_validate_constants_capacity_overflow);
     run("validate_encoding_constants (demand overflow)", test_validate_constants_demand_overflow);
     run("validate_encoding_constants (max_cities overflow)", test_validate_constants_max_cities_overflow);
-
-    // calc_max_n_subtours test
-    run("calc_max_n_subtours", test_calc_max_n_subtours);
 
     // precision tests
     run("calculate_highest_precision", test_calculate_highest_precision);
