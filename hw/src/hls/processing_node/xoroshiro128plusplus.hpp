@@ -19,8 +19,6 @@
 class xoroshiro128plusplus {
 private:
     uint64_t s[2];
-    uint64_t last_seed;
-    bool initialized;
 
     static inline uint64_t rotl(const uint64_t x, int k) {
         #pragma HLS INLINE
@@ -28,13 +26,13 @@ private:
     }
 
 public:
-    xoroshiro128plusplus() : last_seed(0), initialized(false) {
+    xoroshiro128plusplus() {
         #pragma HLS INLINE
         s[0] = 0x123456789ABCDEF0ULL;
         s[1] = 0x9E3779B97F4A7C15ULL;
     }
 
-    explicit xoroshiro128plusplus(uint64_t seed_val) : last_seed(0), initialized(false) {
+    explicit xoroshiro128plusplus(uint64_t seed_val) {
         #pragma HLS INLINE
         seed(seed_val);
     }
@@ -61,8 +59,6 @@ public:
         if (s[0] == 0ULL && s[1] == 0ULL) {
             s[0] = 1ULL;
         }
-        last_seed = seed_val;
-        initialized = true;
     }
 
     /// Generate 64 bits of uniform pseudo-random output

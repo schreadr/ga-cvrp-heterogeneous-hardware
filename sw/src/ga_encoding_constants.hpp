@@ -29,15 +29,10 @@
 
 // Host / AXI Interface Beat Constants
 #define AXI_BEAT_WIDTH              512
-#define AXI_WIDTH                   AXI_BEAT_WIDTH // alias for Coyote compatibility
 #define AXI_BYTES                   (AXI_BEAT_WIDTH / 8) // 64
 #define AXI_CITIES_PER_BEAT         (AXI_BEAT_WIDTH / CITY_BITS) // 32
 #define AXI_CITIES_PER_BEAT_LOG2     5 // log2(AXI_CITIES_PER_BEAT)
-
-#define AXI_MAX_CITY_BEATS          ((MAX_CITIES + AXI_CITIES_PER_BEAT - 1) / AXI_CITIES_PER_BEAT) // 32
 #define AXI_FITNESS_BEATS            1
-#define AXI_MAX_BEATS               (AXI_MAX_CITY_BEATS + AXI_FITNESS_BEATS) // 33
-#define AXI_MAX_BEATS_LOG2           6 // ceil(log2(AXI_MAX_BEATS))
 
 // Hardware Pipeline Beat Constants
 #define HW_CITIES_PER_BEAT          2
@@ -54,17 +49,14 @@
 
 // Node Cache Encoding Constants
 #define NODE_CACHE_ENTRY_BITS        64
-#define NODE_CACHE_ENTRY_BITS_LOG2    6
 #define NODE_CACHE_COORD_X_OFFSET     0
 #define NODE_CACHE_COORD_Y_OFFSET    (COORD_BITS)
 #define NODE_CACHE_DEMAND_OFFSET     (2 * COORD_BITS)
 
 #define NODE_CACHE_ENTRIES_PER_BEAT      (AXI_BEAT_WIDTH / NODE_CACHE_ENTRY_BITS) // 8
 #define NODE_CACHE_ENTRIES_PER_BEAT_LOG2 3
-#define CITIES_PER_CACHE_BEAT            NODE_CACHE_ENTRIES_PER_BEAT
 
 #define MAX_CACHE_ENTRIES            (MAX_CITIES + 1) // MAX_CITIES customers + 1 depot
-#define MAX_CACHE_BEATS              ((MAX_CACHE_ENTRIES + NODE_CACHE_ENTRIES_PER_BEAT - 1) / NODE_CACHE_ENTRIES_PER_BEAT)
 
 
 static void assert_power_of_two(int x) {
@@ -85,9 +77,6 @@ static_block {
     assert((1ULL << AXI_CITIES_PER_BEAT_LOG2) == AXI_CITIES_PER_BEAT);
     assert(AXI_BYTES * 8 == AXI_BEAT_WIDTH);
     assert(AXI_CITIES_PER_BEAT * CITY_BITS == AXI_BEAT_WIDTH);
-    assert(AXI_MAX_CITY_BEATS == (MAX_CITIES + AXI_CITIES_PER_BEAT - 1) / AXI_CITIES_PER_BEAT);
-    assert(AXI_MAX_BEATS == AXI_MAX_CITY_BEATS + AXI_FITNESS_BEATS);
-    assert(AXI_MAX_BEATS_LOG2 == std::ceil(std::log2(AXI_MAX_BEATS)));
 
     // Hardware Pipeline Beat Constraints
     assert_power_of_two(HW_CITIES_PER_BEAT);
@@ -107,13 +96,11 @@ static_block {
     assert_power_of_two(NODE_CACHE_ENTRIES_PER_BEAT);
     assert(NODE_CACHE_ENTRY_BITS >= 2 * COORD_BITS + CAPACITY_BITS);
     assert(NODE_CACHE_ENTRIES_PER_BEAT * NODE_CACHE_ENTRY_BITS == AXI_BEAT_WIDTH);
-    assert((1ULL << NODE_CACHE_ENTRY_BITS_LOG2) == NODE_CACHE_ENTRY_BITS);
     assert((1ULL << NODE_CACHE_ENTRIES_PER_BEAT_LOG2) == NODE_CACHE_ENTRIES_PER_BEAT);
     assert(NODE_CACHE_COORD_X_OFFSET == 0);
     assert(NODE_CACHE_COORD_Y_OFFSET == COORD_BITS);
     assert(NODE_CACHE_DEMAND_OFFSET == 2 * COORD_BITS);
     assert(MAX_CACHE_ENTRIES == MAX_CITIES + 1);
-    assert(MAX_CACHE_BEATS == (MAX_CACHE_ENTRIES + NODE_CACHE_ENTRIES_PER_BEAT - 1) / NODE_CACHE_ENTRIES_PER_BEAT);
 
 }
 

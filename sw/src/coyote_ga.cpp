@@ -26,9 +26,7 @@
 
 #include "coyote_ga.hpp"
 
-#include <algorithm>
 #include <array>
-#include <cmath>
 #include <cstring>
 #include <iomanip>
 #include <iostream>

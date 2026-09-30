@@ -9,7 +9,6 @@
 
 #ifndef N_TWO_OPT_WORKERS
 #define N_TWO_OPT_WORKERS 8
-#define N_TWO_OPT_WORKERS_LOG2 3 
 #endif
 
 struct SubtourMeta {

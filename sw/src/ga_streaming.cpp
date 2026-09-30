@@ -8,14 +8,6 @@
 #include "ga_streaming.hpp"
 #include "ga.hpp"
 
-void write_bits_le(std::uint8_t *word_bytes, std::size_t start_bit, unsigned width, std::uint32_t value) {
-    for (unsigned bit = 0; bit < width; ++bit) {
-        if ((value >> bit) & 1u) {
-            const std::size_t absolute_bit = start_bit + bit;
-            word_bytes[absolute_bit / 8] |= static_cast<std::uint8_t>(1u << (absolute_bit % 8));
-        }
-    }
-}
 
 std::vector<uint8_t> encode_node_cache(const ProblemInstance &problem) {
     const int num_cities = static_cast<int>(problem.nodes.size());

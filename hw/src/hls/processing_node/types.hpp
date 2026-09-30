@@ -15,7 +15,6 @@
 // 1. Bitfield Index & Counter Types
 // ----------------------------------------------------------------------------
 typedef ap_uint<MAX_CITIES_LOG2 + 1>                  CityIndex;
-typedef ap_uint<2 * (MAX_CITIES_LOG2 + 1)>            TwoCityIndex;
 typedef ap_uint<HW_MAX_BEATS_LOG2 + 1>                BeatIndex;
 typedef ap_uint<HW_CITIES_PER_BEAT_LOG2 + 1>          CityBeatIndex;
 typedef ap_uint<NODE_CACHE_ENTRIES_PER_BEAT_LOG2 + 1> BeatCacheIndex;
@@ -172,11 +171,6 @@ static inline CityBeatIndex get_city_beat_idx(T val) {
     return val & (HW_CITIES_PER_BEAT - 1);
 }
 
-template <typename T>
-static inline CityBeatIndex get_city_idx(T val) {
-    #pragma HLS INLINE
-    return get_city_beat_idx(val);
-}
 
 static inline void get_beat_city(CityIndex global_idx, BeatIndex &beat_idx, CityIndex &city_idx) {
     #pragma HLS INLINE

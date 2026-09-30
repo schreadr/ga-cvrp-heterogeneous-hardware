@@ -98,9 +98,6 @@ bool validate_encoding_constants(const ProblemInstance &problem, bool throw_on_e
         int new_axi_bytes = new_axi_beat_width / 8;
         int new_axi_cities_per_beat = new_axi_beat_width / new_city_bits;
         int new_axi_cities_per_beat_log2 = static_cast<int>(std::log2(new_axi_cities_per_beat));
-        int new_axi_max_city_beats = (new_max_cities + new_axi_cities_per_beat - 1) / new_axi_cities_per_beat;
-        int new_axi_max_beats = new_axi_max_city_beats + AXI_FITNESS_BEATS;
-        int new_axi_max_beats_log2 = static_cast<int>(std::ceil(std::log2(new_axi_max_beats)));
 
         int new_hw_cities_per_beat = HW_CITIES_PER_BEAT;
         while (new_hw_cities_per_beat * new_city_bits < new_fitness_bits) {
@@ -115,11 +112,9 @@ bool validate_encoding_constants(const ProblemInstance &problem, bool throw_on_e
         int new_hw_max_beats_log2 = static_cast<int>(std::ceil(std::log2(new_hw_max_beats)));
 
         int new_cache_entry_bits = 2 * new_coord_bits + new_capacity_bits;
-        int new_cache_entry_bits_log2 = static_cast<int>(std::ceil(std::log2(new_cache_entry_bits)));
         int new_cache_entries_per_beat = new_axi_beat_width / new_cache_entry_bits;
         int new_cache_entries_per_beat_log2 = static_cast<int>(std::floor(std::log2(new_cache_entries_per_beat)));
         int new_max_cache_entries = new_max_cities + 1;
-        int new_max_cache_beats = (new_max_cache_entries + new_cache_entries_per_beat - 1) / new_cache_entries_per_beat;
 
         std::cout << "\n======================================================================\n";
         std::cout << "Suggested ga_encoding_constants.hpp configuration for " << problem.name << ":\n";
@@ -138,14 +133,10 @@ bool validate_encoding_constants(const ProblemInstance &problem, bool throw_on_e
         std::cout << "#define CITY_BITS_LOG2               " << new_city_bits_log2 << " // log2(CITY_BITS)\n\n";
         std::cout << "// 4. Host / AXI Interface Beat Constants\n";
         std::cout << "#define AXI_BEAT_WIDTH              " << new_axi_beat_width << "\n";
-        std::cout << "#define AXI_WIDTH                   AXI_BEAT_WIDTH\n";
         std::cout << "#define AXI_BYTES                   (AXI_BEAT_WIDTH / 8) // " << new_axi_bytes << "\n";
         std::cout << "#define AXI_CITIES_PER_BEAT         " << new_axi_cities_per_beat << " // AXI_BEAT_WIDTH / CITY_BITS\n";
         std::cout << "#define AXI_CITIES_PER_BEAT_LOG2     " << new_axi_cities_per_beat_log2 << " // log2(AXI_CITIES_PER_BEAT)\n";
-        std::cout << "#define AXI_MAX_CITY_BEATS          " << new_axi_max_city_beats << "\n";
-        std::cout << "#define AXI_FITNESS_BEATS            1\n";
-        std::cout << "#define AXI_MAX_BEATS               " << new_axi_max_beats << "\n";
-        std::cout << "#define AXI_MAX_BEATS_LOG2           " << new_axi_max_beats_log2 << "\n\n";
+        std::cout << "#define AXI_FITNESS_BEATS            1\n\n";
         std::cout << "// 5. Hardware Pipeline Beat Constants\n";
         std::cout << "#define HW_CITIES_PER_BEAT          " << new_hw_cities_per_beat << "\n";
         std::cout << "#define HW_CITIES_PER_BEAT_LOG2     " << new_hw_cities_per_beat_log2 << "\n";
@@ -158,15 +149,12 @@ bool validate_encoding_constants(const ProblemInstance &problem, bool throw_on_e
         std::cout << "#define HW_MAX_BEATS_LOG2           " << new_hw_max_beats_log2 << "\n\n";
         std::cout << "// 6. Node Cache Encoding Constants\n";
         std::cout << "#define NODE_CACHE_ENTRY_BITS        " << new_cache_entry_bits << "\n";
-        std::cout << "#define NODE_CACHE_ENTRY_BITS_LOG2    " << new_cache_entry_bits_log2 << "\n";
         std::cout << "#define NODE_CACHE_COORD_X_OFFSET     0\n";
         std::cout << "#define NODE_CACHE_COORD_Y_OFFSET    (COORD_BITS)\n";
         std::cout << "#define NODE_CACHE_DEMAND_OFFSET     (2 * COORD_BITS)\n";
         std::cout << "#define NODE_CACHE_ENTRIES_PER_BEAT      " << new_cache_entries_per_beat << "\n";
         std::cout << "#define NODE_CACHE_ENTRIES_PER_BEAT_LOG2 " << new_cache_entries_per_beat_log2 << "\n";
-        std::cout << "#define CITIES_PER_CACHE_BEAT            NODE_CACHE_ENTRIES_PER_BEAT\n";
         std::cout << "#define MAX_CACHE_ENTRIES            " << new_max_cache_entries << " // MAX_CITIES + 1\n";
-        std::cout << "#define MAX_CACHE_BEATS              " << new_max_cache_beats << "\n";
         std::cout << "======================================================================\n\n";
 
         if (throw_on_error) {

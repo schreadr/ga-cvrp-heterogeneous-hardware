@@ -75,6 +75,7 @@ struct BeatPacketWithLast {
     bool last;
 };
 
+template <int TARGET_II = 1>
 inline void capture_and_tag_packets(
     hls::stream<BeatPacket> &in_stream,
     hls::stream<BeatPacketWithLast> &out_stream,
@@ -85,7 +86,7 @@ inline void capture_and_tag_packets(
     CityIndex remaining = n_cities_to_copy;
     bool is_last = false;
     CAPTURE_LOOP: do {
-        #pragma HLS PIPELINE II=1
+        #pragma HLS PIPELINE II=TARGET_II
         BeatPacket pkt = in_stream.read();
         CityIndex n = pkt.n;
         if (n > 0) {
@@ -123,6 +124,7 @@ static inline void switch_beat(
     accum_beat = (dst_beat == end_beat_idx) ? old_end : ((dst_beat == start_beat) ? initial_start_beat : Beat(0));
 }
 
+template <int TARGET_II = 1>
 inline void propagate_tagged_packets(
     hls::stream<BeatPacketWithLast> &in_stream,
     IndividualAsBeats &dst_ind,
@@ -150,7 +152,7 @@ inline void propagate_tagged_packets(
 
     bool is_last = false;
     PROPAGATE_LOOP: do {
-        #pragma HLS PIPELINE II=1
+        #pragma HLS PIPELINE II=TARGET_II
         BeatPacketWithLast pkt = in_stream.read();
         is_last = pkt.last;
 
@@ -224,7 +226,7 @@ inline void propagate_tagged_packets(
     }
 }
 
-template <int TARGET_II>
+template <int TARGET_II = 1>
 void stream_beats_to_individual(
     hls::stream<BeatPacket> &in_stream,
     IndividualAsBeats &dst_ind,
@@ -237,8 +239,8 @@ void stream_beats_to_individual(
     hls::stream<BeatPacketWithLast> tagged_stream("tagged_packet_stream");
     #pragma HLS STREAM variable=tagged_stream depth=4
 
-    capture_and_tag_packets(in_stream, tagged_stream, n_cities_to_copy);
-    propagate_tagged_packets(tagged_stream, dst_ind, dst_start_idx, n_cities_to_copy, start_end_data, num_cities);
+    capture_and_tag_packets<TARGET_II>(in_stream, tagged_stream, n_cities_to_copy);
+    propagate_tagged_packets<TARGET_II>(tagged_stream, dst_ind, dst_start_idx, n_cities_to_copy, start_end_data, num_cities);
 }
 
 template <int W_IN>

@@ -25,7 +25,7 @@
  */
 
 #include "problem_parser.hpp"
-#include "ga_streaming.hpp"
+#include "ga_encoding_constants.hpp"
 
 #include <algorithm>
 #include <fstream>
