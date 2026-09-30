@@ -83,6 +83,7 @@ struct CoyoteAppConfig {
     int mutation_prob = 100;
     bool smoke_test = false;
     std::string vrp_file;
+    std::string output_file;
 };
 
 /**

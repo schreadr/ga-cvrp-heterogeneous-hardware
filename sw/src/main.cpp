@@ -53,6 +53,7 @@ int main(int argc, char *argv[]) {
             (",r", boost::program_options::value<bool>(&config.two_opt_enable_precheck)->default_value(true), "Enable precheck for 2-opt moves (1 = enable, 0 = disable)")
             (",c", boost::program_options::value<int>(&config.crossover_prob)->default_value(100), "Crossover probability (0 to 100)")
             (",m", boost::program_options::value<int>(&config.mutation_prob)->default_value(100), "Mutation probability (0 to 100)")
+            (",o", boost::program_options::value<std::string>(&config.output_file)->default_value(""), "Path to output JSON file")
             (",t", boost::program_options::bool_switch(&config.smoke_test), "Run a single generation smoke test on FPGA and exit");
 
         boost::program_options::variables_map command_line_arguments;
@@ -74,6 +75,7 @@ int main(int argc, char *argv[]) {
         std::cout << "Two-opt enable precheck: " << (config.two_opt_enable_precheck ? "ENABLED" : "DISABLED") << std::endl;
         std::cout << "Crossover probability: " << config.crossover_prob << "%" << std::endl;
         std::cout << "Mutation probability: " << config.mutation_prob << "%" << std::endl;
+        std::cout << "Output file: " << (config.output_file.empty() ? "(none)" : config.output_file) << std::endl;
         std::cout << "Smoke test mode: " << (config.smoke_test ? "ENABLED" : "DISABLED") << std::endl;
         std::cout << "Genome hasher: " << get_hash_backend_name() << std::endl;
         std::cout << "VRP file: " << config.vrp_file << std::endl << std::endl;
@@ -100,6 +102,11 @@ int main(int argc, char *argv[]) {
 
         GASummary summary = coyote_ga::run_pipelined_ga(problem, config);
         summary.print();
+
+        if (!config.output_file.empty()) {
+            summary.save_json(config.output_file, problem);
+            std::cout << "Saved experiment output to: " << config.output_file << std::endl;
+        }
 
         return EXIT_SUCCESS;
     } catch (const std::exception &e) {

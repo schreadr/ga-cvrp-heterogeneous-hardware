@@ -14,6 +14,16 @@ std::uint32_t floor_euclidean_distance(const ProblemNode &lhs, const ProblemNode
     return static_cast<std::uint32_t>(std::floor(std::sqrt(static_cast<long double>(squared))));
 }
 
+double exact_euclidean_distance(const ProblemNode &lhs, const ProblemNode &rhs) {
+    const double x1 = (lhs.raw_x != 0.0 || lhs.raw_y != 0.0) ? lhs.raw_x : static_cast<double>(lhs.x);
+    const double y1 = (lhs.raw_x != 0.0 || lhs.raw_y != 0.0) ? lhs.raw_y : static_cast<double>(lhs.y);
+    const double x2 = (rhs.raw_x != 0.0 || rhs.raw_y != 0.0) ? rhs.raw_x : static_cast<double>(rhs.x);
+    const double y2 = (rhs.raw_x != 0.0 || rhs.raw_y != 0.0) ? rhs.raw_y : static_cast<double>(rhs.y);
+    const double dx = x1 - x2;
+    const double dy = y1 - y2;
+    return std::sqrt(dx * dx + dy * dy);
+}
+
 std::uint32_t compute_fitness(const ProblemInstance &problem, const Individual &individual) {
     const ProblemNode &depot = problem.depot;
     const ProblemNode *previous = &depot;
@@ -32,6 +42,29 @@ std::uint32_t compute_fitness(const ProblemInstance &problem, const Individual &
 
     if (previous != &depot) {
         total_distance += floor_euclidean_distance(*previous, depot);
+    }
+
+    return total_distance;
+}
+
+double compute_exact_fitness(const ProblemInstance &problem, const Individual &individual) {
+    const ProblemNode &depot = problem.depot;
+    const ProblemNode *previous = &depot;
+    double total_distance = 0.0;
+
+    for (const auto &gene : individual.tour) {
+        const ProblemNode &current = problem.nodes.at(static_cast<std::size_t>(gene.node_id));
+        total_distance += exact_euclidean_distance(*previous, current);
+        if (gene.depot_after) {
+            total_distance += exact_euclidean_distance(current, depot);
+            previous = &depot;
+        } else {
+            previous = &current;
+        }
+    }
+
+    if (previous != &depot) {
+        total_distance += exact_euclidean_distance(*previous, depot);
     }
 
     return total_distance;

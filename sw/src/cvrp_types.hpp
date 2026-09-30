@@ -12,6 +12,8 @@ struct ProblemNode {
     int x = 0;
     int y = 0;
     int demand = 0;
+    double raw_x = 0.0;
+    double raw_y = 0.0;
 };
 
 struct ProblemInstance {
@@ -76,8 +78,14 @@ struct Individual {
 // Floored Euclidean distance between two problem nodes
 std::uint32_t floor_euclidean_distance(const ProblemNode &lhs, const ProblemNode &rhs);
 
+// Exact double-precision Euclidean distance between two problem nodes using unscaled raw coordinates
+double exact_euclidean_distance(const ProblemNode &lhs, const ProblemNode &rhs);
+
 // Total tour distance of an individual (depot -> ... -> depot per route)
 std::uint32_t compute_fitness(const ProblemInstance &problem, const Individual &individual);
+
+// Exact total tour distance of an individual with real sqrt on unscaled coordinates
+double compute_exact_fitness(const ProblemInstance &problem, const Individual &individual);
 
 /*
  * Build one individual from a customer visit order: greedily splits the order

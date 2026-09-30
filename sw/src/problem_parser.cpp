@@ -226,7 +226,9 @@ ProblemInstance parse_vrp(const std::string &path, int precision) {
             id,
             scaled_x,
             scaled_y,
-            raw_nodes.at(static_cast<std::size_t>(id)).demand
+            raw_nodes.at(static_cast<std::size_t>(id)).demand,
+            raw_nodes.at(static_cast<std::size_t>(id)).x,
+            raw_nodes.at(static_cast<std::size_t>(id)).y
         };
     }
 

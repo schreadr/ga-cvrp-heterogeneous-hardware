@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <iostream>
 #include <memory>
 #include <thread>
@@ -186,13 +187,65 @@ void test_run_ga_pipelined_simulation(std::size_t num_vfpgas) {
         std::cerr << "FAIL: Invalid best fitness: " << summary.best_fitness << "\n";
         std::exit(EXIT_FAILURE);
     }
+    if (summary.exact_best_fitness <= 0.0) {
+        std::cerr << "FAIL: exact_best_fitness must be positive: " << summary.exact_best_fitness << "\n";
+        std::exit(EXIT_FAILURE);
+    }
+    if (summary.best_fitness_history.size() != n_generations + 1) {
+        std::cerr << "FAIL: best_fitness_history size " << summary.best_fitness_history.size()
+                  << " != expected " << (n_generations + 1) << "\n";
+        std::exit(EXIT_FAILURE);
+    }
+    for (std::size_t i = 0; i < summary.best_fitness_history.size(); ++i) {
+        if (summary.best_fitness_history[i].generation != i) {
+            std::cerr << "FAIL: Generation index mismatch at " << i << ": got "
+                      << summary.best_fitness_history[i].generation << "\n";
+            std::exit(EXIT_FAILURE);
+        }
+        if (summary.best_fitness_history[i].timestamp_ms < 0.0) {
+            std::cerr << "FAIL: Negative timestamp at gen " << i << "\n";
+            std::exit(EXIT_FAILURE);
+        }
+    }
     if (summary.timings.total_time_ms <= 0.0) {
         std::cerr << "FAIL: Total time must be positive.\n";
         std::exit(EXIT_FAILURE);
     }
+    if (summary.timings.cpu.active_time_ms <= 0.0) {
+        std::cerr << "FAIL: CPU active time must be positive: " << summary.timings.cpu.active_time_ms << "\n";
+        std::exit(EXIT_FAILURE);
+    }
+    if (summary.timings.workers.size() != num_vfpgas) {
+        std::cerr << "FAIL: Worker count mismatch: got " << summary.timings.workers.size()
+                  << ", expected " << num_vfpgas << "\n";
+        std::exit(EXIT_FAILURE);
+    }
+    for (const auto &w : summary.timings.workers) {
+        if (w.batches_processed == 0) {
+            std::cerr << "FAIL: Worker " << w.vfid << " processed 0 batches\n";
+            std::exit(EXIT_FAILURE);
+        }
+        if (w.active_time_ms <= 0.0) {
+            std::cerr << "FAIL: Worker " << w.vfid << " active time must be positive\n";
+            std::exit(EXIT_FAILURE);
+        }
+    }
+
+    // Verify JSON export
+    std::string test_json_path = "/tmp/test_doe_output.json";
+    summary.save_json(test_json_path, problem);
+    std::ifstream jf(test_json_path);
+    if (!jf.is_open()) {
+        std::cerr << "FAIL: Failed to open exported test JSON file\n";
+        std::exit(EXIT_FAILURE);
+    }
+    jf.close();
+    std::remove(test_json_path.c_str());
 
     std::cout << "PASS [run_ga_pipelined simulation N=" << num_vfpgas
-              << ", Best Fitness=" << summary.best_fitness
+              << ", HW Fitness=" << summary.best_fitness
+              << ", Exact Fitness=" << summary.exact_best_fitness
+              << ", History Points=" << summary.best_fitness_history.size()
               << ", Wall Time=" << summary.timings.total_time_ms << " ms]\n";
 }
 
