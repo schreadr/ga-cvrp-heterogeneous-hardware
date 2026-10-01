@@ -26,23 +26,24 @@ PROBLEM_INSTANCES_DIR = (Path(__file__).resolve().parent.parent / "problem_insta
 
 # Path(s) to CVRP problem instance file(s)
 VRP_FILES = [
-    str(PROBLEM_INSTANCES_DIR / "P-n50-k7.vrp"),
+    str(PROBLEM_INSTANCES_DIR / "P-n55-k8.vrp"),
+    str(PROBLEM_INSTANCES_DIR / "P-n55-k15.vrp"),
 
     str(PROBLEM_INSTANCES_DIR / "X-n148-k46.vrp"),
-    str(PROBLEM_INSTANCES_DIR / "X-n167-k10.vrp"),
+    str(PROBLEM_INSTANCES_DIR / "X-n153-k22.vrp"),
 
-    str(PROBLEM_INSTANCES_DIR / "X-n513-k21.vrp"),
-    str(PROBLEM_INSTANCES_DIR / "X-n524-k153.vrp"),
+    #str(PROBLEM_INSTANCES_DIR / "X-n513-k21.vrp"),
+    #str(PROBLEM_INSTANCES_DIR / "X-n524-k153.vrp"),
 
-    str(PROBLEM_INSTANCES_DIR / "X-n936-k151.vrp"),
-    str(PROBLEM_INSTANCES_DIR / "X-n1001-k43.vrp"),
+    #str(PROBLEM_INSTANCES_DIR / "X-n936-k151.vrp"),
+    #str(PROBLEM_INSTANCES_DIR / "X-n1001-k43.vrp"),
 ]
 
 # Population size multiplier (pop_size = dimension * multiplier)
 POPULATION_MULTIPLIERS = [10, 20]
 
 # Number of generations to run
-GENERATIONS = [10e5]
+GENERATIONS = [5e4]
 
 # Elitism percentage (% of best individuals to preserve)
 ELITISM_PERCENTAGES = [5.0]
@@ -63,11 +64,11 @@ MUTATION_PROBABILITIES = [10, 15]
 SEEDS = [1842948753, 3109482751, 754928163, 4019284752, 2384951076]
 
 # Hardcoded path to the compiled GA C++ binary
-BINARY_PATH = (Path(__file__).resolve().parent.parent / "sw" / "build" / "test").resolve()
+BINARY_PATH = (Path(__file__).resolve().parent.parent / "sw" / "build_sw" / "test").resolve()
 
 
 # ==============================================================================
-# HELPER FUNCTIONS
+# HELPER FUNCTIONSq
 # ==============================================================================
 
 
@@ -215,7 +216,7 @@ def main():
                     print(f"Error: Binary '{binary_path}' not found. Please compile the C++ software first.")
                     sys.exit(1)
 
-                print(f"[{run_idx}/{total_runs}] [RUN]  {filename}...")
+                print(f"\n[{run_idx}/{total_runs}] [RUN]  {filename}...\n")
 
                 cmd = [
                     str(binary_path),
@@ -234,8 +235,9 @@ def main():
                 try:
                     subprocess.run(cmd, check=True)
                     executed_count += 1
+                    print()
                 except subprocess.CalledProcessError as e:
-                    print(f"Error executing run {filename}: {e}", file=sys.stderr)
+                    print(f"\nError executing run {filename}: {e}\n", file=sys.stderr)
                     # Remove incomplete file if left behind
                     if output_file.exists() and output_file.stat().st_size == 0:
                         output_file.unlink()
