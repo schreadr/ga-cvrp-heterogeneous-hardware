@@ -179,65 +179,84 @@ def main():
     skipped_count = 0
     executed_count = 0
 
-    for combo in param_combinations:
-        vrp_file, p_mult, gen, elitism, k, precheck, cx_prob, mut_prob = combo
-        vrp_path = Path(vrp_file).resolve()
-        if not vrp_path.exists():
-            print(f"Error: Problem instance file '{vrp_path}' not found.", file=sys.stderr)
-            sys.exit(1)
-        instance_stem = vrp_path.stem
-
-        for seed in SEEDS:
-            run_idx += 1
-            # Deterministic, unique output filename for these parameters & seed
-            filename = (
-                f"{instance_stem}_p{p_mult}_g{gen}_e{elitism:.1f}_k{k}_r{precheck}"
-                f"_c{cx_prob}_m{mut_prob}_s{seed}.json"
-            )
-            output_file = results_dir / filename
-
-            # Check if output file already exists and is valid
-            if output_file.exists() and output_file.stat().st_size > 0:
-                print(f"[{run_idx}/{total_runs}] [SKIP] {filename} already exists.")
-                skipped_count += 1
-                continue
-
-            # Check binary existence before running
-            if not binary_path.exists():
-                print(f"Error: Binary '{binary_path}' not found. Please compile the C++ software first.")
+    try:
+        for combo in param_combinations:
+            vrp_file, p_mult, gen, elitism, k, precheck, cx_prob, mut_prob = combo
+            gen = int(gen)
+            vrp_path = Path(vrp_file).resolve()
+            if not vrp_path.exists():
+                print(f"Error: Problem instance file '{vrp_path}' not found.", file=sys.stderr)
                 sys.exit(1)
+            instance_stem = vrp_path.stem
 
-            print(f"[{run_idx}/{total_runs}] [RUN]  {filename}...")
+            for seed in SEEDS:
+                run_idx += 1
+                # Deterministic, unique output filename for these parameters & seed
+                filename = (
+                    f"{instance_stem}_p{p_mult}_g{gen}_e{elitism:.1f}_k{k}_r{precheck}"
+                    f"_c{cx_prob}_m{mut_prob}_s{seed}.json"
+                )
+                output_file = results_dir / filename
 
-            cmd = [
-                str(binary_path),
-                "-f", str(vrp_path),
-                "-p", str(p_mult),
-                "-g", str(gen),
-                "-e", str(elitism),
-                "-s", str(seed),
-                "-k", str(k),
-                "-r", str(precheck),
-                "-c", str(cx_prob),
-                "-m", str(mut_prob),
-                "-o", str(output_file),
-            ]
+                # Check if output file already exists and is valid JSON
+                if output_file.exists() and output_file.stat().st_size > 0:
+                    try:
+                        with open(output_file, "r") as f:
+                            json.load(f)
+                        print(f"[{run_idx}/{total_runs}] [SKIP] {filename} already exists.")
+                        skipped_count += 1
+                        continue
+                    except Exception:
+                        print(f"[{run_idx}/{total_runs}] [REDO] {filename} is corrupt or incomplete. Re-running...")
+                        output_file.unlink(missing_ok=True)
 
+                # Check binary existence before running
+                if not binary_path.exists():
+                    print(f"Error: Binary '{binary_path}' not found. Please compile the C++ software first.")
+                    sys.exit(1)
+
+                print(f"[{run_idx}/{total_runs}] [RUN]  {filename}...")
+
+                cmd = [
+                    str(binary_path),
+                    "-f", str(vrp_path),
+                    "-p", str(p_mult),
+                    "-g", str(gen),
+                    "-e", str(elitism),
+                    "-s", str(seed),
+                    "-k", str(k),
+                    "-r", str(precheck),
+                    "-c", str(cx_prob),
+                    "-m", str(mut_prob),
+                    "-o", str(output_file),
+                ]
+
+                try:
+                    subprocess.run(cmd, check=True)
+                    executed_count += 1
+                except subprocess.CalledProcessError as e:
+                    print(f"Error executing run {filename}: {e}", file=sys.stderr)
+                    # Remove incomplete file if left behind
+                    if output_file.exists() and output_file.stat().st_size == 0:
+                        output_file.unlink()
+
+    except KeyboardInterrupt:
+        print("\n\n[INTERRUPTED] Sweep cancelled by user (Ctrl+C). Stopping immediately...", file=sys.stderr)
+        # Clean up partial output file if left behind by interrupted process
+        if 'output_file' in locals() and output_file.exists():
             try:
-                subprocess.run(cmd, check=True)
-                executed_count += 1
-            except subprocess.CalledProcessError as e:
-                print(f"Error executing run {filename}: {e}", file=sys.stderr)
-                # Remove incomplete file if left behind
-                if output_file.exists() and output_file.stat().st_size == 0:
-                    output_file.unlink()
+                with open(output_file, "r") as f:
+                    json.load(f)
+            except Exception:
+                output_file.unlink(missing_ok=True)
+                print(f"[CLEANUP] Removed incomplete output file: {output_file.name}", file=sys.stderr)
 
-    print("\n================================================================================")
-    print(f"Done! Executed: {executed_count}, Skipped (already completed): {skipped_count}, Total: {total_runs}")
-    print("================================================================================")
-
-    # Aggregate all completed JSONs into summary CSV
-    aggregate_results_to_csv(results_dir, summary_csv)
+    finally:
+        print("\n================================================================================")
+        print(f"Executed: {executed_count}, Skipped (already completed): {skipped_count}, Total: {total_runs}")
+        print("================================================================================")
+        # Aggregate all completed JSONs into summary CSV
+        aggregate_results_to_csv(results_dir, summary_csv)
 
 
 if __name__ == "__main__":
