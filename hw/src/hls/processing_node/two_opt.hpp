@@ -8,7 +8,7 @@
 #include <hls_stream.h>
 
 #ifndef N_TWO_OPT_WORKERS
-#define N_TWO_OPT_WORKERS 8
+#define N_TWO_OPT_WORKERS 7
 #endif
 
 struct SubtourMeta {
