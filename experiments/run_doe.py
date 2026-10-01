@@ -26,34 +26,41 @@ PROBLEM_INSTANCES_DIR = (Path(__file__).resolve().parent.parent / "problem_insta
 
 # Path(s) to CVRP problem instance file(s)
 VRP_FILES = [
-    str(PROBLEM_INSTANCES_DIR / "P-n40-k5.vrp"),
-    # str(PROBLEM_INSTANCES_DIR / "P-n16-k8.vrp"),
-    # str(PROBLEM_INSTANCES_DIR / "P-n50-k7.vrp"),
+    str(PROBLEM_INSTANCES_DIR / "P-n50-k7.vrp"),
+
+    str(PROBLEM_INSTANCES_DIR / "X-n148-k46.vrp"),
+    str(PROBLEM_INSTANCES_DIR / "X-n167-k10.vrp"),
+
+    str(PROBLEM_INSTANCES_DIR / "X-n513-k21.vrp"),
+    str(PROBLEM_INSTANCES_DIR / "X-n524-k153.vrp"),
+
+    str(PROBLEM_INSTANCES_DIR / "X-n936-k151.vrp"),
+    str(PROBLEM_INSTANCES_DIR / "X-n1001-k43.vrp"),
 ]
 
 # Population size multiplier (pop_size = dimension * multiplier)
 POPULATION_MULTIPLIERS = [10, 20]
 
 # Number of generations to run
-GENERATIONS = [1000]
+GENERATIONS = [10e5]
 
 # Elitism percentage (% of best individuals to preserve)
-ELITISM_PERCENTAGES = [2.0, 5.0]
+ELITISM_PERCENTAGES = [5.0]
 
 # Number of 2-opt iterations per subtour (k)
-TWO_OPT_KS = [0, 1]
+TWO_OPT_KS = [5, 30, 100]
 
 # Enable precheck for 2-opt moves (1 = enable, 0 = disable)
-TWO_OPT_PRECHECKS = [1]
+TWO_OPT_PRECHECKS = [0, 1]
 
 # Crossover probability (0 to 100)
-CROSSOVER_PROBABILITIES = [100]
+CROSSOVER_PROBABILITIES = [80, 100]
 
 # Mutation probability (0 to 100)
-MUTATION_PROBABILITIES = [100]
+MUTATION_PROBABILITIES = [10, 15]
 
 # List of random seeds (the number of seeds defines how many times each experiment runs)
-SEEDS = [0xC0FFEE, 0x123456, 0xDEADBEEF]
+SEEDS = [1842948753, 3109482751, 754928163, 4019284752, 2384951076]
 
 # Hardcoded path to the compiled GA C++ binary
 BINARY_PATH = (Path(__file__).resolve().parent.parent / "sw" / "build" / "test").resolve()
