@@ -132,6 +132,7 @@ void initialize_node_cache(coyote::cThread &thread, unsigned int vfid, const Pro
     };
 
     thread.clearCompleted();
+    thread.setCSR(problem.dimension - 1, CSR_NUM_CITIES);
     thread.setCSR(1, CSR_INIT_CITY_CACHE);
     thread.setCSR(CSR_CONTROL_START, CSR_CONTROL);
 
@@ -192,13 +193,13 @@ bool run_smoke_test(unsigned int vfid, const ProblemInstance &problem, const Coy
         throw std::runtime_error("Could not allocate Coyote hugepage buffers for vFPGA " + std::to_string(vfid));
     }
 
-    std::cout << "Initializing node cache on vFPGA " << vfid << " beforehand via stream 0..." << std::endl;
-    initialize_node_cache(coyote_thread, vfid, problem);
-    std::cout << "Node cache successfully initialized on vFPGA " << vfid << "." << std::endl;
-
     KernelConfig kcfg = make_kernel_config(problem, config, config.ga_params.seed, static_cast<uint32_t>(num_ind_per_stream));
     program_and_validate_kernel(coyote_thread, vfid, kcfg);
     std::cout << "Programmed and validated all kernel registers on vFPGA " << vfid << "." << std::endl;
+
+    std::cout << "Initializing node cache on vFPGA " << vfid << " beforehand via stream 0..." << std::endl;
+    initialize_node_cache(coyote_thread, vfid, problem);
+    std::cout << "Node cache successfully initialized on vFPGA " << vfid << "." << std::endl;
 
     std::cout << "Generating initial population for smoke test on vFPGA " << vfid << "..." << std::endl;
     const std::vector<Individual> init_pop_0 = build_initial_population(problem, num_ind_per_stream, config.ga_params.seed);
