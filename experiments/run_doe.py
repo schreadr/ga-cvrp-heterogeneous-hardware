@@ -26,8 +26,11 @@ PROBLEM_INSTANCES_DIR = (Path(__file__).resolve().parent.parent / "problem_insta
 
 # Path(s) to CVRP problem instance file(s)
 VRP_FILES = [
-    str(PROBLEM_INSTANCES_DIR / "P-n55-k8.vrp"),
-    str(PROBLEM_INSTANCES_DIR / "P-n55-k15.vrp"),
+    #str(PROBLEM_INSTANCES_DIR / "P-n55-k8.vrp"),
+    #str(PROBLEM_INSTANCES_DIR / "P-n55-k15.vrp"),
+
+    str(PROBLEM_INSTANCES_DIR / "P-n76-k4.vrp"),
+    str(PROBLEM_INSTANCES_DIR / "P-n70-k10.vrp"),
 
     #str(PROBLEM_INSTANCES_DIR / "X-n148-k46.vrp"),
     #str(PROBLEM_INSTANCES_DIR / "X-n153-k22.vrp"),
