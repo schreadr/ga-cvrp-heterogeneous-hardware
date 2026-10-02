@@ -138,3 +138,115 @@ std::vector<Individual> build_initial_population(const ProblemInstance &problem,
 
     return population;
 }
+
+bool validate_solution(const ProblemInstance &problem, const Individual &individual, bool throw_on_error) {
+    if (problem.capacity <= 0) {
+        if (throw_on_error) {
+            throw std::runtime_error("Validation error: Problem capacity must be positive (got " +
+                                     std::to_string(problem.capacity) + ").");
+        }
+        return false;
+    }
+
+    const std::size_t n_customers = problem.nodes.size();
+    if (individual.tour.size() != n_customers) {
+        if (throw_on_error) {
+            throw std::runtime_error("Validation error: Tour length (" +
+                                     std::to_string(individual.tour.size()) +
+                                     ") does not match number of customer nodes (" +
+                                     std::to_string(n_customers) + ").");
+        }
+        return false;
+    }
+
+    if (n_customers == 0) {
+        return true;
+    }
+
+    std::vector<bool> visited(n_customers, false);
+    for (std::size_t i = 0; i < individual.tour.size(); ++i) {
+        const int node_id = individual.tour[i].node_id;
+        if (node_id < 0 || static_cast<std::size_t>(node_id) >= n_customers) {
+            if (throw_on_error) {
+                throw std::runtime_error("Validation error: Customer node ID " + std::to_string(node_id) +
+                                         " at tour index " + std::to_string(i) +
+                                         " is out of valid range [0, " +
+                                         std::to_string(n_customers - 1) + "].");
+            }
+            return false;
+        }
+
+        if (visited[static_cast<std::size_t>(node_id)]) {
+            if (throw_on_error) {
+                throw std::runtime_error("Validation error: Duplicate visit to customer node ID " +
+                                         std::to_string(node_id) + " at tour index " +
+                                         std::to_string(i) + ".");
+            }
+            return false;
+        }
+        visited[static_cast<std::size_t>(node_id)] = true;
+    }
+
+    int route_index = 0;
+    int route_load = 0;
+    for (std::size_t i = 0; i < individual.tour.size(); ++i) {
+        const TourGene &gene = individual.tour[i];
+        const int demand = problem.nodes[static_cast<std::size_t>(gene.node_id)].demand;
+
+        if (demand < 0) {
+            if (throw_on_error) {
+                throw std::runtime_error("Validation error: Customer node " +
+                                         std::to_string(gene.node_id) + " has negative demand (" +
+                                         std::to_string(demand) + ").");
+            }
+            return false;
+        }
+
+        if (demand > problem.capacity) {
+            if (throw_on_error) {
+                throw std::runtime_error("Validation error: Customer node " +
+                                         std::to_string(gene.node_id) + " demand (" +
+                                         std::to_string(demand) +
+                                         ") exceeds vehicle capacity (" +
+                                         std::to_string(problem.capacity) + ").");
+            }
+            return false;
+        }
+
+        route_load += demand;
+        if (route_load > problem.capacity) {
+            if (throw_on_error) {
+                throw std::runtime_error("Validation error: Route " + std::to_string(route_index) +
+                                         " exceeded vehicle capacity at customer " +
+                                         std::to_string(gene.node_id) + " (cumulative load " +
+                                         std::to_string(route_load) + " > capacity " +
+                                         std::to_string(problem.capacity) + ").");
+            }
+            return false;
+        }
+
+        if (gene.depot_after) {
+            route_load = 0;
+            route_index++;
+        }
+    }
+
+    return true;
+}
+
+bool validate_population(const ProblemInstance &problem, const std::vector<Individual> &population, bool throw_on_error) {
+    for (std::size_t i = 0; i < population.size(); ++i) {
+        try {
+            if (!validate_solution(problem, population[i], throw_on_error)) {
+                return false;
+            }
+        } catch (const std::exception &e) {
+            if (throw_on_error) {
+                throw std::runtime_error("Population validation failed at individual " +
+                                         std::to_string(i) + ": " + e.what());
+            }
+            return false;
+        }
+    }
+    return true;
+}

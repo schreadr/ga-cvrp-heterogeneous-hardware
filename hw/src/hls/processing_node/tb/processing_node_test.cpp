@@ -175,10 +175,18 @@ int run_integration_test(){
     std::cout << "Verifying Outputs..." << std::endl;
     int errors = 0;
     for (std::size_t i = 0; i < kNumIndividuals; ++i) {
+        if (!validate_solution(problem, got_child_0[i], false)) {
+            std::cout << "Stream 0 indiv " << i << " failed solution validation" << std::endl;
+            errors++;
+        }
         uint32_t exp_fit_0 = compute_fitness(problem, got_child_0[i]);
         if (got_child_0[i].fitness != exp_fit_0) {
             std::cout << "Stream 0 indiv " << i << " fitness mismatch: got "
                       << got_child_0[i].fitness << ", expected " << exp_fit_0 << std::endl;
+            errors++;
+        }
+        if (!validate_solution(problem, got_child_1[i], false)) {
+            std::cout << "Stream 1 indiv " << i << " failed solution validation" << std::endl;
             errors++;
         }
         uint32_t exp_fit_1 = compute_fitness(problem, got_child_1[i]);
@@ -313,10 +321,18 @@ int run_integration_test_border_cases() {
 
     int errors = 0;
     for (std::size_t i = 0; i < kNumIndividuals_border_cases; ++i) {
+        if (!validate_solution(problem, got_child_0[i], false)) {
+            std::cout << "Stream 0 indiv " << i << " failed solution validation" << std::endl;
+            errors++;
+        }
         uint32_t exp_fit_0 = compute_fitness(problem, got_child_0[i]);
         if (got_child_0[i].fitness != exp_fit_0) {
             std::cout << "Stream 0 indiv " << i << " fitness mismatch: got "
                       << got_child_0[i].fitness << ", expected " << exp_fit_0 << std::endl;
+            errors++;
+        }
+        if (!validate_solution(problem, got_child_1[i], false)) {
+            std::cout << "Stream 1 indiv " << i << " failed solution validation" << std::endl;
             errors++;
         }
         uint32_t exp_fit_1 = compute_fitness(problem, got_child_1[i]);
@@ -439,10 +455,18 @@ int run_integration_test(const std::string& vrp_path, int two_opt_k) {
 
     int errors = 0;
     for (std::size_t i = 0; i < num_ind; ++i) {
+        if (!validate_solution(problem, got_child_0[i], false)) {
+            std::cout << "Stream 0 indiv " << i << " failed solution validation" << std::endl;
+            errors++;
+        }
         uint32_t exp_fit_0 = compute_fitness(problem, got_child_0[i]);
         if (got_child_0[i].fitness != exp_fit_0) {
             std::cout << "Stream 0 indiv " << i << " fitness mismatch: got "
                       << got_child_0[i].fitness << ", expected " << exp_fit_0 << std::endl;
+            errors++;
+        }
+        if (!validate_solution(problem, got_child_1[i], false)) {
+            std::cout << "Stream 1 indiv " << i << " failed solution validation" << std::endl;
             errors++;
         }
         uint32_t exp_fit_1 = compute_fitness(problem, got_child_1[i]);

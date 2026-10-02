@@ -114,6 +114,13 @@ Individual evaluate_population_exact_best(
     double &out_best_exact_fitness
 );
 
+// Validates all individuals in an encoded population
+bool validate_population(
+    const ProblemInstance &problem,
+    const std::vector<EncodedIndividual> &population,
+    bool throw_on_error = true
+);
+
 using VfpgaExecuteFn = std::function<void(int vfid, const BatchJob &job)>;
 
 GASummary run_ga(

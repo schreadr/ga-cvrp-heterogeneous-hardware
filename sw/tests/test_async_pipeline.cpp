@@ -175,6 +175,17 @@ void test_run_ga_pipelined_simulation(std::size_t num_vfpgas) {
 
     GASummary summary = run_ga_pipelined(problem, params, mock_vfpga_executor);
 
+    // Validate that the best individual returned is a valid CVRP solution
+    validate_solution(problem, summary.best_individual);
+    if (!summary.best_individual.validate(problem)) {
+        std::cerr << "FAIL: summary.best_individual failed validation\n";
+        std::exit(EXIT_FAILURE);
+    }
+
+    // Validate the entire final population
+    const std::vector<Individual> final_pop = decode_population_fixed(problem, params.buffer_pop, pop_size);
+    validate_population(problem, final_pop);
+
     if (summary.best_fitness == 0.0 || summary.best_fitness > 100000.0) {
         std::cerr << "FAIL: Invalid best fitness: " << summary.best_fitness << "\n";
         std::exit(EXIT_FAILURE);
@@ -355,6 +366,10 @@ void test_run_ga_pipelined_reproducibility() {
 
     GASummary r1 = run_simulation(0x1234ABCD);
     GASummary r2 = run_simulation(0x1234ABCD);
+
+    // Validate solutions from both runs
+    validate_solution(problem, r1.best_individual);
+    validate_solution(problem, r2.best_individual);
 
     if (r1.best_fitness != r2.best_fitness) {
         std::cerr << "FAIL: Reproducibility check failed! Fitness 1: " << r1.best_fitness

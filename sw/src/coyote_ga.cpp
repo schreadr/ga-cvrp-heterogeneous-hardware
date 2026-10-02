@@ -241,6 +241,10 @@ bool run_smoke_test(unsigned int vfid, const ProblemInstance &problem, const Coy
 
     int errors = 0;
     for (std::size_t i = 0; i < pop_size; ++i) {
+        if (!validate_solution(problem, children[i], false)) {
+            std::cerr << "Validation failed for individual " << i << std::endl;
+            errors++;
+        }
         uint32_t exp_fit = compute_fitness(problem, children[i]);
         if (children[i].fitness != exp_fit) {
             std::cerr << "Mismatch in individual " << i << ": got "

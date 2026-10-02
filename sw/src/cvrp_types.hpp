@@ -55,6 +55,8 @@ struct Individual {
         return !(*this == rhs);
     }
 
+    bool validate(const ProblemInstance &problem, bool throw_on_error = true) const;
+
     friend std::ostream &operator<<(std::ostream &os, const Individual &ind) {
         os << "Fitness: " << ind.fitness << ", Tour: ";
         for (std::size_t i = 0; i < ind.tour.size(); ++i) {
@@ -86,6 +88,16 @@ std::uint32_t compute_fitness(const ProblemInstance &problem, const Individual &
 
 // Exact total tour distance of an individual with real sqrt on unscaled coordinates
 double compute_exact_fitness(const ProblemInstance &problem, const Individual &individual);
+
+// Validates customer node uniqueness and vehicle capacity constraints of a solution
+bool validate_solution(const ProblemInstance &problem, const Individual &individual, bool throw_on_error = true);
+
+// Validates all individuals in a population
+bool validate_population(const ProblemInstance &problem, const std::vector<Individual> &population, bool throw_on_error = true);
+
+inline bool Individual::validate(const ProblemInstance &problem, bool throw_on_error) const {
+    return validate_solution(problem, *this, throw_on_error);
+}
 
 /*
  * Build one individual from a customer visit order: greedily splits the order

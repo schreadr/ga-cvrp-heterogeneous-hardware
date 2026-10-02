@@ -160,6 +160,7 @@ Individual evaluate_population_exact_best(
     for (const auto &enc_ind : population) {
         if (enc_ind.bytes != nullptr) {
             Individual ind = decode_individual_fixed(problem, enc_ind.bytes);
+            validate_solution(problem, ind, true);
             double exact_fit = compute_exact_fitness(problem, ind);
             if (exact_fit < best_exact) {
                 best_exact = exact_fit;
@@ -170,6 +171,30 @@ Individual evaluate_population_exact_best(
 
     out_best_exact_fitness = best_exact;
     return best_ind;
+}
+
+bool validate_population(
+    const ProblemInstance &problem,
+    const std::vector<EncodedIndividual> &population,
+    bool throw_on_error
+) {
+    for (std::size_t i = 0; i < population.size(); ++i) {
+        if (population[i].bytes != nullptr) {
+            Individual ind = decode_individual_fixed(problem, population[i].bytes);
+            try {
+                if (!validate_solution(problem, ind, throw_on_error)) {
+                    return false;
+                }
+            } catch (const std::exception &e) {
+                if (throw_on_error) {
+                    throw std::runtime_error("Population validation failed at individual " +
+                                             std::to_string(i) + ": " + e.what());
+                }
+                return false;
+            }
+        }
+    }
+    return true;
 }
 
 GASummary run_ga(const ProblemInstance& problem, GAParams& params, std::function<void()> create_new_generation) {
@@ -282,6 +307,7 @@ GASummary run_ga(const ProblemInstance& problem, GAParams& params, std::function
     w0.batches_processed = params.n_generations;
     summary.timings.workers.push_back(w0);
 
+    validate_population(problem, population.get());
     summary.best_individual = evaluate_population_exact_best(problem, population.get(), summary.exact_best_fitness);
     summary.best_fitness = static_cast<double>(summary.best_individual.fitness) / static_cast<double>(problem.scaling);
 
@@ -499,6 +525,7 @@ GASummary run_ga_pipelined(
                                          summary.timings.cpu.parent_selection_ms +
                                          summary.timings.cpu.population_update_ms;
 
+    validate_population(problem, population_vec);
     summary.best_individual = evaluate_population_exact_best(problem, population_vec, summary.exact_best_fitness);
     summary.best_fitness = static_cast<double>(summary.best_individual.fitness) / static_cast<double>(problem.scaling);
 
