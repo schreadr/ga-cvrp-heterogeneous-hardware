@@ -66,7 +66,6 @@ int main(int argc, char *argv[]) {
         }
 
         HEADER("CLI PARAMETERS:");
-        std::cout << "Number of vFPGAs: " << coyote_ga::kNumVfpgas << " (fixed)" << std::endl;
         std::cout << "Population size multiplier: " << config.population_size_multiplier << std::endl;
         std::cout << "Number of generations: " << config.ga_params.n_generations << std::endl;
         std::cout << "Elitism percentage: " << config.ga_params.n_best_keep << "%" << std::endl;

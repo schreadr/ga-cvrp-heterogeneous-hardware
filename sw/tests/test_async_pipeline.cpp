@@ -39,7 +39,6 @@ void test_safe_queue_basic() {
         std::exit(EXIT_FAILURE);
     }
 
-    // Test shutdown unblocks pop
     std::thread consumer([&q]() {
         auto val = q.pop();
         if (val.has_value()) {
@@ -133,11 +132,9 @@ void test_run_ga_pipelined_simulation(std::size_t num_vfpgas) {
     params.num_vfpgas = num_vfpgas;
     params.num_ind_per_stream = batch_ind_per_stream;
 
-    // Allocate host scratchpad for population
     std::vector<std::uint8_t> pop_mem(pop_bytes);
     params.buffer_pop = pop_mem.data();
 
-    // Allocate double-buffered slots per vFPGA (2 slots per vFPGA)
     const std::size_t slots_per_vfpga = 2;
     std::vector<std::vector<std::uint8_t>> storage_src0;
     std::vector<std::vector<std::uint8_t>> storage_src1;
@@ -164,18 +161,14 @@ void test_run_ga_pipelined_simulation(std::size_t num_vfpgas) {
         }
     }
 
-    // Mock vFPGA hardware executor: copies parents to offspring buffers and writes valid fitness
     auto mock_vfpga_executor = [&](int vfid, const BatchJob &job) {
-        // Simulate hardware processing latency
         std::this_thread::sleep_for(std::chrono::microseconds(100));
 
-        // Verify parents are attached to BatchJob
         if (job.parents1.size() != job.num_ind_per_stream || job.parents2.size() != job.num_ind_per_stream) {
             std::cerr << "FAIL: BatchJob parents vectors not populated on job.\n";
             std::exit(EXIT_FAILURE);
         }
 
-        // Copy parent bytes to destination offspring bytes
         std::memcpy(job.dst_buf_0, job.src_buf_0, job.num_ind_per_stream * bytes_per_ind);
         std::memcpy(job.dst_buf_1, job.src_buf_1, job.num_ind_per_stream * bytes_per_ind);
     };
@@ -230,7 +223,6 @@ void test_run_ga_pipelined_simulation(std::size_t num_vfpgas) {
         }
     }
 
-    // Verify JSON export
     std::string test_json_path = "/tmp/test_doe_output.json";
     summary.save_json(test_json_path, problem);
     std::ifstream jf(test_json_path);
@@ -256,12 +248,10 @@ void test_safe_queue_priority_and_pop_expected() {
     BatchJob j0; j0.batch_id = 0;
     BatchJob j1; j1.batch_id = 1;
 
-    // Push out of order: 2, 0, 1
     q.push(j2);
     q.push(j0);
     q.push(j1);
 
-    // Min-heap order should pop 0, 1, 2
     auto p0 = q.pop();
     auto p1 = q.pop();
     auto p2 = q.pop();
@@ -271,7 +261,6 @@ void test_safe_queue_priority_and_pop_expected() {
         std::exit(EXIT_FAILURE);
     }
 
-    // Test pop_expected with asynchronous arrival
     std::thread producer([&q]() {
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
         BatchJob j_high; j_high.batch_id = 10;
@@ -282,7 +271,6 @@ void test_safe_queue_priority_and_pop_expected() {
         q.push(j_target);
     });
 
-    // Wait specifically for batch 5 even though 10 arrived first
     auto res = q.pop_expected(5);
     producer.join();
 
@@ -291,7 +279,6 @@ void test_safe_queue_priority_and_pop_expected() {
         std::exit(EXIT_FAILURE);
     }
 
-    // Now batch 10 should be next
     auto res2 = q.pop();
     if (!res2 || res2->batch_id != 10) {
         std::cerr << "FAIL: Remaining batch in priority queue mismatch.\n";

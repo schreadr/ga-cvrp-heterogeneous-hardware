@@ -74,12 +74,7 @@ bool check_population_equal(const std::string &test_name,
     return true;
 }
 
-// ---------------------------------------------------------------------------
-// Tests for create_parent_pairs
-// ---------------------------------------------------------------------------
-
 bool test_create_parent_pairs_seed_42() {
-    // Explicit input instance: 4 individuals (bytes NOT set)
     const std::vector<EncodedIndividual> input_population = {
         {nullptr, 10},
         {nullptr, 20},
@@ -175,12 +170,7 @@ bool test_create_parent_pairs_homogeneous() {
     return ok1 && ok2;
 }
 
-// ---------------------------------------------------------------------------
-// Tests for update_population
-// ---------------------------------------------------------------------------
-
 bool test_update_population_better_new_generation() {
-    // Explicit input instances (bytes NOT set)
     std::vector<EncodedIndividual> input_population = {
         {nullptr, 100},
         {nullptr, 200},
@@ -297,7 +287,6 @@ bool test_update_population_all_keep_best() {
                                   actual_new_population, expected_new_population);
 }
 
-// Test 8: Zero elitism (n_keep_best = 0), entire population replaced by new generation
 bool test_update_population_zero_keep_best() {
     std::vector<EncodedIndividual> input_population = {
         {nullptr, 10},
@@ -526,10 +515,6 @@ bool test_update_generation_with_parents() {
     return true;
 }
 
-// ---------------------------------------------------------------------------
-// Tests for validate_encoding_constants ("validate the validation")
-// ---------------------------------------------------------------------------
-
 static ProblemInstance make_test_problem(int num_cities, int max_coord, int capacity, int max_demand) {
     ProblemInstance p;
     p.name = "test_problem";
@@ -729,12 +714,10 @@ int main() {
         std::cout << "\n";
     };
 
-    // create_parent_pairs tests
     run("create_parent_pairs (seed 42)", test_create_parent_pairs_seed_42);
     run("create_parent_pairs (seed 12345)", test_create_parent_pairs_seed_12345);
     run("create_parent_pairs (homogeneous population)", test_create_parent_pairs_homogeneous);
 
-    // update_population tests
     run("update_population (better new generation)", test_update_population_better_new_generation);
     run("update_population (duplicate elimination & fallback)", test_update_population_with_duplicates);
     run("update_population (equal fitness preference)", test_update_population_equal_fitness_prefers_new);
@@ -742,18 +725,15 @@ int main() {
     run("update_population (zero keep best)", test_update_population_zero_keep_best);
     run("update_population (unsorted new generation)", test_update_population_unsorted_new_generation);
 
-    // run_ga tests
     run("run_ga (in-place pop_buffer shift integrity)", test_run_ga_in_place_buffer_shift);
     run("update_generation_with_parents (parent fallback)", test_update_generation_with_parents);
 
-    // validate_encoding_constants tests ("validate the validation")
     run("validate_encoding_constants (valid instance)", test_validate_constants_valid);
     run("validate_encoding_constants (coord overflow)", test_validate_constants_coord_overflow);
     run("validate_encoding_constants (capacity overflow)", test_validate_constants_capacity_overflow);
     run("validate_encoding_constants (demand overflow)", test_validate_constants_demand_overflow);
     run("validate_encoding_constants (max_cities overflow)", test_validate_constants_max_cities_overflow);
 
-    // precision tests
     run("calculate_highest_precision", test_calculate_highest_precision);
 
     std::cout << "========================================\n";

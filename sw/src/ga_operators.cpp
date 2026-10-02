@@ -33,11 +33,9 @@ void update_generation_with_parents(
 ) {
     const std::size_t n = std::min(parents1.size(), parents2.size());
     for (std::size_t j = 0; j < n; ++j) {
-        // Stream 0: Child 0 vs Parent 0
         if (offspring[j].fitness >= parents1[j].fitness) {
             offspring[j] = parents1[j];
         }
-        // Stream 1: Child 1 vs Parent 1
         if (offspring[n + j].fitness >= parents2[j].fitness) {
             offspring[n + j] = parents2[j];
         }
@@ -66,7 +64,6 @@ void update_population(
                 while (++i_new < new_generation.size() && new_generation[i_new] == last_ind);
                 i_pop++;
                 i_new_pop++;
-            // If the new generation individual has better (fitness, hash), we take it
             } else if (new_generation[i_new] < population[i_pop]) {
                 new_population[i_new_pop] = new_generation[i_new];
                 last_ind = new_generation[i_new];

@@ -285,7 +285,6 @@ GASummary run_pipelined_ga(const ProblemInstance &problem, CoyoteAppConfig &conf
     const std::size_t bytes_per_individual = beats_per_individual * AXI_BYTES;
     const std::size_t pop_bytes = config.ga_params.pop_size * bytes_per_individual;
 
-    // Determine micro-batch size automatically
     std::size_t batch_ind_per_stream = (config.ga_params.pop_size / 2) / kNumVfpgas;
     if (batch_ind_per_stream == 0) {
         batch_ind_per_stream = 1;
@@ -299,7 +298,6 @@ GASummary run_pipelined_ga(const ProblemInstance &problem, CoyoteAppConfig &conf
               << (2 * batch_ind_per_stream) << " offspring per batch, "
               << batch_bytes << " bytes per stream)" << std::endl;
 
-    // Program and validate kernel registers on all vFPGAs
     for (unsigned int vfid = 0; vfid < kNumVfpgas; ++vfid) {
         const uint32_t vfpga_seed = config.ga_params.seed ^ (0x9E3779B9u * (vfid + 1));
         KernelConfig kcfg = make_kernel_config(problem, config, vfpga_seed, static_cast<uint32_t>(batch_ind_per_stream));
@@ -308,14 +306,12 @@ GASummary run_pipelined_ga(const ProblemInstance &problem, CoyoteAppConfig &conf
     std::cout << "Successfully programmed and validated kernel configuration registers on all "
               << kNumVfpgas << " vFPGAs." << std::endl;
 
-    // Initialize node cache on all vFPGAs
     std::cout << "Initializing node cache on " << kNumVfpgas << " vFPGA(s) beforehand via stream 0..." << std::endl;
     for (unsigned int vfid = 0; vfid < kNumVfpgas; ++vfid) {
         initialize_node_cache(*coyote_threads[vfid], vfid, problem);
     }
     std::cout << "Node cache successfully initialized on all " << kNumVfpgas << " vFPGA(s)." << std::endl;
 
-    // Allocate double-buffered slots per vFPGA
     constexpr std::size_t slots_per_vfpga = 2;
     std::vector<BatchBufferSlot> buffer_slots;
     buffer_slots.reserve(kNumVfpgas * slots_per_vfpga);
@@ -344,7 +340,6 @@ GASummary run_pipelined_ga(const ProblemInstance &problem, CoyoteAppConfig &conf
     }
     config.ga_params.buffer_slots = std::move(buffer_slots);
 
-    // Allocate host population scratchpad
     std::unique_ptr<std::uint8_t[], void(*)(void*)> pop_mem(nullptr, std::free);
     void *ptr = nullptr;
     if (posix_memalign(&ptr, AXI_BYTES, pop_bytes) != 0 || !ptr) {
@@ -353,7 +348,6 @@ GASummary run_pipelined_ga(const ProblemInstance &problem, CoyoteAppConfig &conf
     pop_mem.reset(reinterpret_cast<std::uint8_t *>(ptr));
     config.ga_params.buffer_pop = pop_mem.get();
 
-    // Hardware batch execution callback
     auto execute_vfpga_batch = [&](int vfid, const BatchJob &job) {
         execute_dual_stream_transfer(
             *coyote_threads[vfid],

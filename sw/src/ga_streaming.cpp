@@ -182,14 +182,12 @@ void population_to_buffer(std::vector<EncodedIndividual> &population, std::uint8
     const int beats_per_individual = get_total_axi_beats(problem_dimension - 1);
     if (reversedOrder) {
         for (int i=population.size()-1; i>=0; --i) {
-            // Serialize each individual and write to bytes
             std::uint8_t *dest = bytes + (i * beats_per_individual * AXI_BYTES);
             std::memcpy(dest, population[i].bytes, beats_per_individual * AXI_BYTES);
             population[i] = EncodedIndividual{dest, population[i].fitness, population[i].hash};
         }
     } else {
         for (int i=0; i<population.size(); ++i) {
-            // Serialize each individual and write to bytes
             std::memcpy(bytes, population[i].bytes, beats_per_individual * AXI_BYTES);
             population[i] = EncodedIndividual{bytes, population[i].fitness, population[i].hash};
             bytes += beats_per_individual * AXI_BYTES;

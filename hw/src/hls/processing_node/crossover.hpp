@@ -97,7 +97,6 @@ inline void crossover(
 
         CityPair cut_points = crossover_pairs.read();
 
-        // Copy fitness verbatim
         set_fitness(c0, get_fitness(p0, num_cities), num_cities);
         set_fitness(c1, get_fitness(p1, num_cities), num_cities);
 

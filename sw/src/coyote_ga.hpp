@@ -40,7 +40,6 @@
 
 namespace coyote_ga {
 
-// Hardware configuration constants
 constexpr unsigned int kNumVfpgas = 2;
 
 // Control register indices matching the AXI4-Lite control register map generated

@@ -32,10 +32,8 @@ struct AsyncGAParams {
     std::size_t num_vfpgas;
     std::size_t num_ind_per_stream; // Batch size per stream for each vFPGA
 
-    // Pre-allocated buffer slots for all vFPGAs (e.g. 2 slots per vFPGA for double-buffering)
     std::vector<BatchBufferSlot> buffer_slots;
 
-    // Host scratchpad for population
     std::uint8_t* buffer_pop = nullptr;
 };
 
@@ -85,19 +83,16 @@ struct GenerationalFitnessRecord {
 };
 
 struct GASummary {
-    // --- Solution & Run Information ---
     std::size_t n_generations = 0;
     std::size_t pop_size = 0;
     Individual best_individual;
     double best_fitness = 0.0;          // Scaled hardware fitness
     double exact_best_fitness = 0.0;    // Exact double-precision sqrt on unscaled coordinates
-    double initial_best_fitness = 0.0;  // Initial population best fitness
-    std::size_t gen_best_found = 0;     // Generation where best fitness was first reached
+    double initial_best_fitness = 0.0;
+    std::size_t gen_best_found = 0;
 
-    // --- Execution Timing ---
     GATimings timings;
 
-    // --- Generational History ---
     // Best fitness and timestamp recorded for each complete generation (index 0 = initial, index g = gen g)
     std::vector<GenerationalFitnessRecord> best_fitness_history;
 

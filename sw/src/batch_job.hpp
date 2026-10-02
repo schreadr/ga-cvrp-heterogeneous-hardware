@@ -37,11 +37,9 @@ struct BatchBufferSlot {
     int vfid = 0;
     std::size_t num_ind_per_stream = 0;
 
-    // Source buffers (parents)
     std::uint8_t *src_buf_0 = nullptr;
     std::uint8_t *src_buf_1 = nullptr;
 
-    // Destination buffers (offspring)
     std::uint8_t *dst_buf_0 = nullptr;
     std::uint8_t *dst_buf_1 = nullptr;
 };
@@ -59,7 +57,6 @@ struct BatchJob {
 
     uint32_t batch_seed = 0;
 
-    // Direct parent storage per batch
     std::vector<EncodedIndividual> parents1;
     std::vector<EncodedIndividual> parents2;
 

@@ -211,7 +211,6 @@ GASummary run_ga(const ProblemInstance& problem, GAParams& params, std::function
 
     const std::size_t print_interval = std::max<std::size_t>(1, params.n_generations / 10);
 
-    // Individuals of current population must be sorted on the buffer
     std::memcpy(buffer_src_0, encoded_population.data(), half_bytes);
     std::memcpy(buffer_src_1, encoded_population.data() + half_bytes, half_bytes);
     population_from_buffer(buffer_src_0, half_pop, population, problem.dimension, 0);
@@ -283,7 +282,6 @@ GASummary run_ga(const ProblemInstance& problem, GAParams& params, std::function
     w0.batches_processed = params.n_generations;
     summary.timings.workers.push_back(w0);
 
-    // Evaluate exact fitness across the entire population and select the best individual
     summary.best_individual = evaluate_population_exact_best(problem, population.get(), summary.exact_best_fitness);
     summary.best_fitness = static_cast<double>(summary.best_individual.fitness) / static_cast<double>(problem.scaling);
 
@@ -316,7 +314,6 @@ GASummary run_ga_pipelined(
         throw std::runtime_error("run_ga_pipelined: params.buffer_pop is null. Population scratchpad buffer required.");
     }
 
-    // Build initial population
     std::vector<Individual> initial_population = build_initial_population(problem, pop_size, new_seed());
     const std::vector<std::uint8_t> encoded_population = encode_population_fixed(problem, initial_population);
 
@@ -334,7 +331,6 @@ GASummary run_ga_pipelined(
 
     const std::size_t n_keep = std::min(pop_size, static_cast<std::size_t>(std::round(pop_size * (params.n_best_keep / 100.0))));
 
-    // Calculate total evaluation batches
     const std::size_t total_evaluations_target = pop_size * params.n_generations;
     const std::size_t total_batches_to_process = std::max<std::size_t>(
         num_vfpgas,
@@ -352,17 +348,14 @@ GASummary run_ga_pipelined(
     double current_best_val = initial_best;
     summary.gen_best_found = 0;
 
-    // Worker thread timing structures
     std::vector<WorkerTiming> worker_timings(num_vfpgas);
     for (std::size_t v = 0; v < num_vfpgas; ++v) {
         worker_timings[v].vfid = static_cast<int>(v);
     }
 
-    // Queues: 1 parent queue per vFPGA, 1 shared offspring completion queue
     std::vector<SafeQueue<BatchJob>> parent_queues(num_vfpgas);
     SafeQueue<BatchJob> offspring_queue;
 
-    // Launch worker threads (one per vFPGA)
     std::vector<std::thread> worker_threads;
     worker_threads.reserve(num_vfpgas);
     for (std::size_t v = 0; v < num_vfpgas; ++v) {
@@ -374,7 +367,7 @@ GASummary run_ga_pipelined(
                 worker_timings[v].idle_time_ms += std::chrono::duration<double, std::milli>(t_idle_end - t_idle_start).count();
 
                 if (!job_opt) {
-                    break; // Queue shut down, terminate worker
+                    break;
                 }
                 BatchJob job = std::move(*job_opt);
 
@@ -389,7 +382,6 @@ GASummary run_ga_pipelined(
         });
     }
 
-    // Population Manager staging structures
     std::vector<EncodedIndividual> parents1(batch_ind_per_stream);
     std::vector<EncodedIndividual> parents2(batch_ind_per_stream);
     std::vector<EncodedIndividual> batch_offspring(offspring_per_batch);
@@ -397,7 +389,6 @@ GASummary run_ga_pipelined(
     uint32_t batches_dispatched = 0;
     uint32_t batches_completed = 0;
 
-    // Priming phase: Fill all pre-allocated buffer slots and enqueue initial jobs
     for (const auto &slot : params.buffer_slots) {
         if (batches_dispatched >= total_batches_to_process) break;
 
@@ -426,7 +417,6 @@ GASummary run_ga_pipelined(
 
     const std::size_t log_interval_batches = std::max<std::size_t>(1, total_batches_to_process / 10);
 
-    // Continuous streaming loop: collect finished offspring in deterministic in-order sequence
     while (batches_completed < total_batches_to_process) {
         auto t_wait_start = std::chrono::steady_clock::now();
         auto finished_job_opt = offspring_queue.pop_expected(batches_completed);
@@ -434,13 +424,12 @@ GASummary run_ga_pipelined(
         summary.timings.cpu.idle_time_ms += std::chrono::duration<double, std::milli>(t_wait_end - t_wait_start).count();
 
         if (!finished_job_opt) {
-            break; // Unexpected early shutdown
+            break;
         }
 
         BatchJob finished_job = std::move(*finished_job_opt);
         batches_completed++;
 
-        // 1. Population Update: deserialize offspring and merge into population pool
         auto t_up_start = std::chrono::steady_clock::now();
         population_from_buffer(finished_job.dst_buf_0, finished_job.num_ind_per_stream, batch_offspring, problem.dimension, 0);
         population_from_buffer(finished_job.dst_buf_1, finished_job.num_ind_per_stream, batch_offspring, problem.dimension, finished_job.num_ind_per_stream);
@@ -453,7 +442,6 @@ GASummary run_ga_pipelined(
         auto t_up_end = std::chrono::steady_clock::now();
         summary.timings.cpu.population_update_ms += std::chrono::duration<double, std::milli>(t_up_end - t_up_start).count();
 
-        // 2. Modulo generation boundary check
         const double current_best = static_cast<double>(population_vec[0].fitness) / static_cast<double>(problem.scaling);
         if ((batches_completed * offspring_per_batch) % pop_size == 0) {
             auto now_gen = std::chrono::steady_clock::now();
@@ -466,7 +454,6 @@ GASummary run_ga_pipelined(
             summary.gen_best_found = (batches_completed * offspring_per_batch) / pop_size;
         }
 
-        // 3. Refill the returned buffer slot and dispatch next batch if budget remains
         if (batches_dispatched < total_batches_to_process) {
             auto t_sel_start = std::chrono::steady_clock::now();
             create_parent_pairs(population_vec, parents1, parents2, new_seed());
@@ -488,7 +475,6 @@ GASummary run_ga_pipelined(
         }
     }
 
-    // Ensure all completed generation entries are populated up to n_generations
     while (summary.best_fitness_history.size() <= params.n_generations) {
         std::size_t gen = summary.best_fitness_history.size();
         auto now_gen = std::chrono::steady_clock::now();
@@ -497,7 +483,6 @@ GASummary run_ga_pipelined(
         summary.best_fitness_history.push_back({gen, gen_elapsed_ms, current_best});
     }
 
-    // Shutdown queues to terminate workers gracefully
     for (std::size_t v = 0; v < num_vfpgas; ++v) {
         parent_queues[v].shutdown();
     }
@@ -514,7 +499,6 @@ GASummary run_ga_pipelined(
                                          summary.timings.cpu.parent_selection_ms +
                                          summary.timings.cpu.population_update_ms;
 
-    // Evaluate exact fitness across the entire population and select the best individual
     summary.best_individual = evaluate_population_exact_best(problem, population_vec, summary.exact_best_fitness);
     summary.best_fitness = static_cast<double>(summary.best_individual.fitness) / static_cast<double>(problem.scaling);
 

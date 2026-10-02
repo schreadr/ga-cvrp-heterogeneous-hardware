@@ -73,7 +73,6 @@ int test_xoroshiro128plusplus_generator() {
     xoroshiro128plusplus rng(42);
 
     int errors = 0;
-    // Verify basic generation
     uint32_t val1 = rng.nextUInt();
     uint32_t val2 = rng.nextUInt();
     if (val1 == val2) {
@@ -81,7 +80,6 @@ int test_xoroshiro128plusplus_generator() {
         errors++;
     }
 
-    // Verify generate_cx_mut_randoms
     hls::stream<CityPair> cx_pairs("cx_pairs");
     hls::stream<CityPair> mut_pairs_0("mut_pairs_0");
     hls::stream<CityPair> mut_pairs_1("mut_pairs_1");
