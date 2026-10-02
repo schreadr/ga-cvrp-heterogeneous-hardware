@@ -29,8 +29,8 @@ VRP_FILES = [
     str(PROBLEM_INSTANCES_DIR / "P-n55-k8.vrp"),
     str(PROBLEM_INSTANCES_DIR / "P-n55-k15.vrp"),
 
-    str(PROBLEM_INSTANCES_DIR / "X-n148-k46.vrp"),
-    str(PROBLEM_INSTANCES_DIR / "X-n153-k22.vrp"),
+    #str(PROBLEM_INSTANCES_DIR / "X-n148-k46.vrp"),
+    #str(PROBLEM_INSTANCES_DIR / "X-n153-k22.vrp"),
 
     #str(PROBLEM_INSTANCES_DIR / "X-n513-k21.vrp"),
     #str(PROBLEM_INSTANCES_DIR / "X-n524-k153.vrp"),
@@ -58,7 +58,7 @@ TWO_OPT_PRECHECKS = [0, 1]
 CROSSOVER_PROBABILITIES = [80, 100]
 
 # Mutation probability (0 to 100)
-MUTATION_PROBABILITIES = [10, 15]
+MUTATION_PROBABILITIES = [5, 10, 15]
 
 # List of random seeds (the number of seeds defines how many times each experiment runs)
 SEEDS = [1842948753, 3109482751, 754928163, 4019284752, 2384951076]
