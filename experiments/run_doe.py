@@ -29,8 +29,8 @@ VRP_FILES = [
     #str(PROBLEM_INSTANCES_DIR / "P-n55-k8.vrp"),
     #str(PROBLEM_INSTANCES_DIR / "P-n55-k15.vrp"),
 
-    str(PROBLEM_INSTANCES_DIR / "P-n76-k4.vrp"),
     str(PROBLEM_INSTANCES_DIR / "P-n70-k10.vrp"),
+    str(PROBLEM_INSTANCES_DIR / "P-n76-k4.vrp"),
 
     #str(PROBLEM_INSTANCES_DIR / "X-n148-k46.vrp"),
     #str(PROBLEM_INSTANCES_DIR / "X-n153-k22.vrp"),
@@ -173,6 +173,7 @@ def main():
         CROSSOVER_PROBABILITIES,
         MUTATION_PROBABILITIES,
     ))
+    param_combinations.sort(reverse=True)
 
     total_runs = len(param_combinations) * len(SEEDS)
     print(f"Total Configurations: {len(param_combinations)}")
