@@ -380,7 +380,6 @@ bool test_run_ga_in_place_buffer_shift() {
     const std::size_t total_bytes = pop_size * bytes_per_ind;
     const std::size_t half_bytes = half_pop * bytes_per_ind;
 
-    const int two_opt_k = 0;
     std::vector<std::uint8_t> src_0(half_bytes, 0);
     std::vector<std::uint8_t> src_1(half_bytes, 0);
     std::vector<std::uint8_t> dst_0(half_bytes, 0);
@@ -392,7 +391,6 @@ bool test_run_ga_in_place_buffer_shift() {
     params.n_generations = 1;
     params.n_best_keep = 33.333333; // 2 out of 6 individuals = 33.33%
     params.seed = 42;
-    params.two_opt_k = two_opt_k;
     params.buffer_src_0 = src_0.data();
     params.buffer_src_1 = src_1.data();
     params.buffer_dst_0 = dst_0.data();

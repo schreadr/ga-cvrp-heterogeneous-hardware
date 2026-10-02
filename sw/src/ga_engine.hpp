@@ -15,7 +15,6 @@ struct GAParams {
     std::size_t n_generations;
     double n_best_keep;
     std::uint32_t seed;
-    int two_opt_k = 0;
 
     std::uint8_t* buffer_src_0 = nullptr;
     std::uint8_t* buffer_src_1 = nullptr;
@@ -26,13 +25,12 @@ struct GAParams {
 };
 
 struct AsyncGAParams {
-    std::size_t pop_size = 0;
-    std::size_t n_generations = 0;
-    double n_best_keep = 5.0;
-    std::uint32_t seed = 0;
-    int two_opt_k = 0;
-    std::size_t num_vfpgas = 1;
-    std::size_t num_ind_per_stream = 0; // Batch size per stream for each vFPGA
+    std::size_t pop_size;
+    std::size_t n_generations;
+    double n_best_keep;
+    std::uint32_t seed;
+    std::size_t num_vfpgas;
+    std::size_t num_ind_per_stream; // Batch size per stream for each vFPGA
 
     // Pre-allocated buffer slots for all vFPGAs (e.g. 2 slots per vFPGA for double-buffering)
     std::vector<BatchBufferSlot> buffer_slots;

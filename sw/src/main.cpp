@@ -39,7 +39,7 @@
 
 int main(int argc, char *argv[]) {
     try {
-        coyote_ga::CoyoteAppConfig config;
+        coyote_ga::CoyoteAppConfig config{};
 
         boost::program_options::options_description runtime_options("Coyote CVRP GA Options");
         runtime_options.add_options()
@@ -49,7 +49,7 @@ int main(int argc, char *argv[]) {
             (",g", boost::program_options::value<std::size_t>(&config.ga_params.n_generations)->default_value(100), "Number of generations")
             (",e", boost::program_options::value<double>(&config.ga_params.n_best_keep)->default_value(5.0), "Elitism percentage (% of best individuals to keep across generations)")
             (",s", boost::program_options::value<std::uint32_t>(&config.ga_params.seed)->default_value(0xC0FFEEu), "Random seed")
-            (",k", boost::program_options::value<int>(&config.ga_params.two_opt_k)->default_value(0), "Number of 2-opt iterations per subtour (k)")
+            (",k", boost::program_options::value<int>(&config.two_opt_k)->default_value(0), "Number of 2-opt iterations per subtour (k)")
             (",r", boost::program_options::value<bool>(&config.two_opt_enable_precheck)->default_value(true), "Enable precheck for 2-opt moves (1 = enable, 0 = disable)")
             (",c", boost::program_options::value<int>(&config.crossover_prob)->default_value(100), "Crossover probability (0 to 100)")
             (",m", boost::program_options::value<int>(&config.mutation_prob)->default_value(100), "Mutation probability (0 to 100)")
@@ -71,7 +71,7 @@ int main(int argc, char *argv[]) {
         std::cout << "Number of generations: " << config.ga_params.n_generations << std::endl;
         std::cout << "Elitism percentage: " << config.ga_params.n_best_keep << "%" << std::endl;
         std::cout << "Seed: " << config.ga_params.seed << std::endl;
-        std::cout << "Two-opt k: " << config.ga_params.two_opt_k << std::endl;
+        std::cout << "Two-opt k: " << config.two_opt_k << std::endl;
         std::cout << "Two-opt enable precheck: " << (config.two_opt_enable_precheck ? "ENABLED" : "DISABLED") << std::endl;
         std::cout << "Crossover probability: " << config.crossover_prob << "%" << std::endl;
         std::cout << "Mutation probability: " << config.mutation_prob << "%" << std::endl;

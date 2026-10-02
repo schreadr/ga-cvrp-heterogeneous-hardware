@@ -62,14 +62,14 @@ constexpr uint32_t CSR_MUTATION_PROB           = 0x50 / 8;
  * Kernel scalar registers configuration struct.
  */
 struct KernelConfig {
-    uint32_t num_individuals = 0;
-    uint32_t num_cities = 0;
-    uint32_t vehicle_capacity = 0;
-    int two_opt_k = 0;
-    bool two_opt_enable_precheck = true;
-    uint32_t seed = 0;
-    int crossover_prob = 100;
-    int mutation_prob = 100;
+    uint32_t num_individuals;
+    uint32_t num_cities;
+    uint32_t vehicle_capacity;
+    int two_opt_k;
+    bool two_opt_enable_precheck;
+    uint32_t seed;
+    int crossover_prob;
+    int mutation_prob;
 };
 
 /**
@@ -77,11 +77,12 @@ struct KernelConfig {
  */
 struct CoyoteAppConfig {
     AsyncGAParams ga_params;
-    std::size_t population_size_multiplier = 20;
-    bool two_opt_enable_precheck = true;
-    int crossover_prob = 100;
-    int mutation_prob = 100;
-    bool smoke_test = false;
+    std::size_t population_size_multiplier;
+    int two_opt_k;
+    bool two_opt_enable_precheck;
+    int crossover_prob;
+    int mutation_prob;
+    bool smoke_test;
     std::string vrp_file;
     std::string output_file;
 };

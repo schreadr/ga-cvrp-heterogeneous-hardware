@@ -55,7 +55,7 @@ KernelConfig make_kernel_config(
     kc.num_individuals = num_ind;
     kc.num_cities = problem.dimension - 1;
     kc.vehicle_capacity = problem.capacity;
-    kc.two_opt_k = config.ga_params.two_opt_k;
+    kc.two_opt_k = config.two_opt_k;
     kc.two_opt_enable_precheck = config.two_opt_enable_precheck;
     kc.seed = vfpga_seed;
     kc.crossover_prob = config.crossover_prob;

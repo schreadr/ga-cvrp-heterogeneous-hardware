@@ -130,7 +130,6 @@ void test_run_ga_pipelined_simulation(std::size_t num_vfpgas) {
     params.n_generations = n_generations;
     params.n_best_keep = 10.0;
     params.seed = 0xC0FFEE;
-    params.two_opt_k = 1;
     params.num_vfpgas = num_vfpgas;
     params.num_ind_per_stream = batch_ind_per_stream;
 
@@ -319,7 +318,6 @@ void test_run_ga_pipelined_reproducibility() {
         params.n_generations = n_generations;
         params.n_best_keep = 10.0;
         params.seed = run_seed;
-        params.two_opt_k = 1;
         params.num_vfpgas = 4;
         params.num_ind_per_stream = batch_ind_per_stream;
 
