@@ -27,23 +27,6 @@
 /////////////////////////////////////////////////////////
 //              CONTROL REGISTER INTERFACE             //
 /////////////////////////////////////////////////////////
-// The kernel configuration values (num_individuals0, num_individuals1,
-// num_cities, vehicle_capacity) are scalar arguments of the HLS kernel itself. Vitis HLS
-// maps each of them to a register of the AXI4-Lite control interface generated
-// directly for the kernel (bundle 'control'); the control register handling is
-// therefore done by HLS, no custom register parser is needed anymore.
-//
-// Software programs the registers with setCSR(...):
-//   setCSR(num_individuals,  2)  -> byte offset 0x10
-//   setCSR(num_cities,       3)  -> byte offset 0x18
-//   setCSR(vehicle_capacity, 4)  -> byte offset 0x20
-//   setCSR(init_city_cache,  5)  -> byte offset 0x28
-//   setCSR(two_opt_k,        6)  -> byte offset 0x30
-//   setCSR(two_opt_enable_precheck, 7) -> byte offset 0x38
-//   setCSR(seed,             8)  -> byte offset 0x40
-// (Coyote CSRs are 64-bit wide, hence the CSR index equals offset / 8; the
-// offsets 0x00-0x0F are reserved by the AXI4-Lite control block.)
-//
 // Coyote offers the user CSRs over axi_ctrl, a 64-bit AXI4-Lite bus, while the
 // HLS-generated control interface is 32-bit wide. An AXI4-Lite data width
 // converter downsizes the 64-bit accesses; since every configured value fits
@@ -122,8 +105,8 @@ axil_ctrl_dwidth_64_32 inst_axil_ctrl_dwidth (
 /////////////////////////////////////////////////////////
 //               PROCESSING NODE (HLS)                //
 /////////////////////////////////////////////////////////
-// Controlled via AXI4-Lite control interface (bundle 'control'):
-// Configuration is set via scalar argument registers (offsets 0x10, 0x18, 0x20, 0x28).
+// Controlled via AXI4-Lite control interface (bundle 'control').
+// Configuration is set via scalar argument registers.
 // Software starts execution for each generation by writing ap_start (0x01) to offset 0x00.
 processing_node_hls_ip inst_pn(
     .ap_clk        (aclk),
@@ -184,7 +167,6 @@ always_comb sq_wr.tie_off_m();
 always_comb cq_rd.tie_off_s();
 always_comb cq_wr.tie_off_s();
 
-// NOTE: ILA disabled to eliminate routing congestion and timing violations caused by 2,126 probe nets.
 /*
 ila_processing_node inst_ila_processing_node (
     .clk(aclk),

@@ -57,6 +57,7 @@ load_apps (
     VFPGA_C0_1 "src"
 )
 
+# Copy the common header files from the software project to the hardware project
 set(HLS_SW_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../sw/src")
 file(COPY
     "${HLS_SW_INCLUDE_DIR}/ga_encoding_constants.hpp"
