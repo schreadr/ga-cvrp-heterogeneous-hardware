@@ -53,8 +53,6 @@
 
 namespace {
 
-constexpr const char kDefaultProblemFile[] = "../../problem_instances/P-n40-k5.vrp";
-
 void print_hex_dump(const std::string &label, const std::uint8_t *bytes, std::size_t size) {
     std::cout << label << " (" << size << " B):\n";
     for (std::size_t i = 0; i < size; i += 16) {
@@ -167,41 +165,6 @@ bool test_encode_decode(const ProblemInstance &problem) {
     }
 }
 
-bool test_generate_random_numbers(const ProblemInstance &problem) {
-    const std::size_t test_rnd_indivs = 5;
-    const std::size_t rnd_bytes = get_random_bytes(test_rnd_indivs);
-    std::vector<std::uint8_t> rnd_buf1(rnd_bytes, 0xFF);
-    std::vector<std::uint8_t> rnd_buf2(rnd_bytes, 0xAA);
-
-    const int num_cities = static_cast<int>(problem.nodes.size());
-    const std::uint64_t seed = 0x12345678ULL;
-    generate_random_numbers(test_rnd_indivs, rnd_buf1.data(), num_cities, seed);
-    generate_random_numbers(test_rnd_indivs, rnd_buf2.data(), num_cities, seed);
-
-    // Verify repeatability
-    if (rnd_buf1 != rnd_buf2) {
-        std::cerr << "FAIL: random number generators with same seed produced different outputs.\n";
-        return false;
-    }
-
-    // Verify values within bounds and padding is zero
-    const uint32_t *words = reinterpret_cast<const uint32_t *>(rnd_buf1.data());
-    const std::size_t total_random_words = test_rnd_indivs * RANDOMS_PER_INDIV;
-    for (std::size_t i = 0; i < total_random_words; ++i) {
-        if (words[i] >= static_cast<uint32_t>(num_cities)) {
-            std::cerr << "FAIL: random number out of bounds at index " << i << ": " << words[i] << "\n";
-            return false;
-        }
-    }
-    for (std::size_t b = total_random_words * sizeof(uint32_t); b < rnd_bytes; ++b) {
-        if (rnd_buf1[b] != 0) {
-            std::cerr << "FAIL: non-zero padding byte at index " << b << "\n";
-            return false;
-        }
-    }
-    std::cout << "PASS: generate_random_numbers verified for " << test_rnd_indivs << " individuals.\n";
-    return true;
-}
 
 bool test_node_cache_encode(const ProblemInstance &problem) {
     std::vector<uint8_t> cache = encode_node_cache(problem);
@@ -241,8 +204,27 @@ bool test_node_cache_encode(const ProblemInstance &problem) {
 
 } // namespace
 
+#include <fstream>
+
+static std::string find_vrp_file(const std::string &arg_path) {
+    if (!arg_path.empty()) {
+        std::ifstream test_f(arg_path);
+        if (test_f.good()) return arg_path;
+    }
+    const std::vector<std::string> candidates = {
+        "problem_instances/P-n40-k5.vrp",
+        "../problem_instances/P-n40-k5.vrp",
+        "../../problem_instances/P-n40-k5.vrp"
+    };
+    for (const auto &c : candidates) {
+        std::ifstream f(c);
+        if (f.good()) return c;
+    }
+    return arg_path.empty() ? "problem_instances/P-n40-k5.vrp" : arg_path;
+}
+
 int main(int argc, char *argv[]) {
-    const std::string vrp_file = (argc > 1) ? argv[1] : kDefaultProblemFile;
+    const std::string vrp_file = find_vrp_file((argc > 1) ? argv[1] : "");
 
     try {
         const ProblemInstance problem = parse_vrp(vrp_file);
@@ -256,10 +238,6 @@ int main(int argc, char *argv[]) {
         }
 
         if (!test_encode_decode(problem)) {
-            return EXIT_FAILURE;
-        }
-
-        if (!test_generate_random_numbers(problem)) {
             return EXIT_FAILURE;
         }
 

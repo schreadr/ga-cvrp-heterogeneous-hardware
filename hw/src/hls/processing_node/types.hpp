@@ -17,7 +17,6 @@
 typedef ap_uint<MAX_CITIES_LOG2 + 1>                  CityIndex;
 typedef ap_uint<HW_MAX_BEATS_LOG2 + 1>                BeatIndex;
 typedef ap_uint<HW_CITIES_PER_BEAT_LOG2 + 1>          CityBeatIndex;
-typedef ap_uint<RANDOMS_PER_BEAT_LOG2 + 1>            BeatRandomIndex;
 typedef ap_uint<NODE_CACHE_ENTRIES_PER_BEAT_LOG2 + 1> BeatCacheIndex;
 typedef ap_uint<HW_BEATS_PER_AXI_BEAT_LOG2 + 1>       BeatAxiIndex;
 
@@ -41,12 +40,11 @@ struct Point {
 };
 
 struct CityData {
-    Coord x;
-    Coord y;
+    Point coord;
     Capacity demand;
 
     bool operator==(const CityData &other) const {
-        return x == other.x && y == other.y && demand == other.demand;
+        return coord == other.coord && demand == other.demand;
     }
     bool operator!=(const CityData &other) const {
         return !(*this == other);
@@ -71,16 +69,18 @@ struct CoordElement {
 // ----------------------------------------------------------------------------
 typedef ap_uint<CITY_BITS>     City;
 typedef ap_uint<FITNESS_BITS>  Fitness;
+typedef ap_uint<8>             Probability;
 
 struct CityPair {
     CityIndex start;
     CityIndex end;
+    Probability prob_rnd;
 
-    CityPair() : start(0), end(0) {}
-    CityPair(CityIndex s, CityIndex e) : start(s), end(e) {}
+    CityPair() : start(0), end(0), prob_rnd(0) {}
+    CityPair(CityIndex s, CityIndex e, Probability p = 0) : start(s), end(e), prob_rnd(p) {}
 
     bool operator==(const CityPair &other) const {
-        return start == other.start && end == other.end;
+        return start == other.start && end == other.end && prob_rnd == other.prob_rnd;
     }
 };
 
@@ -106,7 +106,7 @@ typedef ap_axiu<AXI_BEAT_WIDTH, 0, 0, 0> axi_word_t;
 typedef Beat                            IndividualAsBeats[HW_MAX_BEATS];
 typedef AxiBeat                         CityCacheBeat;
 typedef ap_uint<NODE_CACHE_ENTRY_BITS>  CityCacheEntry;
-typedef ap_uint<RANDOM_BITS>            RandomNumber;
+
 
 struct StartEndData {
     const BeatIndex start_beat;
@@ -171,11 +171,6 @@ static inline CityBeatIndex get_city_beat_idx(T val) {
     return val & (HW_CITIES_PER_BEAT - 1);
 }
 
-template <typename T>
-static inline CityBeatIndex get_city_idx(T val) {
-    #pragma HLS INLINE
-    return get_city_beat_idx(val);
-}
 
 static inline void get_beat_city(CityIndex global_idx, BeatIndex &beat_idx, CityIndex &city_idx) {
     #pragma HLS INLINE
@@ -303,7 +298,7 @@ static inline Point get_coord(const CityCacheEntry &entry) {
 
 static inline Point get_coord(const CityData &cd) {
     #pragma HLS INLINE
-    return Point{cd.x, cd.y};
+    return cd.coord;
 }
 
 static inline Capacity get_demand(const CityCacheEntry &entry) {
@@ -323,15 +318,9 @@ static inline CityData consume_next_city_data(CityCacheBeat &beat) {
     CityCacheEntry entry = consume_next_cache_entry(beat);
     Point coord = get_coord(entry);
     Capacity demand = get_demand(entry);
-    return CityData{coord.x, coord.y, demand};
+    return CityData{coord, demand};
 }
 
-static inline RandomNumber consume_next_random(AxiBeat &beat) {
-    #pragma HLS INLINE
-    RandomNumber rnd = beat.range(RANDOM_BITS - 1, 0);
-    beat >>= RANDOM_BITS;
-    return rnd;
-}
 
 static inline Beat consume_next_hw_beat(AxiBeat &beat) {
     #pragma HLS INLINE

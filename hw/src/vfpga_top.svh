@@ -27,20 +27,6 @@
 /////////////////////////////////////////////////////////
 //              CONTROL REGISTER INTERFACE             //
 /////////////////////////////////////////////////////////
-// The kernel configuration values (num_individuals0, num_individuals1,
-// num_cities, vehicle_capacity) are scalar arguments of the HLS kernel itself. Vitis HLS
-// maps each of them to a register of the AXI4-Lite control interface generated
-// directly for the kernel (bundle 'control'); the control register handling is
-// therefore done by HLS, no custom register parser is needed anymore.
-//
-// Software programs the registers with setCSR(...):
-//   setCSR(num_individuals,  2)  -> byte offset 0x10
-//   setCSR(num_cities,       3)  -> byte offset 0x18
-//   setCSR(vehicle_capacity, 4)  -> byte offset 0x20
-//   setCSR(init_city_cache,  5)  -> byte offset 0x28
-// (Coyote CSRs are 64-bit wide, hence the CSR index equals offset / 8; the
-// offsets 0x00-0x0F are reserved by the AXI4-Lite control block.)
-//
 // Coyote offers the user CSRs over axi_ctrl, a 64-bit AXI4-Lite bus, while the
 // HLS-generated control interface is 32-bit wide. An AXI4-Lite data width
 // converter downsizes the 64-bit accesses; since every configured value fits
@@ -115,19 +101,12 @@ axil_ctrl_dwidth_64_32 inst_axil_ctrl_dwidth (
 );
 
 
-// debug vars
-
-wire [31:0] dbg_num_ind;
-wire        dbg_num_ind_vld;
-
-wire [31:0] dbg_num_cit;
-wire        dbg_num_cit_vld;
 
 /////////////////////////////////////////////////////////
 //               PROCESSING NODE (HLS)                //
 /////////////////////////////////////////////////////////
-// Controlled via AXI4-Lite control interface (bundle 'control'):
-// Configuration is set via scalar argument registers (offsets 0x10, 0x18, 0x20, 0x28).
+// Controlled via AXI4-Lite control interface (bundle 'control').
+// Configuration is set via scalar argument registers.
 // Software starts execution for each generation by writing ap_start (0x01) to offset 0x00.
 processing_node_hls_ip inst_pn(
     .ap_clk        (aclk),
@@ -178,20 +157,7 @@ processing_node_hls_ip inst_pn(
     .out1_TKEEP    (axis_host_send[1].tkeep),
     .out1_TLAST    (axis_host_send[1].tlast),
     .out1_TVALID   (axis_host_send[1].tvalid),
-    .out1_TREADY   (axis_host_send[1].tready),
-
-    // AXI-Stream input random
-    .in_random_TDATA  (axis_host_recv[2].tdata),
-    .in_random_TKEEP  (axis_host_recv[2].tkeep),
-    .in_random_TLAST  (axis_host_recv[2].tlast),
-    .in_random_TVALID (axis_host_recv[2].tvalid),
-    .in_random_TREADY (axis_host_recv[2].tready),
-
-    // debug
-    .dbg_num_individuals     (dbg_num_ind),
-    .dbg_num_individuals_ap_vld(dbg_num_ind_vld),
-    .dbg_num_cities (dbg_num_cit),
-    .dbg_num_cities_ap_vld(dbg_num_cit_vld)
+    .out1_TREADY   (axis_host_send[1].tready)
 );
 
 // Tie-off unused signals to avoid synthesis problems
@@ -200,9 +166,7 @@ always_comb sq_rd.tie_off_m();
 always_comb sq_wr.tie_off_m();
 always_comb cq_rd.tie_off_s();
 always_comb cq_wr.tie_off_s();
-always_comb axis_host_send[2].tie_off_m();
 
-// NOTE: ILA disabled to eliminate routing congestion and timing violations caused by 2,126 probe nets.
 /*
 ila_processing_node inst_ila_processing_node (
     .clk(aclk),
@@ -221,11 +185,6 @@ ila_processing_node inst_ila_processing_node (
     .probe12(axis_host_send[1].tvalid),  // 1 bit
     .probe13(axis_host_send[1].tready),  // 1 bit
     .probe14(axis_host_send[1].tlast),   // 1 bit
-    .probe15(axis_host_send[1].tdata),    // 512 bits
-
-    .probe16     (dbg_num_ind),
-    .probe17     (dbg_num_ind_vld),
-    .probe18     (dbg_num_cit),
-    .probe19     (dbg_num_cit_vld)
+    .probe15(axis_host_send[1].tdata)    // 512 bits
 );
 */

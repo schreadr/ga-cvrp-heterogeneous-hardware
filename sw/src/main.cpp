@@ -2,7 +2,7 @@
  * This file is part of the Coyote <https://github.com/fpgasystems/Coyote>
  *
  * MIT Licence
- * Copyright (c) 2021-2025, Systems Group, ETH Zurich
+ * Copyright (c) 2021-2026, Systems Group, ETH Zurich
  * All rights reserved.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -11,10 +11,10 @@
  * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
  * copies of the Software, and to permit persons to whom the Software is
  * furnished to do so, subject to the following conditions:
-
+ *
  * The above copyright notice and this permission notice shall be included in all
  * copies or substantial portions of the Software.
-
+ *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -25,279 +25,91 @@
  */
 
 #include <cstdlib>
-#include <array>
-#include <algorithm>
-#include <cmath>
-#include <cstdint>
-#include <cstring>
 #include <iostream>
-#include <iomanip>
-#include <limits>
-#include <random>
 #include <stdexcept>
 #include <string>
-#include <vector>
-#include <memory>
 
 #include <boost/program_options.hpp>
-#include <coyote/cBench.hpp>
-#include <coyote/cThread.hpp>
+#include <coyote/cDefs.hpp>
 
-#include "ga_encoding_constants.hpp"
-#include "ga_streaming.hpp"
-#include "ga.hpp"
+#include "coyote_ga.hpp"
+#include "encoding_validator.hpp"
+#include "genome_hash.hpp"
 #include "problem_parser.hpp"
 
-// Default vFPGA to assign cThreads to; for designs with one region (vFPGA) this is the only possible value
-#define DEFAULT_VFPGA_ID 0
-
-// Control register indices, matching the AXI4-Lite control register map generated
-// by Vitis HLS for the scalar configuration arguments of the processing_node kernel
-// (see hw/src/hls/processing_node/processing_node.cpp). The byte offsets of the
-// kernel registers are 0x10 (num_individuals), 0x18 (num_cities), 0x20 (vehicle_capacity),
-// and 0x28 (init_city_cache); offsets 0x00-0x0F are reserved by the AXI4-Lite control block.
-// Coyote CSRs are 64-bit wide, so the setCSR index equals byte offset / 8.
-constexpr uint32_t CSR_CONTROL                 = 0x00;
-constexpr uint32_t CSR_CONTROL_START           = 0x01;
-constexpr uint32_t CSR_NUM_INDIVIDUALS         = 0x10 / 8;
-constexpr uint32_t CSR_NUM_CITIES              = 0x18 / 8;
-constexpr uint32_t CSR_VEHICLE_CAPACITY        = 0x20 / 8;
-constexpr uint32_t CSR_INIT_CITY_CACHE         = 0x28 / 8;
-
-constexpr const char kDefaultProblemFile[] = "../../problem_instances/P-n40-k5.vrp";
-
-std::size_t round_up(std::size_t value, std::size_t alignment) {
-    return ((value + alignment - 1) / alignment) * alignment;
-}
-
-std::uint8_t *allocate_buffer(coyote::cThread &coyote_thread, std::size_t bytes) {
-    const std::size_t allocation_bytes = round_up(bytes, coyote::HUGE_PAGE_SIZE);
-    return reinterpret_cast<std::uint8_t *>(coyote_thread.getMem({coyote::CoyoteAllocType::HPF, allocation_bytes}));
-}
-
 int main(int argc, char *argv[]) {
-    std::size_t population_size_multiplier = 0;
-    std::size_t n_generations = 0;
-    double n_best_keep = 0.0;
-    std::uint32_t seed = 0;
-    bool smoke_test = false;
-    std::string vrp_file;
-    int precision = 1;
+    try {
+        coyote_ga::CoyoteAppConfig config{};
 
-    boost::program_options::options_description runtime_options("Coyote CVRP GA Options");
-    runtime_options.add_options()
-        ("help,h", "Produce help message")
-        ("population_size_multiplier,p", boost::program_options::value<std::size_t>(&population_size_multiplier)->default_value(20), "Population size multiplier (population_size = dimension * multiplier)")
-        ("n_generations,g", boost::program_options::value<std::size_t>(&n_generations)->default_value(100), "Number of generations")
-        ("n_best_keep,k", boost::program_options::value<double>(&n_best_keep)->default_value(5.0), "Percentage of best individuals to keep across generations (e.g. 5.0 for 5%)")
-        ("seed,s", boost::program_options::value<std::uint32_t>(&seed)->default_value(0xC0FFEEu), "Random seed")
-        ("smoke_test,t", boost::program_options::bool_switch(&smoke_test), "Run a single generation smoke test on FPGA and exit")
-        ("vrp_file,f", boost::program_options::value<std::string>(&vrp_file)->default_value(kDefaultProblemFile), "Path to the CVRP instance file")
-        ("precision,r", boost::program_options::value<int>(&precision)->default_value(1), "Coordinate precision scaling factor (higher precision in sqrt calculation)");
+        boost::program_options::options_description runtime_options("Coyote CVRP GA Options");
+        runtime_options.add_options()
+            (",h", "Produce help message")
+            (",f", boost::program_options::value<std::string>(&config.vrp_file)->default_value("../../problem_instances/P-n40-k5.vrp"), "Path to the CVRP instance file")
+            (",p", boost::program_options::value<std::size_t>(&config.population_size_multiplier)->default_value(20), "Population size multiplier (population_size = dimension * multiplier)")
+            (",g", boost::program_options::value<std::size_t>(&config.ga_params.n_generations)->default_value(100), "Number of generations")
+            (",e", boost::program_options::value<double>(&config.ga_params.n_best_keep)->default_value(5.0), "Elitism percentage (% of best individuals to keep across generations)")
+            (",s", boost::program_options::value<std::uint32_t>(&config.ga_params.seed)->default_value(0xC0FFEEu), "Random seed")
+            (",k", boost::program_options::value<int>(&config.two_opt_k)->default_value(0), "Number of 2-opt iterations per subtour (k)")
+            (",r", boost::program_options::value<bool>(&config.two_opt_enable_precheck)->default_value(true), "Enable precheck for 2-opt moves (1 = enable, 0 = disable)")
+            (",c", boost::program_options::value<int>(&config.crossover_prob)->default_value(100), "Crossover probability (0 to 100)")
+            (",m", boost::program_options::value<int>(&config.mutation_prob)->default_value(100), "Mutation probability (0 to 100)")
+            (",o", boost::program_options::value<std::string>(&config.output_file)->default_value(""), "Path to output JSON file")
+            (",t", boost::program_options::bool_switch(&config.smoke_test), "Run a single generation smoke test on FPGA and exit");
 
-    boost::program_options::variables_map command_line_arguments;
-    boost::program_options::store(boost::program_options::parse_command_line(argc, argv, runtime_options), command_line_arguments);
-    boost::program_options::notify(command_line_arguments);
+        boost::program_options::variables_map command_line_arguments;
+        boost::program_options::store(boost::program_options::parse_command_line(argc, argv, runtime_options), command_line_arguments);
+        boost::program_options::notify(command_line_arguments);
 
-    if (command_line_arguments.count("help")) {
-        std::cout << runtime_options << std::endl;
-        return EXIT_SUCCESS;
-    }
-
-    if (population_size_multiplier == 0) {
-        throw std::invalid_argument("population_size_multiplier must be greater than 0");
-    }
-
-    if (precision < 1) {
-        throw std::invalid_argument("precision must not be smaller than 1");
-    }
-
-    HEADER("CLI PARAMETERS:");
-    std::cout << "Population size multiplier: " << population_size_multiplier << std::endl;
-    std::cout << "Number of generations: " << n_generations << std::endl;
-    std::cout << "Percentage of best individuals to keep: " << n_best_keep << "%" << std::endl;
-    std::cout << "Seed: " << seed << std::endl;
-    std::cout << "Precision: " << precision << std::endl;
-    std::cout << "Smoke test mode: " << (smoke_test ? "ENABLED" : "DISABLED") << std::endl;
-    std::cout << "Genome hasher: " << get_hash_backend_name() << std::endl;
-    std::cout << "VRP file: " << vrp_file << std::endl << std::endl;
-
-    const ProblemInstance problem = parse_vrp(vrp_file, precision);
-    validate_encoding_constants(problem);
-
-    std::size_t pop_size = problem.dimension * population_size_multiplier;
-    if (pop_size % 2 != 0) {
-        pop_size += 1;
-    }
-    const std::size_t num_ind_per_stream = pop_size / 2;
-    const int beats_per_individual = get_total_axi_beats(problem.dimension - 1);
-    const std::size_t bytes_per_individual = beats_per_individual * AXI_BYTES;
-    const std::size_t pop_bytes = pop_size * bytes_per_individual;
-    const std::size_t half_pop_bytes = num_ind_per_stream * bytes_per_individual;
-    const std::size_t random_bytes = get_random_bytes(num_ind_per_stream);
-
-    std::cout << "Loaded problem: " << problem.name << std::endl;
-    std::cout << "Dimension: " << problem.dimension << std::endl;
-    std::cout << "Vehicle capacity: " << problem.capacity << std::endl;
-    std::cout << "Total population size: " << pop_size << std::endl;
-
-    // Obtain Coyote thread
-    coyote::cThread coyote_thread(DEFAULT_VFPGA_ID, getpid());
-
-    // Allocate memory in Coyote style using hugepages (HPF)
-    // Stream 0 and Stream 1 have dedicated page-aligned hugepage buffers (Issue 3)
-    std::uint8_t *src_mem_0 = allocate_buffer(coyote_thread, half_pop_bytes);
-    std::uint8_t *src_mem_1 = allocate_buffer(coyote_thread, half_pop_bytes);
-    std::uint8_t *src_mem_rnd = allocate_buffer(coyote_thread, random_bytes);
-    std::uint8_t *dst_mem_0 = allocate_buffer(coyote_thread, half_pop_bytes);
-    std::uint8_t *dst_mem_1 = allocate_buffer(coyote_thread, half_pop_bytes);
-
-    if (!src_mem_0 || !src_mem_1 || !src_mem_rnd || !dst_mem_0 || !dst_mem_1) {
-        throw std::runtime_error("Could not allocate Coyote hugepage buffers; exiting...");
-    }
-
-    // pop_mem is purely a CPU-side host scratchpad; allocate standard 64-byte aligned memory
-    // only when running GA, saving hugepages and FPGA TLB entries (Issue 2)
-    std::unique_ptr<std::uint8_t[], void(*)(void*)> pop_mem(nullptr, std::free);
-    if (!smoke_test) {
-        void *ptr = nullptr;
-        if (posix_memalign(&ptr, AXI_BYTES, pop_bytes) != 0 || !ptr) {
-            throw std::bad_alloc();
+        if (command_line_arguments.count("-h")) {
+            std::cout << runtime_options << std::endl;
+            return EXIT_SUCCESS;
         }
-        pop_mem.reset(reinterpret_cast<std::uint8_t *>(ptr));
-    }
 
-    // Setup Scatter-Gather descriptors for Stream 0, Stream 1, and Stream 2 (random numbers)
-    coyote::localSg src_sg_0 = { .addr = src_mem_0, .len = static_cast<uint32_t>(half_pop_bytes), .stream = true, .dest = 0 };
-    coyote::localSg src_sg_1 = { .addr = src_mem_1, .len = static_cast<uint32_t>(half_pop_bytes), .stream = true, .dest = 1 };
-    coyote::localSg src_sg_rnd = { .addr = src_mem_rnd, .len = static_cast<uint32_t>(random_bytes), .stream = true, .dest = 2 };
+        HEADER("CLI PARAMETERS:");
+        std::cout << "Population size multiplier: " << config.population_size_multiplier << std::endl;
+        std::cout << "Number of generations: " << config.ga_params.n_generations << std::endl;
+        std::cout << "Elitism percentage: " << config.ga_params.n_best_keep << "%" << std::endl;
+        std::cout << "Seed: " << config.ga_params.seed << std::endl;
+        std::cout << "Two-opt k: " << config.two_opt_k << std::endl;
+        std::cout << "Two-opt enable precheck: " << (config.two_opt_enable_precheck ? "ENABLED" : "DISABLED") << std::endl;
+        std::cout << "Crossover probability: " << config.crossover_prob << "%" << std::endl;
+        std::cout << "Mutation probability: " << config.mutation_prob << "%" << std::endl;
+        std::cout << "Output file: " << (config.output_file.empty() ? "(none)" : config.output_file) << std::endl;
+        std::cout << "Smoke test mode: " << (config.smoke_test ? "ENABLED" : "DISABLED") << std::endl;
+        std::cout << "Genome hasher: " << get_hash_backend_name() << std::endl;
+        std::cout << "VRP file: " << config.vrp_file << std::endl << std::endl;
 
-    coyote::localSg dst_sg_0 = { .addr = dst_mem_0, .len = static_cast<uint32_t>(half_pop_bytes), .stream = true, .dest = 0 };
-    coyote::localSg dst_sg_1 = { .addr = dst_mem_1, .len = static_cast<uint32_t>(half_pop_bytes), .stream = true, .dest = 1 };
+        const ProblemInstance problem = parse_vrp(config.vrp_file);
+        validate_encoding_constants(problem);
 
-    // Program kernel configuration registers
-    const uint32_t reg_num_ind = static_cast<uint32_t>(num_ind_per_stream);
-    const uint32_t reg_num_cities = problem.dimension - 1;
+        std::size_t pop_size = problem.dimension * config.population_size_multiplier;
+        if (pop_size % 2 != 0) {
+            pop_size += 1;
+        }
+        config.ga_params.pop_size = pop_size;
 
-    // Initialize node cache on FPGA via Stream 0 beforehand
-    std::cout << "Initializing node cache on FPGA beforehand via stream 0..." << std::endl;
-    const std::vector<uint8_t> cache_bytes = encode_node_cache(problem);
-    std::uint8_t *cache_mem = allocate_buffer(coyote_thread, cache_bytes.size());
-    if (!cache_mem) {
-        throw std::runtime_error("Could not allocate Coyote hugepage buffer for cache; exiting...");
-    }
-    std::memcpy(cache_mem, cache_bytes.data(), cache_bytes.size());
+        std::cout << "Loaded problem: " << problem.name << std::endl;
+        std::cout << "Dimension: " << problem.dimension << std::endl;
+        std::cout << "Vehicle capacity: " << problem.capacity << std::endl;
+        std::cout << "Precision: " << problem.scaling << std::endl;
+        std::cout << "Total population size: " << pop_size << std::endl;
 
-    coyote::localSg cache_sg = {
-        .addr = cache_mem,
-        .len = static_cast<uint32_t>(cache_bytes.size()),
-        .stream = true,
-        .dest = 0
-    };
+        if (config.smoke_test) {
+            bool all_passed = coyote_ga::run_smoke_tests_all(problem, config);
+            return all_passed ? EXIT_SUCCESS : EXIT_FAILURE;
+        }
 
-    coyote_thread.setCSR(reg_num_ind, CSR_NUM_INDIVIDUALS);
-    coyote_thread.setCSR(reg_num_cities, CSR_NUM_CITIES);
-    coyote_thread.setCSR(problem.capacity, CSR_VEHICLE_CAPACITY);
+        GASummary summary = coyote_ga::run_pipelined_ga(problem, config);
+        summary.print();
 
-    coyote_thread.setCSR(1, CSR_INIT_CITY_CACHE); // Dedicated register to trigger cache initialization
-    coyote_thread.setCSR(CSR_CONTROL_START, CSR_CONTROL);
+        if (!config.output_file.empty()) {
+            summary.save_json(config.output_file, problem);
+            std::cout << "Saved experiment output to: " << config.output_file << std::endl;
+        }
 
-    coyote_thread.invoke(coyote::CoyoteOper::LOCAL_READ, cache_sg);
-    while (coyote_thread.checkCompleted(coyote::CoyoteOper::LOCAL_READ) != 1) {}
-    
-    std::cout << "Node cache successfully initialized on FPGA." << std::endl;
-
-    coyote_thread.setCSR(0, CSR_INIT_CITY_CACHE);
-
-    if(coyote_thread.getCSR(CSR_NUM_INDIVIDUALS) == reg_num_ind &&
-       coyote_thread.getCSR(CSR_NUM_CITIES) == reg_num_cities &&
-       coyote_thread.getCSR(CSR_VEHICLE_CAPACITY) == problem.capacity &&
-       coyote_thread.getCSR(CSR_INIT_CITY_CACHE) == 0) {
-        std::cout << "Successfully programmed vFPGA kernel configuration registers." << std::endl;
-    } else {
-        std::cerr << "Error: Failed to program vFPGA kernel configuration registers." << std::endl;
+        return EXIT_SUCCESS;
+    } catch (const std::exception &e) {
+        std::cerr << "Error: " << e.what() << std::endl;
         return EXIT_FAILURE;
     }
-
-    auto create_new_generation = [&]() {
-        coyote_thread.clearCompleted();
-
-        coyote_thread.setCSR(CSR_CONTROL_START, CSR_CONTROL);
-
-        // Queue operations on Stream 2 (random numbers), Stream 0 (parents 1), Stream 1 (parents 2)
-        coyote_thread.invoke(coyote::CoyoteOper::LOCAL_READ, src_sg_rnd);
-        coyote_thread.invoke(coyote::CoyoteOper::LOCAL_TRANSFER, src_sg_0, dst_sg_0);
-        coyote_thread.invoke(coyote::CoyoteOper::LOCAL_TRANSFER, src_sg_1, dst_sg_1);
-
-        // Wait for transfers to complete
-        while (coyote_thread.checkCompleted(coyote::CoyoteOper::LOCAL_TRANSFER) != 2) {}
-    };
-
-    if (smoke_test) {
-        HEADER("SMOKE TEST (1 GENERATION ON FPGA)");
-        std::cout << "Generating initial population for smoke test..." << std::endl;
-        const std::vector<Individual> init_pop_0 = build_initial_population(problem, num_ind_per_stream, seed);
-        const std::vector<Individual> init_pop_1 = build_initial_population(problem, num_ind_per_stream, seed ^ 0xBEEF);
-
-        const std::vector<std::uint8_t> enc_0 = encode_population_fixed(problem, init_pop_0);
-        const std::vector<std::uint8_t> enc_1 = encode_population_fixed(problem, init_pop_1);
-
-        std::memcpy(src_mem_0, enc_0.data(), half_pop_bytes);
-        std::memcpy(src_mem_1, enc_1.data(), half_pop_bytes);
-        std::memset(dst_mem_0, 0, half_pop_bytes);
-        std::memset(dst_mem_1, 0, half_pop_bytes);
-
-        generate_random_numbers(num_ind_per_stream, src_mem_rnd, reg_num_cities, seed ^ 0xDEADBEEF);
-
-        std::cout << "Invoking FPGA for 1 generation..." << std::endl;
-        coyote::cBench bench(1, 0);
-        bench.execute(create_new_generation, [](){});
-        double throughput = ((double) pop_bytes) / (1024.0 * 1024.0 * 1e-9 * bench.getAvg());
-        std::cout << "Average throughput: " << std::setw(8) << throughput << " MB/s; " << std::endl;
-
-        std::cout << "Decoding output individuals and verifying fitness..." << std::endl;
-        const std::vector<Individual> children_0 = decode_population_fixed(problem, dst_mem_0, num_ind_per_stream);
-        const std::vector<Individual> children_1 = decode_population_fixed(problem, dst_mem_1, num_ind_per_stream);
-
-        std::vector<Individual> children;
-        children.reserve(pop_size);
-        children.insert(children.end(), children_0.begin(), children_0.end());
-        children.insert(children.end(), children_1.begin(), children_1.end());
-
-        int errors = 0;
-        for (std::size_t i = 0; i < pop_size; ++i) {
-            uint32_t exp_fit = compute_fitness(problem, children[i]);
-            if (children[i].fitness != exp_fit) {
-                std::cerr << "Mismatch in individual " << i << ": got "
-                          << children[i].fitness << ", expected " << exp_fit << std::endl;
-                errors++;
-            }
-        }
-
-        if (errors == 0) {
-            std::cout << "SMOKE TEST PASSED: Processed " << pop_size << " individuals successfully on FPGA." << std::endl;
-            return EXIT_SUCCESS;
-        } else {
-            std::cerr << "SMOKE TEST FAILED with " << errors << " errors." << std::endl;
-            return EXIT_FAILURE;
-        }
-    } else {
-        HEADER("RUNNING GA ON FPGA");
-        GAParams params;
-        params.pop_size = pop_size;
-        params.n_generations = n_generations;
-        params.n_best_keep = n_best_keep;
-        params.seed = seed;
-        params.buffer_src_0 = src_mem_0;
-        params.buffer_src_1 = src_mem_1;
-        params.buffer_src_rnd = src_mem_rnd;
-        params.buffer_dst_0 = dst_mem_0;
-        params.buffer_dst_1 = dst_mem_1;
-        params.buffer_pop = pop_mem.get();
-
-        GASummary summary = run_ga(problem, params, create_new_generation);
-        summary.print();
-    }
-
-    return EXIT_SUCCESS;
 }

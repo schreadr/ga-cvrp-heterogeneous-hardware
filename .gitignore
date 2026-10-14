@@ -1,3 +1,7 @@
 **/build
 **/build_hw
 **/build_sw
+**/build_hls
+**/.venv/
+**/venv/
+**/results/

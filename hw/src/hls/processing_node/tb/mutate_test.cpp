@@ -69,7 +69,7 @@ int run_mutate_test() {
     }
 
     std::cout << "Executing Mutate..." << std::endl;
-    mutate(in0, mutate_pairs, out0, static_cast<int>(kNumIndividuals), kNumCities);
+    mutate(in0, mutate_pairs, out0, static_cast<int>(kNumIndividuals), kNumCities, 100);
 
     std::cout << "Reading children from block streams..." << std::endl;
     const std::vector<Individual> child_0 = tb_pull_individuals(out0, problem, kNumIndividuals);
@@ -152,7 +152,7 @@ int run_mutate_test_border_cases() {
     }
 
     std::cout << "Executing Mutate (border cases)..." << std::endl;
-    mutate(in0, mutate_pairs, out0, static_cast<int>(kNumIndividuals_border_cases), kNumCities_border_cases);
+    mutate(in0, mutate_pairs, out0, static_cast<int>(kNumIndividuals_border_cases), kNumCities_border_cases, 100);
 
     std::cout << "Reading children from block streams..." << std::endl;
     int errors = 0;
@@ -179,6 +179,79 @@ int run_mutate_test_border_cases() {
         std::cout << "BORDER CASES MUTATE TEST PASSED!" << std::endl;
     } else {
         std::cout << "BORDER CASES MUTATE TEST FAILED with " << errors << " errors." << std::endl;
+    }
+
+    return errors;
+}
+
+int run_mutate_prob_zero_test() {
+    std::cout << "Mutate Probability Zero Unit Test (prob=0 should leave individuals unchanged)" << std::endl;
+    hls::stream_of_blocks<IndividualAsBeats> in0;
+    hls::stream_of_blocks<IndividualAsBeats> out0;
+
+    const ProblemInstance problem = make_problem();
+    const std::vector<Individual> pop_0 = build_population(problem, kPopTours, kFitness0Base);
+
+    tb_push_individuals(in0, problem, pop_0);
+
+    hls::stream<CityPair> mutate_pairs("mutate_pairs_prob_zero");
+    for (std::size_t i = 0; i < kNumIndividuals; ++i) {
+        mutate_pairs.write(CityPair(1, 33, 1));
+    }
+
+    mutate(in0, mutate_pairs, out0, static_cast<int>(kNumIndividuals), CityIndex(kNumCities), 0);
+
+    const std::vector<Individual> child_0 = tb_pull_individuals(out0, problem, kNumIndividuals);
+
+    int errors = 0;
+    for (std::size_t i = 0; i < kNumIndividuals; ++i) {
+        if (child_0[i] != pop_0[i]) {
+            std::cout << "Stream 0 indiv " << i << " did not match parent when prob=0\n";
+            errors++;
+        }
+    }
+
+    if (errors == 0) {
+        std::cout << "MUTATE PROB ZERO TEST PASSED!" << std::endl;
+    } else {
+        std::cout << "MUTATE PROB ZERO TEST FAILED with " << errors << " errors." << std::endl;
+    }
+
+    return errors;
+}
+
+int run_mutate_prob_100_test() {
+    std::cout << "Mutate Probability 100 Unit Test (prob=100 should always mutate)" << std::endl;
+    hls::stream_of_blocks<IndividualAsBeats> in0;
+    hls::stream_of_blocks<IndividualAsBeats> out0;
+
+    const ProblemInstance problem = make_problem();
+    const std::vector<Individual> pop_0 = build_population(problem, kPopTours, kFitness0Base);
+
+    tb_push_individuals(in0, problem, pop_0);
+
+    hls::stream<CityPair> mutate_pairs("mutate_pairs_prob_100");
+    for (std::size_t i = 0; i < kNumIndividuals; ++i) {
+        mutate_pairs.write(CityPair(1, 33, 100));
+    }
+
+    mutate(in0, mutate_pairs, out0, static_cast<int>(kNumIndividuals), CityIndex(kNumCities), 100);
+
+    const std::vector<Individual> child_0 = tb_pull_individuals(out0, problem, kNumIndividuals);
+    const std::vector<Individual> exp_child_0 = build_population(problem, kExpChildTours, kFitness0Base);
+
+    int errors = 0;
+    for (std::size_t i = 0; i < kNumIndividuals; ++i) {
+        if (child_0[i] != exp_child_0[i]) {
+            std::cout << "Stream 0 indiv " << i << " did not match exp_child_0 when prob=100\n";
+            errors++;
+        }
+    }
+
+    if (errors == 0) {
+        std::cout << "MUTATE PROB 100 TEST PASSED!" << std::endl;
+    } else {
+        std::cout << "MUTATE PROB 100 TEST FAILED with " << errors << " errors." << std::endl;
     }
 
     return errors;

@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -20,6 +21,7 @@
 
 #include "ga.hpp"
 #include "ga_streaming.hpp"
+#include "problem_parser.hpp"
 
 namespace {
 
@@ -72,12 +74,7 @@ bool check_population_equal(const std::string &test_name,
     return true;
 }
 
-// ---------------------------------------------------------------------------
-// Tests for create_parent_pairs
-// ---------------------------------------------------------------------------
-
 bool test_create_parent_pairs_seed_42() {
-    // Explicit input instance: 4 individuals (bytes NOT set)
     const std::vector<EncodedIndividual> input_population = {
         {nullptr, 10},
         {nullptr, 20},
@@ -173,12 +170,7 @@ bool test_create_parent_pairs_homogeneous() {
     return ok1 && ok2;
 }
 
-// ---------------------------------------------------------------------------
-// Tests for update_population
-// ---------------------------------------------------------------------------
-
 bool test_update_population_better_new_generation() {
-    // Explicit input instances (bytes NOT set)
     std::vector<EncodedIndividual> input_population = {
         {nullptr, 100},
         {nullptr, 200},
@@ -295,7 +287,6 @@ bool test_update_population_all_keep_best() {
                                   actual_new_population, expected_new_population);
 }
 
-// Test 8: Zero elitism (n_keep_best = 0), entire population replaced by new generation
 bool test_update_population_zero_keep_best() {
     std::vector<EncodedIndividual> input_population = {
         {nullptr, 10},
@@ -378,10 +369,8 @@ bool test_run_ga_in_place_buffer_shift() {
     const std::size_t total_bytes = pop_size * bytes_per_ind;
     const std::size_t half_bytes = half_pop * bytes_per_ind;
 
-    const std::size_t rnd_bytes = get_random_bytes(half_pop);
     std::vector<std::uint8_t> src_0(half_bytes, 0);
     std::vector<std::uint8_t> src_1(half_bytes, 0);
-    std::vector<std::uint8_t> src_rnd(rnd_bytes, 0);
     std::vector<std::uint8_t> dst_0(half_bytes, 0);
     std::vector<std::uint8_t> dst_1(half_bytes, 0);
     std::vector<std::uint8_t> pop_buf(total_bytes, 0);
@@ -393,7 +382,6 @@ bool test_run_ga_in_place_buffer_shift() {
     params.seed = 42;
     params.buffer_src_0 = src_0.data();
     params.buffer_src_1 = src_1.data();
-    params.buffer_src_rnd = src_rnd.data();
     params.buffer_dst_0 = dst_0.data();
     params.buffer_dst_1 = dst_1.data();
     params.buffer_pop   = pop_buf.data();
@@ -410,11 +398,11 @@ bool test_run_ga_in_place_buffer_shift() {
         parent1_before = decode_individual_fixed(problem, params.buffer_pop + 1 * bytes_per_ind);
 
         // 2. Supply offspring across stream 0 and stream 1
-        // Parent 0 has fitness 131, Parent 1 has fitness 142.
+        // Parent 0 has fitness 111, Parent 1 has fitness 123.
         std::vector<Individual> offspring_0 = {
-            build_individual(problem, {4, 3, 2, 1, 0}), // fitness 102 (< 131)
-            build_individual(problem, {0, 1, 4, 3, 2}), // fitness 111 (< 131)
-            build_individual(problem, {1, 3, 2, 0, 4})  // fitness 147 (> 142)
+            build_individual(problem, {4, 3, 2, 1, 0}), // fitness 102 (< 111)
+            build_individual(problem, {0, 1, 4, 3, 2}), // fitness 111 (== 111)
+            build_individual(problem, {1, 3, 2, 0, 4})  // fitness 147 (> 111)
         };
         std::vector<Individual> offspring_1 = {
             build_individual(problem, {1, 3, 4, 0, 2}), // fitness 156
@@ -435,20 +423,20 @@ bool test_run_ga_in_place_buffer_shift() {
     }
 
     // Verify initial parents had the expected fitnesses
-    if (parent0_before.fitness != 131 || parent1_before.fitness != 142) {
+    if (parent0_before.fitness != 111 || parent1_before.fitness != 123) {
         std::cerr << "FAIL [run_ga_in_place_buffer_shift]: initial parent fitness mismatch: p0="
                   << parent0_before.fitness << ", p1=" << parent1_before.fitness << "\n";
         return false;
     }
 
-    // Expected final layout in pop_buf:
+    // Expected final layout in pop_buf with parent fallback:
     // Slot 0: Offspring (fitness 102)
-    // Slot 1: Offspring (fitness 111)
-    // Slot 2: Parent 0 (fitness 131)  <- Shifted from slot 0 to slot 2 (j=2 > i=0)
-    // Slot 3: Offspring (fitness 147)
-    // Slot 4: Offspring (fitness 156)
-    // Slot 5: Offspring (fitness 187)
-    const std::vector<std::uint32_t> expected_fitnesses = {102, 111, 131, 147, 156, 187};
+    // Slot 1: Parent 0 (fitness 111)   <- Shifted from slot 0 to slot 1 (j=1 > i=0)
+    // Slot 2: Offspring (fitness 111)
+    // Slot 3: Parent 1 (fitness 123)   <- Shifted from slot 1 to slot 3 (j=3 > i=1)
+    // Slot 4: Population member (fitness 133)
+    // Slot 5: Population member (fitness 150)
+    const std::vector<std::uint32_t> expected_fitnesses = {102, 111, 111, 123, 133, 150};
 
     for (std::size_t i = 0; i < pop_size; ++i) {
         Individual ind = decode_individual_fixed(problem, params.buffer_pop + i * bytes_per_ind);
@@ -463,10 +451,17 @@ bool test_run_ga_in_place_buffer_shift() {
         }
     }
 
-    // Check that Parent 0 shifted from slot 0 to slot 2 and preserved its exact tour
-    Individual slot2 = decode_individual_fixed(problem, params.buffer_pop + 2 * bytes_per_ind);
-    if (!(slot2 == parent0_before)) {
-        std::cerr << "FAIL [run_ga_in_place_buffer_shift]: slot 2 corrupted, does not match Parent 0\n";
+    // Check that Parent 0 shifted from slot 0 to slot 1 and preserved its exact tour
+    Individual slot1 = decode_individual_fixed(problem, params.buffer_pop + 1 * bytes_per_ind);
+    if (!(slot1 == parent0_before)) {
+        std::cerr << "FAIL [run_ga_in_place_buffer_shift]: slot 1 corrupted, does not match Parent 0\n";
+        return false;
+    }
+
+    // Check that Parent 1 shifted from slot 1 to slot 3 and preserved its exact tour
+    Individual slot3 = decode_individual_fixed(problem, params.buffer_pop + 3 * bytes_per_ind);
+    if (!(slot3 == parent1_before)) {
+        std::cerr << "FAIL [run_ga_in_place_buffer_shift]: slot 3 corrupted, does not match Parent 1\n";
         return false;
     }
 
@@ -474,9 +469,51 @@ bool test_run_ga_in_place_buffer_shift() {
     return true;
 }
 
-// ---------------------------------------------------------------------------
-// Tests for validate_encoding_constants ("validate the validation")
-// ---------------------------------------------------------------------------
+bool test_update_generation_with_parents() {
+    const uint8_t dummy1 = 1, dummy2 = 2, dummy3 = 3, dummy4 = 4;
+    std::vector<EncodedIndividual> parents1 = {
+        {&dummy1, 50, 1001},
+        {&dummy2, 70, 1002}
+    };
+    std::vector<EncodedIndividual> parents2 = {
+        {&dummy3, 60, 2001},
+        {&dummy4, 40, 2002}
+    };
+
+    // stream 0, child 0: fitness 45 (< 50, strictly better -> admit child)
+    // stream 0, child 1: fitness 80 (>= 70, worse -> keep parent 1)
+    // stream 1, child 0: fitness 60 (>= 60, equal -> keep parent 0)
+    // stream 1, child 1: fitness 35 (< 40, strictly better -> admit child)
+    const uint8_t c0 = 10, c1 = 11, c2 = 12, c3 = 13;
+    std::vector<EncodedIndividual> offspring = {
+        {&c0, 45, 3001},
+        {&c1, 80, 3002},
+        {&c2, 60, 3003},
+        {&c3, 35, 3004}
+    };
+
+    update_generation_with_parents(offspring, parents1, parents2);
+
+    if (offspring[0].fitness != 45 || offspring[0].bytes != &c0) {
+        std::cerr << "FAIL [test_update_generation_with_parents]: stream 0 child 0 should be admitted\n";
+        return false;
+    }
+    if (offspring[1].fitness != 70 || offspring[1].bytes != &dummy2) {
+        std::cerr << "FAIL [test_update_generation_with_parents]: stream 0 child 1 should be replaced by parent 1\n";
+        return false;
+    }
+    if (offspring[2].fitness != 60 || offspring[2].bytes != &dummy3) {
+        std::cerr << "FAIL [test_update_generation_with_parents]: stream 1 child 0 should be replaced by parent 0\n";
+        return false;
+    }
+    if (offspring[3].fitness != 35 || offspring[3].bytes != &c3) {
+        std::cerr << "FAIL [test_update_generation_with_parents]: stream 1 child 1 should be admitted\n";
+        return false;
+    }
+
+    std::cout << "PASS [test_update_generation_with_parents]\n";
+    return true;
+}
 
 static ProblemInstance make_test_problem(int num_cities, int max_coord, int capacity, int max_demand) {
     ProblemInstance p;
@@ -623,6 +660,41 @@ bool test_validate_constants_max_cities_overflow() {
     return true;
 }
 
+bool test_calculate_highest_precision() {
+    // P-n40-k5: span_x = 58, span_y = 59, dimension = 40 (num_cities = 39)
+    // max_coord = (1 << 20) - 1 = 1048575. 1048575 / 59 = 17772.
+    int p40 = calculate_highest_precision(58.0, 59.0, 40);
+    if (p40 != 17772) {
+        std::cerr << "FAIL [test_calculate_highest_precision]: expected 17772 for P-n40-k5 params, got " << p40 << "\n";
+        return false;
+    }
+
+    // P-n16-k8: span_x = 35, span_y = 42, dimension = 16 (num_cities = 15)
+    // 1048575 / 42 = 24966.
+    int p16 = calculate_highest_precision(35.0, 42.0, 16);
+    if (p16 != 24966) {
+        std::cerr << "FAIL [test_calculate_highest_precision]: expected 24966 for P-n16-k8 params, got " << p16 << "\n";
+        return false;
+    }
+
+    // Edge case: zero span
+    int p_zero = calculate_highest_precision(0.0, 0.0, 10);
+    if (p_zero != (1 << COORD_BITS) - 1) {
+        std::cerr << "FAIL [test_calculate_highest_precision]: expected max_coord for zero span, got " << p_zero << "\n";
+        return false;
+    }
+
+    // Edge case: span larger than max_coord returns 1
+    int p_large = calculate_highest_precision(1 << (COORD_BITS + 1), 10.0, 10);
+    if (p_large != 1) {
+        std::cerr << "FAIL [test_calculate_highest_precision]: expected 1 for oversized span, got " << p_large << "\n";
+        return false;
+    }
+
+    std::cout << "PASS [test_calculate_highest_precision]\n";
+    return true;
+}
+
 } // namespace
 
 int main() {
@@ -642,12 +714,10 @@ int main() {
         std::cout << "\n";
     };
 
-    // create_parent_pairs tests
     run("create_parent_pairs (seed 42)", test_create_parent_pairs_seed_42);
     run("create_parent_pairs (seed 12345)", test_create_parent_pairs_seed_12345);
     run("create_parent_pairs (homogeneous population)", test_create_parent_pairs_homogeneous);
 
-    // update_population tests
     run("update_population (better new generation)", test_update_population_better_new_generation);
     run("update_population (duplicate elimination & fallback)", test_update_population_with_duplicates);
     run("update_population (equal fitness preference)", test_update_population_equal_fitness_prefers_new);
@@ -655,15 +725,16 @@ int main() {
     run("update_population (zero keep best)", test_update_population_zero_keep_best);
     run("update_population (unsorted new generation)", test_update_population_unsorted_new_generation);
 
-    // run_ga tests
     run("run_ga (in-place pop_buffer shift integrity)", test_run_ga_in_place_buffer_shift);
+    run("update_generation_with_parents (parent fallback)", test_update_generation_with_parents);
 
-    // validate_encoding_constants tests ("validate the validation")
     run("validate_encoding_constants (valid instance)", test_validate_constants_valid);
     run("validate_encoding_constants (coord overflow)", test_validate_constants_coord_overflow);
     run("validate_encoding_constants (capacity overflow)", test_validate_constants_capacity_overflow);
     run("validate_encoding_constants (demand overflow)", test_validate_constants_demand_overflow);
     run("validate_encoding_constants (max_cities overflow)", test_validate_constants_max_cities_overflow);
+
+    run("calculate_highest_precision", test_calculate_highest_precision);
 
     std::cout << "========================================\n";
     std::cout << "Result: " << passed << " / " << total << " tests passed.\n";

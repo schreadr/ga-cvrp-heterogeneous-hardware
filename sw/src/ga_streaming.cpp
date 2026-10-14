@@ -1,18 +1,13 @@
 #include <array>
 #include <cstring>
+#include <iostream>
+#include <limits>
 #include <random>
+#include <stdexcept>
 
 #include "ga_streaming.hpp"
 #include "ga.hpp"
 
-void write_bits_le(std::uint8_t *word_bytes, std::size_t start_bit, unsigned width, std::uint32_t value) {
-    for (unsigned bit = 0; bit < width; ++bit) {
-        if ((value >> bit) & 1u) {
-            const std::size_t absolute_bit = start_bit + bit;
-            word_bytes[absolute_bit / 8] |= static_cast<std::uint8_t>(1u << (absolute_bit % 8));
-        }
-    }
-}
 
 std::vector<uint8_t> encode_node_cache(const ProblemInstance &problem) {
     const int num_cities = static_cast<int>(problem.nodes.size());
@@ -187,36 +182,15 @@ void population_to_buffer(std::vector<EncodedIndividual> &population, std::uint8
     const int beats_per_individual = get_total_axi_beats(problem_dimension - 1);
     if (reversedOrder) {
         for (int i=population.size()-1; i>=0; --i) {
-            // Serialize each individual and write to bytes
             std::uint8_t *dest = bytes + (i * beats_per_individual * AXI_BYTES);
             std::memcpy(dest, population[i].bytes, beats_per_individual * AXI_BYTES);
             population[i] = EncodedIndividual{dest, population[i].fitness, population[i].hash};
         }
     } else {
         for (int i=0; i<population.size(); ++i) {
-            // Serialize each individual and write to bytes
             std::memcpy(bytes, population[i].bytes, beats_per_individual * AXI_BYTES);
             population[i] = EncodedIndividual{bytes, population[i].fitness, population[i].hash};
             bytes += beats_per_individual * AXI_BYTES;
         }
-    }
-}
-
-void generate_random_numbers(
-    std::size_t num_individuals,
-    std::uint8_t *buffer,
-    int num_cities,
-    std::uint64_t seed
-) {
-    const std::size_t total_bytes = get_random_bytes(num_individuals);
-    std::memset(buffer, 0, total_bytes);
-
-    const std::size_t num_rnd = num_individuals * RANDOMS_PER_INDIV;
-    std::mt19937_64 rng(seed);
-    std::uniform_int_distribution<uint32_t> dist(0, num_cities - 1);
-
-    uint32_t *words = reinterpret_cast<uint32_t *>(buffer);
-    for (std::size_t i = 0; i < num_rnd; ++i) {
-        words[i] = dist(rng);
     }
 }
