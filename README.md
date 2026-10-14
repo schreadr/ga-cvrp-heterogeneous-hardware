@@ -1,4 +1,4 @@
-# Genetic Algorithm for the Capacitated Vehicle Routing Problem (CVRP) on Heterogeneous Hardware
+# Genetic Algorithm for the Capacitated Vehicle Routing Problem on Heterogeneous Hardware
 
 This example demonstrates a high-performance, heterogeneous CPU-FPGA solver for the **Capacitated Vehicle Routing Problem (CVRP)** integrated into the [Coyote](https://github.com/fpgasystems/Coyote) operating system framework for FPGAs.
 
@@ -22,7 +22,7 @@ This example demonstrates a high-performance, heterogeneous CPU-FPGA solver for 
 ## Project Overview
 
 ### The CVRP Problem
-The Capacitated Vehicle Routing Problem (CVRP) is an NP-hard combinatorial optimization problem where a fleet of homogeneous vehicles with uniform capacity $C$ must service a set of geographically distributed customer nodes from a central depot. The objective is to determine a set of routes that minimizes the total travel distance such that each customer is visited exactly once and the total demand on any route does not exceed vehicle capacity.
+The CVRP is an NP-hard combinatorial optimization problem where a fleet of homogeneous vehicles with uniform capacity $C$ must service a set of geographically distributed customer nodes from a central depot. The objective is to determine a set of routes that minimizes the total travel distance such that each customer is visited exactly once and the total demand on any route does not exceed vehicle capacity.
 
 ### Heterogeneous Architecture & Partitioning
 Standard genetic algorithms for CVRP spend significant execution time on randomized genetic operators, route validation, feasibility repair, and local search heuristics. This project partitions work across heterogeneous hardware to maximize throughput:
@@ -79,11 +79,11 @@ ga-cvrp-heterogeneous-hardware/
 For comprehensive instructions on building Coyote hardware shells, compiling the driver, and system deployment across supported platforms (AMD Alveo U55C, U280, U250, and V80), refer to the top-level [Coyote Examples Guide](https://github.com/fpgasystems/Coyote/blob/master/examples/README.md).
 
 
-### 5. Running the Application
+### Running the Application
 Run the binary from `sw/build_sw`:
 
 ```bash
-cd Coyote/examples/ga-cvrp-heterogeneous-hardware/sw/build_sw
+cd sw/build_sw
 ./test -f ../../problem_instances/P-n40-k5.vrp -p 20 -g 100 -k 5 -r 1
 ```
 
@@ -114,7 +114,7 @@ The script automatically stages all necessary HLS kernel sources, testbenches, s
 
 #### Usage
 ```bash
-cd Coyote/examples/ga-cvrp-heterogeneous-hardware/hw
+cd hw
 ./scripts/run_hls.sh [OPTION]
 ```
 
@@ -130,7 +130,7 @@ cd Coyote/examples/ga-cvrp-heterogeneous-hardware/hw
 The software directory includes standalone unit tests that verify software operations without requiring an FPGA or Coyote driver:
 
 ```bash
-cd Coyote/examples/ga-cvrp-heterogeneous-hardware/sw/build_sw
+cd sw/build_sw
 
 # Test genome encoding/decoding and beat alignment
 ./test_encode_decode
@@ -146,7 +146,7 @@ cd Coyote/examples/ga-cvrp-heterogeneous-hardware/sw/build_sw
 Once the FPGA is programmed and the driver is inserted, verify end-to-end host-to-FPGA streaming, CSR configuration, and kernel execution using the smoke test flag:
 
 ```bash
-cd Coyote/examples/ga-cvrp-heterogeneous-hardware/sw/build_sw
+cd sw/build_sw
 ./test -f ../../problem_instances/P-n16-k8.vrp -t
 ```
 This runs a single-generation execution across all configured vFPGAs, validates returned fitness values, and outputs pass/fail status.
